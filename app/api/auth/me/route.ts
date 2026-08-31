@@ -1,0 +1,45 @@
+import { NextResponse } from 'next/server';
+import { eq } from 'drizzle-orm';
+import { db } from '@/db/index';
+import { users, sellerProfiles, jamaats } from '@/db/schema';
+import { getSessionFromRequest } from '@/lib/auth';
+
+/** GET /api/auth/me — the logged-in user's own record, for the seller dashboard. */
+export async function GET(request: Request) {
+  const session = await getSessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  }
+
+  const userId = Number(session.sub);
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  if (!user) {
+    return NextResponse.json({ error: 'Account not found' }, { status: 404 });
+  }
+
+  const [profile] = await db
+    .select({
+      businessName: sellerProfiles.businessName,
+      jamaatId: sellerProfiles.jamaatId,
+      jamaatName: jamaats.name,
+      jamaatCity: jamaats.city,
+    })
+    .from(sellerProfiles)
+    .leftJoin(jamaats, eq(sellerProfiles.jamaatId, jamaats.id))
+    .where(eq(sellerProfiles.userId, userId));
+
+  return NextResponse.json({
+    user: {
+      id: user.id,
+      phone: user.phone,
+      phoneVerified: user.phoneVerified,
+      name: user.name,
+      email: user.email,
+      hasPassword: !!user.passwordHash,
+      itsId: user.itsId,
+      itsVerified: user.itsVerified,
+      staffRole: user.staffRole,
+    },
+    sellerProfile: profile ?? null,
+  });
+}

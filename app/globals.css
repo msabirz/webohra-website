@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Brand colors */
+  --color-navy: #1B3A6B;
+  --color-navy-deep: #12294D;
+  /* hover/pressed states — new, not from the reference site */
+  --color-gold: #B08D3F;
+  --color-gold-soft: #D9BE84;
+  --color-teal: #1F5C55;
+  --color-teal-deep: #153F3A;
+  --color-ivory: #F7F1E6;
+  --color-ivory-deep: #EFE4CE;
+  --color-ink: #2A1D16;
+  --color-ink-soft: #5C4C3F;
+
+  /* Semantic tokens — components reference these, never raw colors */
+  --color-primary: var(--color-navy);
+  --color-primary-hover: var(--color-navy-deep);
+  --color-accent: var(--color-gold);
+  --color-accent-soft: var(--color-gold-soft);
+  --color-verified: var(--color-teal);
+  /* the women-owned badge, trust signals */
+  --color-background: var(--color-ivory);
+  --color-surface: var(--color-ivory-deep);
+  --color-text: var(--color-ink);
+  --color-text-soft: var(--color-ink-soft);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-body), 'Karla', sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading), 'Fraunces', serif;
+}
