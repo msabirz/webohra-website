@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from './index';
 import { slugifyTitle } from '../lib/ids';
 import { saveFieldValues } from '../lib/listing-fields';
+import { hashPassword } from '../lib/password';
 import {
   categories,
   subcategories,
@@ -201,23 +202,29 @@ const JAMAAT_SEED = [
  * reads as a real multi-seller marketplace rather than one business
  * repeated everywhere. its_verified: true simulates a completed Admin
  * review — real self-registered sellers start unverified (see
- * /api/sellers/register). "zainab" doubles as the persistent seller
- * login used for manual QA (see project memory) — keep her phone/email
- * stable across reseeds so that login keeps working.
+ * /api/sellers/register). Every one of them is also a real, persistent
+ * QA login (email + password, see project memory) so any of the five
+ * Seller Portals can be tested directly, not just Zainab's — "zainab"
+ * is the one with no `password` here because her passwordHash was set by
+ * hand outside this script; the seeding loop below deliberately leaves
+ * passwordHash untouched when `password` is omitted, so reseeding can
+ * never clobber it. The other four always reset to the same known
+ * password on every reseed, which is the point (predictable QA creds).
  */
 const DEMO_SELLERS: Array<{
   key: string;
   phone: string;
   email?: string;
+  password?: string;
   businessName: string;
   itsId: string;
   jamaatCity?: string;
 }> = [
   { key: 'zainab', phone: '9999999999', email: 'zainab.test@webohra.test', businessName: "Zainab's Kitchen", itsId: '10000001', jamaatCity: 'Mumbai' },
-  { key: 'sakina', phone: '9888800001', businessName: "Sakina's Threads", itsId: '10000002', jamaatCity: 'Surat' },
-  { key: 'fatema', phone: '9888800002', businessName: 'Fatema Beauty Studio', itsId: '10000003', jamaatCity: 'Pune' },
-  { key: 'amina', phone: '9888800003', businessName: "Amina's Art & Craft Studio", itsId: '10000004', jamaatCity: 'Indore' },
-  { key: 'ruqaiya', phone: '9888800004', businessName: 'Ruqaiya Web Studio', itsId: '10000005' },
+  { key: 'sakina', phone: '9888800001', email: 'sakina.test@webohra.test', password: 'TestPass123!', businessName: "Sakina's Threads", itsId: '10000002', jamaatCity: 'Surat' },
+  { key: 'fatema', phone: '9888800002', email: 'fatema.test@webohra.test', password: 'TestPass123!', businessName: 'Fatema Beauty Studio', itsId: '10000003', jamaatCity: 'Pune' },
+  { key: 'amina', phone: '9888800003', email: 'amina.test@webohra.test', password: 'TestPass123!', businessName: "Amina's Art & Craft Studio", itsId: '10000004', jamaatCity: 'Indore' },
+  { key: 'ruqaiya', phone: '9888800004', email: 'ruqaiya.test@webohra.test', password: 'TestPass123!', businessName: 'Ruqaiya Web Studio', itsId: '10000005' },
 ];
 
 type DemoListing = {
@@ -555,18 +562,29 @@ async function seed() {
 
   const sellerIdByKey = new Map<string, number>();
   for (const seller of DEMO_SELLERS) {
+    const passwordHash = seller.password ? hashPassword(seller.password) : undefined;
     const [row] = await db
       .insert(users)
       .values({
         phone: seller.phone,
         email: seller.email,
+        passwordHash,
         phoneVerified: true,
         itsId: seller.itsId,
         itsVerified: true,
       })
       .onConflictDoUpdate({
         target: users.phone,
-        set: { itsVerified: true, phoneVerified: true, email: seller.email },
+        // passwordHash is only ever included in the update when this
+        // seller actually has a `password` above — omitting the key
+        // entirely (rather than setting it to undefined) leaves an
+        // existing hash alone, which is what keeps zainab's untouched.
+        set: {
+          itsVerified: true,
+          phoneVerified: true,
+          email: seller.email,
+          ...(passwordHash && { passwordHash }),
+        },
       })
       .returning();
     sellerIdByKey.set(seller.key, row.id);
