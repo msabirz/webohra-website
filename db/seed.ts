@@ -24,7 +24,7 @@ import {
  * here is physical_product. Art & Craft's four subcategories were the
  * "left for a later pass" — that pass is this one.
  */
-const CATEGORY_SEED: Array<{
+export const CATEGORY_SEED: Array<{
   name: string;
   slug: string;
   subcategories: Array<{

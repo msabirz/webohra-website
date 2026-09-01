@@ -1,14 +1,21 @@
 /**
  * Wipes every bit of accumulated test/dev data (listings, orders,
- * enquiries, pickup requests, and the users/sellers behind them) so the
- * DB can be reseeded clean for UAT — see db/seed.ts, run right after this.
- * Deliberately narrow about what it keeps: the three persistent QA
- * credentials (admin/seller/buyer — see project memory) survive by email,
- * and reference/config data (categories, subcategories, fields, jamaats)
- * is never touched here at all — this only clears transactional data and
- * the ad hoc accounts that generated it. Same DB as production (there is
- * only one), so this is deliberately a stand-alone script run by hand, not
- * something wired into any automated flow.
+ * enquiries, pickup requests, the users/sellers behind them, and any
+ * category/subcategory created ad hoc through the Admin panel during
+ * testing rather than by db/seed.ts) so the DB can be reseeded clean for
+ * UAT — see db/seed.ts, run right after this. Deliberately narrow about
+ * what it keeps: the three persistent QA credentials (admin/seller/buyer
+ * — see project memory) survive by email, and jamaats/subcategory_fields
+ * are left untouched (fields cascade-delete with their subcategory
+ * anyway; jamaats have shown no test debris so far — spot-check
+ * /api/admin/jamaats if that ever changes). Same DB as production (there
+ * is only one), so this is deliberately a stand-alone script run by hand,
+ * not something wired into any automated flow.
+ *
+ * KNOWN_*_SLUGS below must be kept in sync with db/seed.ts's CATEGORY_SEED
+ * by hand (not imported from it — db/seed.ts runs seed() as a side effect
+ * of being loaded at all, so importing from it here would trigger a seed
+ * run instead of just reading the constant).
  *
  * Usage: npx tsx scripts/reset-test-data.ts
  */
@@ -18,6 +25,8 @@ import {
   users,
   sellerProfiles,
   listings,
+  categories,
+  subcategories,
   orders,
   enquiries,
   pickupRequests,
@@ -30,6 +39,27 @@ import {
 } from '../db/schema';
 
 const KEEP_EMAILS = ['admin@webohra.com', 'zainab.test@webohra.test', 'buyer.test@webohra.test'];
+// Only the seller account among the three above should ever own a seller
+// profile — an admin or buyer test account picking one up (e.g. from an
+// earlier ad hoc "register as seller" test run) is itself debris.
+const KEEP_SELLER_EMAILS = ['zainab.test@webohra.test'];
+
+const KNOWN_CATEGORY_SLUGS = ['food', 'textile', 'beauty-occasion', 'it-services', 'art-craft'];
+const KNOWN_SUBCATEGORY_SLUGS = [
+  'baked-goods',
+  'snacks-preserves',
+  'apparel',
+  'home-textiles',
+  'mehndi',
+  'makeup',
+  'imitation-jewellery',
+  'web-development',
+  'graphic-design',
+  'handicrafts',
+  'home-decor',
+  'paintings-art',
+  'personalized-gift-items',
+];
 
 async function main() {
   const keepRows = await db
@@ -72,8 +102,30 @@ async function main() {
   const deletedListings = await db.delete(listings).returning({ id: listings.id });
   console.log(`Deleted ${deletedListings.length} listings (and their variants/images/field values).`);
 
-  const deletedSellerProfiles = keepIds.length
-    ? await db.delete(sellerProfiles).where(notInArray(sellerProfiles.userId, keepIds)).returning({ id: sellerProfiles.id })
+  // Listings are gone now, so it's safe to drop any category/subcategory
+  // an admin created by hand while testing (e.g. "Test Category E2E") —
+  // subcategories.categoryId cascades, but listings.subcategoryId is
+  // onDelete:'restrict', which is exactly why this has to run after the
+  // listings delete above, not before it.
+  const deletedSubcategories = await db
+    .delete(subcategories)
+    .where(notInArray(subcategories.slug, KNOWN_SUBCATEGORY_SLUGS))
+    .returning({ id: subcategories.id, name: subcategories.name });
+  console.log(`Deleted ${deletedSubcategories.length} ad hoc subcategories: ${deletedSubcategories.map((s) => s.name).join(', ') || '(none)'}`);
+
+  const deletedCategories = await db
+    .delete(categories)
+    .where(notInArray(categories.slug, KNOWN_CATEGORY_SLUGS))
+    .returning({ id: categories.id, name: categories.name });
+  console.log(`Deleted ${deletedCategories.length} ad hoc categories: ${deletedCategories.map((c) => c.name).join(', ') || '(none)'}`);
+
+  const sellerKeepRows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(inArray(users.email, KEEP_SELLER_EMAILS));
+  const sellerKeepIds = sellerKeepRows.map((r) => r.id);
+  const deletedSellerProfiles = sellerKeepIds.length
+    ? await db.delete(sellerProfiles).where(notInArray(sellerProfiles.userId, sellerKeepIds)).returning({ id: sellerProfiles.id })
     : await db.delete(sellerProfiles).returning({ id: sellerProfiles.id });
   console.log(`Deleted ${deletedSellerProfiles.length} seller profiles.`);
 
