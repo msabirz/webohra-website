@@ -23,12 +23,13 @@ export function ListingCardSkeleton() {
   );
 }
 
-/** `gridClassName` should match the real grid's column classes exactly (the
- *  homepage caps at 3 columns; search/category/nearby go to 4) — otherwise
- *  the skeleton reflows differently than the content that replaces it. */
+/** `gridClassName` should match the real grid's column classes exactly —
+ *  every listing grid (homepage, search, category, nearby) caps at 3
+ *  columns now — otherwise the skeleton reflows differently than the
+ *  content that replaces it. */
 export function ListingGridSkeleton({
   count = 8,
-  gridClassName = 'grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4',
+  gridClassName = 'grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3',
 }: {
   count?: number;
   gridClassName?: string;

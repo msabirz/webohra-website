@@ -15,8 +15,9 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024;
  * Multi-image manager for a product — upload (direct to R2 via a presigned
  * URL, drag-and-drop or click-to-browse), remove, and reorder (the first
  * image is the cover shown everywhere a single thumbnail is used). Only
- * usable once the product already exists (needs a listingId), so the "new
- * product" flow saves as a draft first, then lands here on the edit page.
+ * usable once the product already exists (needs a listingId), so
+ * ProductForm's "new product" flow saves as a draft first — on the same
+ * page, no navigation — before this section becomes visible.
  */
 export function ImageManager({ listingId }: { listingId: number }) {
   const [images, setImages] = useState<ProductImage[] | null>(null);

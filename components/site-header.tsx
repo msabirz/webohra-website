@@ -49,64 +49,71 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-10">
-      {/* Row 1: brand utility bar */}
+      {/* Row 1: brand utility bar. On mobile this becomes two stacked rows —
+       *  logo + pills on top, search full-width beneath — since cramming a
+       *  search box in alongside four other controls left it too small to
+       *  use comfortably. sm: and up keeps the original single-row layout,
+       *  search included inline. */}
       <div className="bg-navy/95 shadow-sm backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 sm:gap-5">
-          <Link href="/" className="flex shrink-0 items-center gap-1.5">
-            <Sparkles className="h-5 w-5 text-gold-soft" strokeWidth={2} />
-            <span className="font-heading text-xl font-semibold tracking-tight text-ivory">
-              WE Bohra
-            </span>
-          </Link>
-
-          <form onSubmit={handleSearch} className="relative max-w-xl flex-1">
-            <Search
-              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft"
-              strokeWidth={2}
-            />
-            <input
-              type="search"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search products and services…"
-              className="h-10 w-full rounded-full border-0 bg-white pl-10 pr-4 font-body text-sm text-ink shadow-inner transition focus:outline-none focus:ring-2 focus:ring-gold"
-            />
-          </form>
-
-          <button
-            onClick={() => setPickerOpen(true)}
-            className={`hidden gap-1.5 px-3.5 font-body text-ivory sm:flex ${PILL}`}
-          >
-            <MapPin className="h-4 w-4 text-gold-soft" strokeWidth={2} />
-            <span className="flex flex-col items-start leading-none">
-              <span className="text-[10px] text-ivory/55">Deliver to</span>
-              <span className="mt-0.5 text-xs font-semibold">
-                {location?.city ?? 'Select location'}
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 sm:gap-2">
+          <div className="flex items-center gap-3 sm:gap-5">
+            <Link href="/" className="flex shrink-0 items-center gap-1.5">
+              <Sparkles className="h-5 w-5 text-gold-soft" strokeWidth={2} />
+              <span className="font-heading text-xl font-semibold tracking-tight text-ivory">
+                WE Bohra
               </span>
-            </span>
-          </button>
+            </Link>
 
-          <AccountMenu pillClassName={PILL} />
+            <SearchField q={q} setQ={setQ} onSubmit={handleSearch} className="relative hidden max-w-xl flex-1 sm:block" />
 
-          <button
-            onClick={openCart}
-            aria-label="Open cart"
-            className={`relative gap-2 px-3.5 font-body text-sm font-medium text-ivory ${PILL}`}
-          >
-            <ShoppingBag className="h-4 w-4" strokeWidth={2} />
-            <span className="hidden sm:inline">Bag</span>
-            {count > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-gold font-body text-[10px] font-bold text-ink ring-2 ring-navy">
-                {count}
+            <button
+              onClick={() => setPickerOpen(true)}
+              aria-label="Choose your location"
+              className={`ml-auto gap-1.5 px-3 font-body text-ivory sm:ml-0 sm:px-3.5 ${PILL}`}
+            >
+              <MapPin className="h-4 w-4 text-gold-soft" strokeWidth={2} />
+              <span className="hidden flex-col items-start leading-none sm:flex">
+                <span className="text-[10px] text-ivory/55">Deliver to</span>
+                <span className="mt-0.5 text-xs font-semibold">
+                  {location?.city ?? 'Select location'}
+                </span>
               </span>
-            )}
-          </button>
+            </button>
+
+            <AccountMenu pillClassName={PILL} />
+
+            <button
+              onClick={openCart}
+              aria-label="Open cart"
+              className={`relative gap-2 px-3.5 font-body text-sm font-medium text-ivory ${PILL}`}
+            >
+              <ShoppingBag className="h-4 w-4" strokeWidth={2} />
+              <span className="hidden sm:inline">Bag</span>
+              {count > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-gold font-body text-[10px] font-bold text-ink ring-2 ring-navy">
+                  {count}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <SearchField q={q} setQ={setQ} onSubmit={handleSearch} className="relative sm:hidden" />
         </div>
       </div>
 
       {/* Row 2: light utility nav — category chips + nearby */}
       <div className="border-b border-ink-soft/10 bg-ivory/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-center gap-2 overflow-x-auto px-4 py-3">
+          <Link
+            href="/search"
+            className={`shrink-0 rounded-full px-4 py-2 font-body text-sm font-medium transition ${
+              pathname === '/search'
+                ? 'bg-navy text-ivory shadow-sm'
+                : 'text-ink-soft hover:bg-white hover:text-ink hover:shadow-sm'
+            }`}
+          >
+            All
+          </Link>
           {categories.map((c) => {
             const active = pathname === `/c/${c.slug}`;
             return (
@@ -147,5 +154,37 @@ export function SiteHeader() {
         />
       )}
     </header>
+  );
+}
+
+/** Rendered twice — inline on sm:+ (className hides it below that), full-
+ *  width on mobile (className hides the inline one instead) — same `q`
+ *  state and submit handler either way, so typing/searching works
+ *  identically no matter which one is currently visible. */
+function SearchField({
+  q,
+  setQ,
+  onSubmit,
+  className,
+}: {
+  q: string;
+  setQ: (value: string) => void;
+  onSubmit: (event: FormEvent) => void;
+  className: string;
+}) {
+  return (
+    <form onSubmit={onSubmit} className={className}>
+      <Search
+        className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft"
+        strokeWidth={2}
+      />
+      <input
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search products and services…"
+        className="h-10 w-full rounded-full border-0 bg-white pl-10 pr-4 font-body text-sm text-ink shadow-inner transition focus:outline-none focus:ring-2 focus:ring-gold"
+      />
+    </form>
   );
 }

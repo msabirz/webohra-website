@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { ExternalLink } from 'lucide-react';
 import { Field, TextInput, TextArea, Select, SubmitButton } from '@/components/form';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles } from '@/lib/button-styles';
@@ -14,6 +15,7 @@ type Category = { id: number; name: string; slug: string; subcategories: Subcate
 
 export type ProductFormValues = {
   id?: number;
+  slug?: string;
   subcategoryId: string;
   title: string;
   description: string;
@@ -34,13 +36,7 @@ const emptyForm: ProductFormValues = {
   stockQuantity: '',
 };
 
-export function ProductForm({
-  mode,
-  initial,
-}: {
-  mode: 'create' | 'edit';
-  initial?: ProductFormValues;
-}) {
+export function ProductForm({ initial }: { initial?: ProductFormValues }) {
   const router = useRouter();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -87,9 +83,15 @@ export function ProductForm({
       stockQuantity: needsShipping && form.stockQuantity !== '' ? Number(form.stockQuantity) : null,
     };
 
+    // Once this form has an id — whether it started in "edit" mode or got
+    // here by saving a brand-new draft a moment ago — every further save is
+    // an update. This is what lets "create" stay a single page: the first
+    // save reveals Photos/Preview right here instead of navigating away.
+    const isUpdate = Boolean(form.id);
+
     try {
-      const res = await authFetch(mode === 'create' ? '/api/listings' : `/api/listings/${form.id}`, {
-        method: mode === 'create' ? 'POST' : 'PUT',
+      const res = await authFetch(isUpdate ? `/api/listings/${form.id}` : '/api/listings', {
+        method: isUpdate ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -114,12 +116,14 @@ export function ProductForm({
         return;
       }
 
-      if (mode === 'create') {
-        router.push(`/seller/products/${data.listing.id}/edit`);
-      } else {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
-      }
+      setForm((prev) => ({
+        ...prev,
+        id: data.listing.id,
+        slug: data.listing.slug,
+        status: data.listing.status,
+      }));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
     } catch {
       setServerError('Could not reach the server. Check your connection and try again.');
     } finally {
@@ -162,11 +166,22 @@ export function ProductForm({
 
   return (
     <div className="flex flex-col gap-6">
-      {mode === 'edit' && form.status && (
+      {form.status && (
         <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5">
           <p className="mr-auto font-body text-sm text-ink-soft">
             Status: <span className="font-semibold text-ink">{STATUS_LABEL[form.status]}</span>
           </p>
+          {form.slug && (
+            <a
+              href={`/collection/${form.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonStyles('secondary', 'sm')}
+            >
+              <ExternalLink className="h-3.5 w-3.5" strokeWidth={2} />
+              Preview
+            </a>
+          )}
           {form.status !== 'active' && (
             <button disabled={statusBusy} onClick={() => setStatus('active')} className={buttonStyles('accent', 'sm')}>
               Publish
@@ -193,7 +208,7 @@ export function ProductForm({
         </div>
       )}
 
-      {mode === 'edit' && form.id && (
+      {form.id && (
         <div className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
           <h2 className="font-heading text-sm font-semibold text-ink">Photos</h2>
           <ImageManager listingId={form.id} />
@@ -322,13 +337,14 @@ export function ProductForm({
             ? 'Saving…'
             : saved
               ? 'Saved ✓'
-              : mode === 'create'
-                ? 'Save as draft'
-                : 'Save changes'}
+              : form.id
+                ? 'Save changes'
+                : 'Save as draft'}
         </SubmitButton>
-        {mode === 'create' && (
+        {!form.id && (
           <p className="text-center font-body text-xs text-ink-soft">
-            Saved as a draft first — you&apos;ll add photos and publish from the next screen.
+            Saves as a draft first — photos and a preview link appear on this same page the
+            moment it does, no need to go anywhere else.
           </p>
         )}
       </form>

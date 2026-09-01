@@ -27,6 +27,7 @@ export default function EditProductPage() {
         const l = data.listing;
         setInitial({
           id: l.id,
+          slug: l.slug,
           subcategoryId: String(l.subcategoryId),
           title: l.title,
           description: l.description,
@@ -88,7 +89,7 @@ export default function EditProductPage() {
         <h1 className="font-heading text-2xl font-semibold text-ink">Edit product</h1>
         <p className="mt-1 font-body text-sm text-ink-soft">{initial.title}</p>
       </div>
-      <ProductForm mode="edit" initial={initial} />
+      <ProductForm initial={initial} />
     </div>
   );
 }
