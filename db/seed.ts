@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from './index';
 import { slugifyTitle } from '../lib/ids';
+import { saveFieldValues } from '../lib/listing-fields';
 import {
   categories,
   subcategories,
@@ -9,6 +10,7 @@ import {
   users,
   sellerProfiles,
   listings,
+  listingVariants,
   banners,
 } from './schema';
 
@@ -194,79 +196,253 @@ const JAMAAT_SEED = [
   { city: 'Indore', name: 'Central Jamaat' },
 ];
 
-// A verified demo seller so the site has real, browsable listings out of the
-// box. its_verified: true here simulates a completed Admin review — real
-// self-registered sellers start unverified (see /api/sellers/register).
-const DEMO_SELLER = {
-  phone: '9999999999',
-  businessName: "Zainab's Kitchen",
-};
+/**
+ * Five verified demo sellers, one per category (roughly), so the site
+ * reads as a real multi-seller marketplace rather than one business
+ * repeated everywhere. its_verified: true simulates a completed Admin
+ * review — real self-registered sellers start unverified (see
+ * /api/sellers/register). "zainab" doubles as the persistent seller
+ * login used for manual QA (see project memory) — keep her phone/email
+ * stable across reseeds so that login keeps working.
+ */
+const DEMO_SELLERS: Array<{
+  key: string;
+  phone: string;
+  email?: string;
+  businessName: string;
+  itsId: string;
+  jamaatCity?: string;
+}> = [
+  { key: 'zainab', phone: '9999999999', email: 'zainab.test@webohra.test', businessName: "Zainab's Kitchen", itsId: '10000001', jamaatCity: 'Mumbai' },
+  { key: 'sakina', phone: '9888800001', businessName: "Sakina's Threads", itsId: '10000002', jamaatCity: 'Surat' },
+  { key: 'fatema', phone: '9888800002', businessName: 'Fatema Beauty Studio', itsId: '10000003', jamaatCity: 'Pune' },
+  { key: 'amina', phone: '9888800003', businessName: "Amina's Art & Craft Studio", itsId: '10000004', jamaatCity: 'Indore' },
+  { key: 'ruqaiya', phone: '9888800004', businessName: 'Ruqaiya Web Studio', itsId: '10000005' },
+];
 
-const DEMO_LISTINGS: Array<{
+type DemoListing = {
+  sellerKey: string;
   subcategorySlug: string;
   title: string;
   description: string;
-  price: string;
   shippingMethod: 'self_managed' | 'delhivery';
   shippingEstimateText?: string;
-}> = [
+  // Simple listings set `price`; variant-based listings set `variants`
+  // instead and leave price undefined — mirrors the seller UI's own
+  // branching question (see listings.price's comment in db/schema.ts).
+  price?: string;
+  variants?: Array<{ name: string; price: string; stockQuantity?: number }>;
+  // Keyed by the field's slugified label (same key subcategoryFields.fieldKey
+  // uses) — only fields with a value here get seeded; anything omitted is
+  // left blank, same as a real seller skipping an optional field.
+  fieldValues?: Record<string, string | number | boolean | string[]>;
+};
+
+// One listing per subcategory (14 total — Baked Goods gets two, one of them
+// the variant-based "choose your type" demo), covering every category and
+// both variant-listing shapes (product + service) with real field values so
+// a buyer's Details section is never empty during UAT.
+const DEMO_LISTINGS: DemoListing[] = [
   {
+    sellerKey: 'zainab',
     subcategorySlug: 'baked-goods',
     title: 'Assorted Khari Biscuits (500g)',
     description: 'Freshly baked, flaky khari biscuits — a family recipe, made to order.',
     price: '299.00',
     shippingMethod: 'self_managed',
     shippingEstimateText: 'Ships within 2-3 business days',
+    fieldValues: {
+      ingredients: 'Refined flour, ghee, salt, cumin seeds',
+      'veg-non-veg-egg': 'Veg',
+      'shelf-life': '15 days at room temperature',
+    },
   },
   {
+    sellerKey: 'zainab',
+    subcategorySlug: 'baked-goods',
+    title: 'Roti Basket — Choose Your Type',
+    description: 'Fresh-made rotis, priced by type — mix and match Manda, Chapati, and Butter Naan in one order.',
+    shippingMethod: 'self_managed',
+    shippingEstimateText: 'Made fresh to order — delivered within 1-2 days',
+    variants: [
+      { name: 'Manda', price: '15.00' },
+      { name: 'Chapati', price: '12.00' },
+      { name: 'Butter Naan', price: '25.00' },
+    ],
+    fieldValues: {
+      ingredients: 'Whole wheat flour, ghee, butter',
+      'veg-non-veg-egg': 'Veg',
+      'shelf-life': 'Best consumed fresh, within 24 hours',
+    },
+  },
+  {
+    sellerKey: 'zainab',
     subcategorySlug: 'snacks-preserves',
     title: 'Homemade Mango Pickle (1kg jar)',
     description: 'Traditional Bohra-style mango pickle, sun-cured and hand-packed.',
     price: '450.00',
     shippingMethod: 'delhivery',
+    fieldValues: {
+      ingredients: 'Raw mango, mustard oil, fenugreek, red chilli, spices',
+      'veg-non-veg-egg': 'Veg',
+      'shelf-life': '12 months, unrefrigerated',
+    },
   },
   {
+    sellerKey: 'sakina',
     subcategorySlug: 'apparel',
     title: 'Hand-Embroidered Rida (Made to Order)',
     description: 'Custom-fit rida with fine hand embroidery, delivered in 2-3 weeks.',
     price: '4500.00',
     shippingMethod: 'self_managed',
     shippingEstimateText: 'Ships within 2-3 weeks (made to order)',
+    fieldValues: {
+      size: 'Free Size',
+      'fabric-material': 'Georgette with satin lining',
+      color: 'Emerald green',
+      'embroidery-work-type': 'Hand embroidery',
+      'care-instructions': 'Dry clean only',
+    },
   },
   {
+    sellerKey: 'sakina',
     subcategorySlug: 'home-textiles',
     title: 'Block-Print Cotton Bedsheet Set',
     description: 'King-size, hand block-printed cotton bedsheet with two pillow covers.',
     price: '1200.00',
     shippingMethod: 'delhivery',
+    fieldValues: {
+      dimensions: 'King size, 90x108 in + 2 pillow covers',
+      'fabric-material': '100% cotton',
+      'set-contents': '1 bedsheet + 2 pillow covers',
+    },
   },
   {
+    sellerKey: 'fatema',
     subcategorySlug: 'mehndi',
-    title: 'Bridal Mehndi (Both Hands & Feet)',
-    description: 'Traditional bridal mehndi design, home visit within city limits.',
-    price: '3500.00',
+    title: 'Mehndi Design — Choose Your Coverage',
+    description: 'Traditional and bridal mehndi, priced by how much coverage you need — home visit within city limits.',
     shippingMethod: 'self_managed',
+    variants: [
+      { name: 'Hands Only', price: '800.00' },
+      { name: 'Hands + Feet', price: '1500.00' },
+      { name: 'Full Bridal (arms + legs)', price: '3500.00' },
+    ],
+    fieldValues: {
+      style: 'Bridal',
+      'coverage-area': 'Full Bridal (arms + legs)',
+    },
   },
   {
+    sellerKey: 'fatema',
     subcategorySlug: 'makeup',
     title: 'Party Makeup & Hairstyling',
     description: 'Full party makeup with draping and hairstyling, at your venue.',
     price: '2500.00',
     shippingMethod: 'self_managed',
+    fieldValues: {
+      'products-used': 'HD/Airbrush',
+      'trial-available': true,
+    },
   },
   {
+    sellerKey: 'fatema',
+    subcategorySlug: 'imitation-jewellery',
+    title: 'Kundan Bridal Jewellery Set',
+    description: 'Handcrafted Kundan necklace and earring set, ideal for bridal and reception wear.',
+    price: '1800.00',
+    shippingMethod: 'delhivery',
+    fieldValues: {
+      material: 'Kundan',
+      type: 'Full set',
+      occasion: 'Bridal',
+    },
+  },
+  {
+    sellerKey: 'ruqaiya',
     subcategorySlug: 'web-development',
-    title: 'WordPress Website Setup',
-    description: 'Custom WordPress website, up to 5 pages, mobile-responsive, delivered remotely.',
-    price: '8000.00',
+    title: 'Website Package — Choose Your Tier',
+    description: 'A website built to fit your budget — from a single landing page to a full e-commerce store, delivered remotely.',
     shippingMethod: 'self_managed',
+    variants: [
+      { name: 'Landing Page', price: '3000.00' },
+      { name: 'Full Website', price: '8000.00' },
+      { name: 'E-commerce Site', price: '15000.00' },
+    ],
+    fieldValues: {
+      'deliverable-type': 'Full website',
+      'revisions-included': '2 rounds of revisions',
+      'tech-stack': 'WordPress / Next.js',
+    },
   },
   {
+    sellerKey: 'ruqaiya',
     subcategorySlug: 'graphic-design',
     title: 'Logo & Brand Kit Design',
     description: 'Custom logo, color palette, and social media templates, delivered remotely.',
     price: '3500.00',
     shippingMethod: 'self_managed',
+    fieldValues: {
+      'deliverable-type': 'Full brand identity',
+      'file-formats-delivered': ['PNG', 'SVG', 'PDF'],
+      'revisions-included': '3 rounds of revisions',
+    },
+  },
+  {
+    sellerKey: 'amina',
+    subcategorySlug: 'handicrafts',
+    title: 'Hand-painted Terracotta Diya Set',
+    description: 'Set of 6 hand-painted terracotta diyas, festival-ready.',
+    price: '450.00',
+    shippingMethod: 'self_managed',
+    shippingEstimateText: 'Ships within 3-5 business days',
+    fieldValues: {
+      'material-used': 'Terracotta clay, acrylic paint',
+      'craft-technique': 'Hand-painted, sun-dried',
+      customizable: true,
+    },
+  },
+  {
+    sellerKey: 'amina',
+    subcategorySlug: 'home-decor',
+    title: 'Macrame Wall Hanging',
+    description: 'Handwoven cotton-cord macrame wall hanging with a wooden dowel.',
+    price: '950.00',
+    shippingMethod: 'self_managed',
+    shippingEstimateText: 'Ships within 4-6 business days',
+    fieldValues: {
+      dimensions: '24 x 36 inches',
+      material: 'Cotton cord, wooden dowel',
+      placement: 'Wall',
+    },
+  },
+  {
+    sellerKey: 'amina',
+    subcategorySlug: 'paintings-art',
+    title: 'Mughal Miniature-Style Canvas Painting',
+    description: 'Original acrylic painting on canvas, inspired by Mughal miniature art.',
+    price: '2200.00',
+    shippingMethod: 'self_managed',
+    shippingEstimateText: 'Ships within 5-7 business days, carefully packed',
+    fieldValues: {
+      medium: 'Acrylic',
+      dimensions: '16 x 20 inches',
+      framed: true,
+    },
+  },
+  {
+    sellerKey: 'amina',
+    subcategorySlug: 'personalized-gift-items',
+    title: 'Personalized Name Calligraphy Frame',
+    description: 'A custom calligraphy print of any name or date, in Arabic or English, framed and ready to gift.',
+    price: '650.00',
+    shippingMethod: 'self_managed',
+    shippingEstimateText: 'Ships within 5-7 business days (made to order)',
+    fieldValues: {
+      'customization-details': 'Any name or date, Arabic or English calligraphy',
+      'turnaround-time': '5-7 business days',
+      material: 'Wood frame, matte print',
+    },
   },
 ];
 
@@ -300,6 +476,9 @@ const BANNER_SEED: Array<{
 async function seed() {
   const subcategoryIdBySlug = new Map<string, number>();
   const jamaatIdByCity = new Map<string, number>();
+  // fieldId lookup, keyed "<subcategoryId>:<fieldKey>" — filled in as fields
+  // are seeded below, then used to resolve DEMO_LISTINGS' fieldValues.
+  const fieldIdByKey = new Map<string, number>();
 
   for (const cat of CATEGORY_SEED) {
     const [category] = await db
@@ -335,7 +514,7 @@ async function seed() {
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       const fieldKey = slugifyTitle(field.label);
-      await db
+      const [row] = await db
         .insert(subcategoryFields)
         .values({
           subcategoryId,
@@ -354,7 +533,9 @@ async function seed() {
             options: field.options ?? null,
             sortOrder: i,
           },
-        });
+        })
+        .returning();
+      fieldIdByKey.set(`${subcategoryId}:${fieldKey}`, row.id);
       fieldCount += 1;
     }
   }
@@ -372,35 +553,41 @@ async function seed() {
   }
   console.log(`Seeded ${JAMAAT_SEED.length} jamaats.`);
 
-  const [demoSeller] = await db
-    .insert(users)
-    .values({
-      phone: DEMO_SELLER.phone,
-      phoneVerified: true,
-      itsId: '10000001',
-      itsVerified: true,
-    })
-    .onConflictDoUpdate({
-      target: users.phone,
-      set: { itsVerified: true, phoneVerified: true },
-    })
-    .returning();
+  const sellerIdByKey = new Map<string, number>();
+  for (const seller of DEMO_SELLERS) {
+    const [row] = await db
+      .insert(users)
+      .values({
+        phone: seller.phone,
+        email: seller.email,
+        phoneVerified: true,
+        itsId: seller.itsId,
+        itsVerified: true,
+      })
+      .onConflictDoUpdate({
+        target: users.phone,
+        set: { itsVerified: true, phoneVerified: true, email: seller.email },
+      })
+      .returning();
+    sellerIdByKey.set(seller.key, row.id);
 
-  // Gives the demo seller a Mumbai pickup point so /nearby has something
-  // real to show out of the box, rather than every city coming up empty.
-  const demoJamaatId = jamaatIdByCity.get('Mumbai') ?? null;
+    const jamaatId = seller.jamaatCity ? (jamaatIdByCity.get(seller.jamaatCity) ?? null) : null;
+    await db
+      .insert(sellerProfiles)
+      .values({ userId: row.id, businessName: seller.businessName, jamaatId })
+      .onConflictDoUpdate({
+        target: sellerProfiles.userId,
+        set: { businessName: seller.businessName, jamaatId },
+      });
+  }
+  console.log(`Seeded ${DEMO_SELLERS.length} demo sellers.`);
 
-  await db
-    .insert(sellerProfiles)
-    .values({ userId: demoSeller.id, businessName: DEMO_SELLER.businessName, jamaatId: demoJamaatId })
-    .onConflictDoUpdate({
-      target: sellerProfiles.userId,
-      set: { businessName: DEMO_SELLER.businessName, jamaatId: demoJamaatId },
-    });
-
+  let listingCount = 0;
+  let variantCount = 0;
   for (const listing of DEMO_LISTINGS) {
     const subcategoryId = subcategoryIdBySlug.get(listing.subcategorySlug);
-    if (!subcategoryId) continue;
+    const sellerId = sellerIdByKey.get(listing.sellerKey);
+    if (!subcategoryId || !sellerId) continue;
 
     const [alreadyExists] = await db
       .select()
@@ -408,19 +595,49 @@ async function seed() {
       .where(eq(listings.title, listing.title));
     if (alreadyExists) continue;
 
-    await db.insert(listings).values({
-      slug: slugifyTitle(listing.title),
-      sellerId: demoSeller.id,
-      subcategoryId,
-      title: listing.title,
-      description: listing.description,
-      price: listing.price,
-      shippingMethod: listing.shippingMethod,
-      shippingEstimateText: listing.shippingEstimateText,
-      status: 'active',
-    });
+    const [created] = await db
+      .insert(listings)
+      .values({
+        slug: slugifyTitle(listing.title),
+        sellerId,
+        subcategoryId,
+        title: listing.title,
+        description: listing.description,
+        // undefined here means "variant-based, no single price" — same
+        // convention as POST /api/listings.
+        price: listing.price ?? null,
+        shippingMethod: listing.shippingMethod,
+        shippingEstimateText: listing.shippingMethod === 'self_managed' ? listing.shippingEstimateText : null,
+        status: 'active',
+      })
+      .returning();
+    listingCount += 1;
+
+    if (listing.variants) {
+      for (let i = 0; i < listing.variants.length; i++) {
+        const variant = listing.variants[i];
+        await db.insert(listingVariants).values({
+          listingId: created.id,
+          name: variant.name,
+          price: variant.price,
+          stockQuantity: variant.stockQuantity ?? null,
+          sortOrder: i,
+        });
+        variantCount += 1;
+      }
+    }
+
+    if (listing.fieldValues) {
+      const values = Object.entries(listing.fieldValues)
+        .map(([fieldKey, value]) => {
+          const fieldId = fieldIdByKey.get(`${subcategoryId}:${fieldKey}`);
+          return fieldId ? { fieldId, value } : null;
+        })
+        .filter((v): v is { fieldId: number; value: string | number | boolean | string[] } => v !== null);
+      await saveFieldValues(created.id, subcategoryId, values);
+    }
   }
-  console.log(`Seeded ${DEMO_LISTINGS.length} demo listings for "${DEMO_SELLER.businessName}".`);
+  console.log(`Seeded ${listingCount} demo listings (${variantCount} variants) across ${DEMO_SELLERS.length} sellers.`);
 
   for (const banner of BANNER_SEED) {
     const [alreadyExists] = await db
