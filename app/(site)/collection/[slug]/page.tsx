@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, Truck, Handshake, Minus, Plus, Check } from 'lucide-react';
+import { ChevronRight, Truck, Handshake, Minus, Plus, Check, Eye } from 'lucide-react';
 import { ProductGallery } from '@/components/product-gallery';
 import { ServiceDetailView } from '@/components/service-detail-view';
 import { WhatsAppBuyButton } from '@/components/whatsapp-buy-button';
@@ -12,6 +12,7 @@ import { useCart } from '@/components/cart-context';
 import { getStoredLocation } from '@/lib/location-client';
 import { buttonStyles } from '@/lib/button-styles';
 import { ListingDetailSkeleton } from '@/components/skeleton';
+import { authFetch } from '@/lib/session-client';
 
 type ListingDetail = {
   id: number;
@@ -45,7 +46,12 @@ export default function ListingDetailPage() {
   const [buyerCity, setBuyerCity] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    fetch(`/api/listings/${params.slug}`)
+    // authFetch, not plain fetch: a signed-in seller previewing her own
+    // draft needs her session attached so the API's owner bypass (see
+    // GET /api/listings/[idOrSlug]) can recognize her — a buyer with no
+    // token gets exactly the same request as before, so nothing changes
+    // for the normal public case.
+    authFetch(`/api/listings/${params.slug}`)
       .then(async (res) => {
         if (res.status === 404) {
           setNotFound(true);
@@ -82,10 +88,12 @@ export default function ListingDetailPage() {
   }
 
   const isService = listing.listingType !== 'physical_product';
+  const isPreview = listing.status !== 'active';
 
   if (isService) {
     return (
       <div className="flex flex-col gap-6">
+        {isPreview && <PreviewBanner status={listing.status} />}
         <Breadcrumb listing={listing} />
         <ServiceDetailView listing={listing} />
       </div>
@@ -103,6 +111,7 @@ export default function ListingDetailPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {isPreview && <PreviewBanner status={listing.status} />}
       <Breadcrumb listing={listing} />
 
       <div className="grid gap-10 md:grid-cols-2">
@@ -204,6 +213,26 @@ export default function ListingDetailPage() {
       {pickupModalOpen && (
         <PickupRequestModal listingId={listing.id} onClose={() => setPickupModalOpen(false)} />
       )}
+    </div>
+  );
+}
+
+/** Shown only to the owning seller — GET /api/listings/[idOrSlug] already
+ *  404s a non-active listing for anyone else, so reaching this at all means
+ *  she's looking at her own unpublished page. Purely informational: the
+ *  buyer actions below still work as normal (same tradeoff the rest of this
+ *  app makes — e.g. guest checkout with no payment gateway — rather than
+ *  threading a "preview, don't actually let her act" flag through Add to
+ *  Cart, WhatsApp, and Pickup & Pay across both product and service views). */
+function PreviewBanner({ status }: { status: string }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-2xl bg-gold/10 px-4 py-3 ring-1 ring-gold/25">
+      <Eye className="h-4 w-4 shrink-0 text-gold-soft" strokeWidth={2} />
+      <p className="font-body text-xs text-ink-soft">
+        <span className="font-semibold text-ink">Preview only</span> — this listing is{' '}
+        {status === 'draft' ? 'still a draft' : status} and buyers can&apos;t see it yet. This is
+        exactly how it&apos;ll look once you publish.
+      </p>
     </div>
   );
 }
