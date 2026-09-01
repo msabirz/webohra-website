@@ -9,6 +9,7 @@ import {
   numeric,
   timestamp,
   unique,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 
 // ---------------------------------------------------------------------------
@@ -127,6 +128,73 @@ export const subcategories = pgTable('subcategories', {
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** FR-17/FR-18's "admin-configurable listing schema per subcategory" —
+ *  actually built now, not just documented. Every field type a listing form
+ *  can render; select/multi_select use `options`, everything else ignores
+ *  it. */
+export const fieldTypeEnum = pgEnum('field_type', [
+  'text',
+  'number',
+  'select',
+  'multi_select',
+  'boolean',
+  'textarea',
+  'image',
+]);
+
+export const subcategoryFields = pgTable(
+  'subcategory_fields',
+  {
+    id: serial('id').primaryKey(),
+    subcategoryId: integer('subcategory_id')
+      .notNull()
+      .references(() => subcategories.id, { onDelete: 'cascade' }),
+    label: varchar('label', { length: 100 }).notNull(),
+    // Storage key inside a listing's field-value map — slugified from the
+    // label at creation time, then stable even if an admin edits the label
+    // later (so existing listing_field_values rows keep resolving).
+    fieldKey: varchar('field_key', { length: 100 }).notNull(),
+    fieldType: fieldTypeEnum('field_type').notNull(),
+    required: boolean('required').notNull().default(false),
+    // Only meaningful for select/multi_select — the admin-defined choice
+    // list, in display order. Null for every other field type.
+    options: jsonb('options').$type<string[]>(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    // Archived, not deleted — same reasoning as categories.active/
+    // subcategories.active. An admin "removing" a field must never cascade-
+    // delete listing_field_values for every listing that already answered
+    // it; archiving just stops it from being offered on new/edited
+    // listings while leaving what was already collected intact and still
+    // displayed on the listings that have it.
+    active: boolean('active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('subcategory_fields_subcategory_key_unique').on(table.subcategoryId, table.fieldKey)],
+);
+
+/**
+ * One row per (listing, field) with an actual seller-entered value. `value`
+ * is jsonb rather than a typed column because the field's own fieldType
+ * (looked up via fieldId) already says how to interpret it: a string for
+ * text/textarea/select/image(URL), a number for number, a boolean for
+ * boolean, a string[] for multi_select — one column, seven shapes, instead
+ * of seven mostly-null columns.
+ */
+export const listingFieldValues = pgTable(
+  'listing_field_values',
+  {
+    id: serial('id').primaryKey(),
+    listingId: integer('listing_id')
+      .notNull()
+      .references(() => listings.id, { onDelete: 'cascade' }),
+    fieldId: integer('field_id')
+      .notNull()
+      .references(() => subcategoryFields.id, { onDelete: 'cascade' }),
+    value: jsonb('value').notNull(),
+  },
+  (table) => [unique('listing_field_values_listing_field_unique').on(table.listingId, table.fieldId)],
+);
 
 export const listings = pgTable('listings', {
   id: serial('id').primaryKey(),
