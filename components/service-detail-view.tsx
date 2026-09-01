@@ -1,5 +1,9 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
 import { MessageCircle, ShieldCheck, Clock, Send, CheckCircle2 } from 'lucide-react';
 import { ConsultationRequestButton } from '@/components/consultation-request-button';
+import { MosaicGallery } from '@/components/mosaic-gallery';
 import { categoryColor } from '@/lib/category-color';
 
 type ServiceListing = {
@@ -46,6 +50,34 @@ const HOW_IT_WORKS = [
  */
 export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
   const accent = categoryColor(listing.categorySlug);
+  const heroButtonRef = useRef<HTMLDivElement>(null);
+  // Sticky bar shows once the hero's own button has scrolled out of view —
+  // watched via IntersectionObserver rather than a scroll-position
+  // threshold, so it stays correct regardless of hero height across
+  // different listings/screen sizes.
+  const [heroButtonVisible, setHeroButtonVisible] = useState(true);
+
+  useEffect(() => {
+    const el = heroButtonRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => setHeroButtonVisible(entry.isIntersecting));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    // The sticky bar below is `fixed`, so it floats above whatever's
+    // scrolled to the bottom of the page — including <SiteFooter>, which
+    // renders after this component in app/(site)/layout.tsx and has no way
+    // to know this bar exists. A spacer inside this component only clears
+    // its OWN trailing content, not the footer that comes after it in the
+    // page tree — so the fix has to reserve room at the document level
+    // instead, for as long as a page with this bar is actually mounted.
+    document.body.style.paddingBottom = '4.5rem';
+    return () => {
+      document.body.style.paddingBottom = '';
+    };
+  }, []);
 
   return (
     <div className="flex flex-col gap-8">
@@ -64,12 +96,14 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
         <p className="font-heading text-2xl font-semibold text-navy">
           Starting at ₹{Number(listing.price).toLocaleString('en-IN')}
         </p>
-        <ConsultationRequestButton
-          listingId={listing.id}
-          size="lg"
-          label="Take Consultation"
-          width="auto"
-        />
+        <div ref={heroButtonRef}>
+          <ConsultationRequestButton
+            listingId={listing.id}
+            size="lg"
+            label="Take Consultation"
+            width="auto"
+          />
+        </div>
       </div>
 
       <div className="grid gap-8 md:grid-cols-3">
@@ -77,14 +111,7 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
           {listing.images.length > 0 && (
             <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
               <h2 className="mb-3 font-heading text-lg font-semibold text-ink">Photos</h2>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {listing.images.map((img) => (
-                  <div key={img.id} className="aspect-square overflow-hidden rounded-xl bg-ivory-deep">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- seller-uploaded R2 URL, host not known at build time */}
-                    <img src={img.url} alt="" className="h-full w-full object-cover" />
-                  </div>
-                ))}
-              </div>
+              <MosaicGallery images={listing.images} />
             </section>
           )}
 
@@ -133,6 +160,26 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
             </ul>
           </div>
         </aside>
+      </div>
+
+      {/* Sticky bar — mirrors the hero's own button, so it's always
+       *  reachable once she's scrolled past it. Always mounted (not
+       *  conditionally rendered) so the slide up/down is a CSS transition,
+       *  not an instant pop. */}
+      <div
+        className={`fixed inset-x-0 bottom-0 z-30 border-t border-ink-soft/10 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(0,0,0,0.08)] backdrop-blur-md transition-transform duration-300 ${
+          heroButtonVisible ? 'translate-y-full' : 'translate-y-0'
+        }`}
+      >
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate font-heading text-sm font-semibold text-ink">{listing.title}</p>
+            <p className="font-body text-xs text-ink-soft">
+              Starting at ₹{Number(listing.price).toLocaleString('en-IN')}
+            </p>
+          </div>
+          <ConsultationRequestButton listingId={listing.id} size="md" label="Take Consultation" width="auto" />
+        </div>
       </div>
     </div>
   );
