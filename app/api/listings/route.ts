@@ -13,6 +13,7 @@ import {
 import { listingCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { slugifyTitle, withUniqueSuffix } from '@/lib/ids';
+import { validateFieldValues, saveFieldValues, checkShippingEstimate } from '@/lib/listing-fields';
 
 /**
  * GET /api/listings
@@ -147,8 +148,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const { subcategoryId, title, description, price, shippingMethod, shippingEstimateText, stockQuantity } =
+  const { subcategoryId, title, description, price, shippingMethod, shippingEstimateText, stockQuantity, fieldValues } =
     parsed.data;
+
+  const fieldCheck = await validateFieldValues(subcategoryId, fieldValues);
+  if (!fieldCheck.ok) {
+    return NextResponse.json({ error: 'Invalid input', issues: fieldCheck.issues }, { status: 400 });
+  }
+
+  const shippingCheck = await checkShippingEstimate(subcategoryId, shippingMethod, shippingEstimateText);
+  if (!shippingCheck.ok) {
+    return NextResponse.json({ error: 'Invalid input', issues: shippingCheck.issues }, { status: 400 });
+  }
 
   const baseSlug = slugifyTitle(title);
   const [existingSlug] = await db.select().from(listings).where(eq(listings.slug, baseSlug));
@@ -169,6 +180,8 @@ export async function POST(request: Request) {
       status: 'draft',
     })
     .returning();
+
+  await saveFieldValues(listing.id, subcategoryId, fieldCheck.values);
 
   return NextResponse.json({ listing }, { status: 201 });
 }

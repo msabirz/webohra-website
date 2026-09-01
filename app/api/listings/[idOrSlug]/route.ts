@@ -12,6 +12,12 @@ import {
 import { db } from '@/db/index';
 import { listingStatusUpdateSchema, listingUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
+import {
+  validateFieldValues,
+  saveFieldValues,
+  getListingFieldValues,
+  checkShippingEstimate,
+} from '@/lib/listing-fields';
 
 /**
  * Accepts either the internal numeric id (used by the seller dashboard,
@@ -89,12 +95,14 @@ export async function GET(
     .where(eq(listingImages.listingId, row.id))
     .orderBy(asc(listingImages.sortOrder));
 
+  const fields = await getListingFieldValues(row.id);
+
   // Never expose the seller's raw phone number here — FR-37: it's surfaced
   // only through the Contact Seller / Take Consultation action itself, not
   // as browsable listing data.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { sellerPhone: _sellerPhone, ...publicListing } = row;
-  return NextResponse.json({ listing: { ...publicListing, images } });
+  return NextResponse.json({ listing: { ...publicListing, images, fields } });
 }
 
 /**
@@ -187,8 +195,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { subcategoryId, title, description, price, shippingMethod, shippingEstimateText, stockQuantity } =
+  const { subcategoryId, title, description, price, shippingMethod, shippingEstimateText, stockQuantity, fieldValues } =
     parsed.data;
+
+  const fieldCheck = await validateFieldValues(subcategoryId, fieldValues);
+  if (!fieldCheck.ok) {
+    return NextResponse.json({ error: 'Invalid input', issues: fieldCheck.issues }, { status: 400 });
+  }
+
+  const shippingCheck = await checkShippingEstimate(subcategoryId, shippingMethod, shippingEstimateText);
+  if (!shippingCheck.ok) {
+    return NextResponse.json({ error: 'Invalid input', issues: shippingCheck.issues }, { status: 400 });
+  }
 
   const [updated] = await db
     .update(listings)
@@ -203,6 +221,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
     })
     .where(eq(listings.id, listing.id))
     .returning();
+
+  await saveFieldValues(listing.id, subcategoryId, fieldCheck.values);
 
   return NextResponse.json({ listing: updated });
 }

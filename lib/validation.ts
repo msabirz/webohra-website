@@ -109,45 +109,49 @@ export type SellerProfileUpdateInput = z.infer<typeof sellerProfileUpdateSchema>
 const stockQuantityField = () =>
   z.coerce.number().int().min(0, 'Stock can\'t be negative').max(999999).nullable();
 
-export const listingCreateSchema = z
-  .object({
-    subcategoryId: z.number({ message: 'Select a category' }).int().positive(),
-    title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
-    description: z.string().trim().min(10, 'Description must be at least 10 characters'),
-    price: z.coerce.number({ message: 'Enter a price' }).positive('Enter a price greater than 0'),
-    shippingMethod: z.enum(['self_managed', 'delhivery']),
-    shippingEstimateText: z.string().trim().max(200).optional(),
-    stockQuantity: stockQuantityField().optional(),
-  })
-  .refine(
-    (data) => data.shippingMethod !== 'self_managed' || !!data.shippingEstimateText,
-    {
-      message: 'Provide a delivery estimate when handling shipping yourself',
-      path: ['shippingEstimateText'],
-    },
-  );
+// FR-17's per-subcategory fields ride along in the same create/update
+// payload as a free-form map — the actual per-field type/required/options
+// validation depends on which subcategory was picked (fetched from the DB
+// at request time), so it can't be expressed as a static Zod shape here;
+// see lib/listing-fields.ts's validateFieldValues for that half.
+const fieldValuesField = z.record(z.string(), z.unknown()).optional();
+
+// The "self-managed shipping needs an estimate" rule only applies to
+// physical_product listings — a static Zod schema has no way to know a
+// given subcategoryId's listingType (that's a DB lookup), so this used to
+// live here as an unconditional .refine() that fired for every listing
+// regardless of type. That silently blocked every service listing from
+// ever saving: the seller form always sends shippingMethod: 'self_managed'
+// as a harmless default even for services (which hide the shipping UI
+// entirely), and the refine had no way to tell the two cases apart. Moved
+// to a subcategory-aware check in the route handlers instead — see
+// requireShippingEstimateIfPhysical in app/api/listings/route.ts and
+// app/api/listings/[idOrSlug]/route.ts.
+export const listingCreateSchema = z.object({
+  subcategoryId: z.number({ message: 'Select a category' }).int().positive(),
+  title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
+  description: z.string().trim().min(10, 'Description must be at least 10 characters'),
+  price: z.coerce.number({ message: 'Enter a price' }).positive('Enter a price greater than 0'),
+  shippingMethod: z.enum(['self_managed', 'delhivery']),
+  shippingEstimateText: z.string().trim().max(200).optional(),
+  stockQuantity: stockQuantityField().optional(),
+  fieldValues: fieldValuesField,
+});
 
 export type ListingCreateInput = z.infer<typeof listingCreateSchema>;
 
 /** PATCH /api/listings/[id] — editing an existing product's own fields
  *  (status changes go through listingStatusUpdateSchema below instead). */
-export const listingUpdateSchema = z
-  .object({
-    subcategoryId: z.number({ message: 'Select a category' }).int().positive(),
-    title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
-    description: z.string().trim().min(10, 'Description must be at least 10 characters'),
-    price: z.coerce.number({ message: 'Enter a price' }).positive('Enter a price greater than 0'),
-    shippingMethod: z.enum(['self_managed', 'delhivery']),
-    shippingEstimateText: z.string().trim().max(200).optional(),
-    stockQuantity: stockQuantityField().optional(),
-  })
-  .refine(
-    (data) => data.shippingMethod !== 'self_managed' || !!data.shippingEstimateText,
-    {
-      message: 'Provide a delivery estimate when handling shipping yourself',
-      path: ['shippingEstimateText'],
-    },
-  );
+export const listingUpdateSchema = z.object({
+  subcategoryId: z.number({ message: 'Select a category' }).int().positive(),
+  title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
+  description: z.string().trim().min(10, 'Description must be at least 10 characters'),
+  price: z.coerce.number({ message: 'Enter a price' }).positive('Enter a price greater than 0'),
+  shippingMethod: z.enum(['self_managed', 'delhivery']),
+  shippingEstimateText: z.string().trim().max(200).optional(),
+  stockQuantity: stockQuantityField().optional(),
+  fieldValues: fieldValuesField,
+});
 export type ListingUpdateInput = z.infer<typeof listingUpdateSchema>;
 
 /** 'active' is the DB value for what the seller portal calls "Published" —
@@ -369,6 +373,33 @@ export const adminSubcategoryUpdateSchema = z.object({
   active: z.boolean().optional(),
 });
 export type AdminSubcategoryUpdateInput = z.infer<typeof adminSubcategoryUpdateSchema>;
+
+const fieldTypeValue = z.enum(['text', 'number', 'select', 'multi_select', 'boolean', 'textarea', 'image']);
+
+export const adminSubcategoryFieldCreateSchema = z
+  .object({
+    label: nameField('Field label'),
+    fieldType: fieldTypeValue,
+    required: z.boolean().default(false),
+    options: z.array(z.string().trim().min(1)).max(30).optional(),
+  })
+  .refine((data) => (data.fieldType === 'select' || data.fieldType === 'multi_select' ? !!data.options?.length : true), {
+    message: 'Select fields need at least one option',
+    path: ['options'],
+  });
+export type AdminSubcategoryFieldCreateInput = z.infer<typeof adminSubcategoryFieldCreateSchema>;
+
+export const adminSubcategoryFieldUpdateSchema = z.object({
+  label: nameField('Field label').optional(),
+  required: z.boolean().optional(),
+  options: z.array(z.string().trim().min(1)).max(30).optional(),
+  active: z.boolean().optional(),
+});
+export type AdminSubcategoryFieldUpdateInput = z.infer<typeof adminSubcategoryFieldUpdateSchema>;
+
+export const adminSubcategoryFieldReorderSchema = z.object({
+  order: z.array(z.number().int().positive()).min(1),
+});
 
 export const adminJamaatCreateSchema = z.object({
   city: nameField('City'),
