@@ -7,10 +7,17 @@ import { Field, TextInput, TextArea, Select, SubmitButton } from '@/components/f
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles } from '@/lib/button-styles';
 import { ImageManager } from '@/components/seller/image-manager';
+import { DynamicFieldInput, type SubcategoryFieldDef } from '@/components/seller/dynamic-field-input';
 
 type ListingType = 'physical_product' | 'local_service' | 'remote_service';
 
-type Subcategory = { id: number; name: string; slug: string; listingType: ListingType };
+type Subcategory = {
+  id: number;
+  name: string;
+  slug: string;
+  listingType: ListingType;
+  fields: SubcategoryFieldDef[];
+};
 type Category = { id: number; name: string; slug: string; subcategories: Subcategory[] };
 
 export type ProductFormValues = {
@@ -24,6 +31,10 @@ export type ProductFormValues = {
   shippingEstimateText: string;
   stockQuantity: string;
   status?: 'draft' | 'active' | 'archived' | 'flagged' | 'removed';
+  // FR-17's per-subcategory fields — keyed by fieldKey, shaped per each
+  // field's own fieldType. Populated from GET /api/listings/[id]'s `fields`
+  // array when editing, empty when creating.
+  fieldValues?: Record<string, unknown>;
 };
 
 const emptyForm: ProductFormValues = {
@@ -34,6 +45,7 @@ const emptyForm: ProductFormValues = {
   shippingMethod: 'self_managed',
   shippingEstimateText: '',
   stockQuantity: '',
+  fieldValues: {},
 };
 
 export function ProductForm({ initial }: { initial?: ProductFormValues }) {
@@ -43,6 +55,7 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [form, setForm] = useState<ProductFormValues>(initial ?? emptyForm);
   const [errors, setErrors] = useState<Partial<Record<keyof ProductFormValues, string>>>({});
+  const [dynamicErrors, setDynamicErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -67,30 +80,72 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function handleSubmit(event: FormEvent) {
+  function updateFieldValue(fieldKey: string, value: unknown) {
+    setForm((prev) => ({ ...prev, fieldValues: { ...prev.fieldValues, [fieldKey]: value } }));
+  }
+
+  // Image-type fields use this instead of updateFieldValue — an upload
+  // finishing should behave like the main Photos gallery (saved the moment
+  // it completes), not like typing into a text field (only saved on the
+  // next explicit "Save changes"). `save()` is called with the merged
+  // value directly rather than relying on `form` — setState hasn't been
+  // committed yet in this same tick.
+  function updateFieldValueAndSave(fieldKey: string, value: unknown) {
+    const nextFieldValues = { ...(form.fieldValues ?? {}), [fieldKey]: value };
+    setForm((prev) => ({ ...prev, fieldValues: nextFieldValues }));
+    save({ fieldValues: nextFieldValues });
+  }
+
+  const STATIC_KEYS = new Set([
+    'subcategoryId',
+    'title',
+    'description',
+    'price',
+    'shippingMethod',
+    'shippingEstimateText',
+    'stockQuantity',
+  ]);
+
+  function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    save();
+  }
+
+  // Split out from the form's onSubmit so an image-type field's upload can
+  // trigger a real save immediately, not just update local state — without
+  // this, a photo that finished uploading LOOKS saved (its thumbnail shows
+  // right away) but is silently lost if she never clicks "Save changes"
+  // again, unlike the main Photos gallery which persists the moment each
+  // upload completes. `overrides` lets a caller supply a value that hasn't
+  // landed in `form` state yet (React batches setState, so reading `form`
+  // in the same tick a photo finishes uploading would still see the old
+  // fieldValues).
+  async function save(overrides?: Partial<ProductFormValues>) {
+    const current = { ...form, ...overrides };
     setServerError(null);
     setErrors({});
+    setDynamicErrors({});
     setSubmitting(true);
 
     const payload = {
-      subcategoryId: Number(form.subcategoryId),
-      title: form.title,
-      description: form.description,
-      price: form.price,
-      shippingMethod: needsShipping ? form.shippingMethod : 'self_managed',
-      shippingEstimateText: needsShipping ? form.shippingEstimateText : undefined,
-      stockQuantity: needsShipping && form.stockQuantity !== '' ? Number(form.stockQuantity) : null,
+      subcategoryId: Number(current.subcategoryId),
+      title: current.title,
+      description: current.description,
+      price: current.price,
+      shippingMethod: needsShipping ? current.shippingMethod : 'self_managed',
+      shippingEstimateText: needsShipping ? current.shippingEstimateText : undefined,
+      stockQuantity: needsShipping && current.stockQuantity !== '' ? Number(current.stockQuantity) : null,
+      fieldValues: current.fieldValues ?? {},
     };
 
     // Once this form has an id — whether it started in "edit" mode or got
     // here by saving a brand-new draft a moment ago — every further save is
     // an update. This is what lets "create" stay a single page: the first
     // save reveals Photos/Preview right here instead of navigating away.
-    const isUpdate = Boolean(form.id);
+    const isUpdate = Boolean(current.id);
 
     try {
-      const res = await authFetch(isUpdate ? `/api/listings/${form.id}` : '/api/listings', {
+      const res = await authFetch(isUpdate ? `/api/listings/${current.id}` : '/api/listings', {
         method: isUpdate ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -105,11 +160,22 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
 
       if (!res.ok) {
         if (data.issues) {
+          // Zod's flatten() gives { key: string[] }; lib/listing-fields.ts's
+          // validateFieldValues gives { fieldKey: string } directly for the
+          // dynamic half — normalized here rather than in two places.
           const fieldErrors: Partial<Record<keyof ProductFormValues, string>> = {};
-          for (const key of Object.keys(data.issues) as (keyof ProductFormValues)[]) {
-            fieldErrors[key] = data.issues[key]?.[0];
+          const dynErrors: Record<string, string> = {};
+          for (const key of Object.keys(data.issues)) {
+            const raw = data.issues[key];
+            const message = Array.isArray(raw) ? raw[0] : raw;
+            if (STATIC_KEYS.has(key)) {
+              (fieldErrors as Record<string, string>)[key] = message;
+            } else {
+              dynErrors[key] = message;
+            }
           }
           setErrors(fieldErrors);
+          setDynamicErrors(dynErrors);
         } else {
           setServerError(data.error ?? 'Something went wrong. Please try again.');
         }
@@ -282,6 +348,28 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
             required
           />
         </Field>
+
+        {selectedSubcategory && selectedSubcategory.fields.length > 0 && (
+          <div className="flex flex-col gap-5 rounded-xl border border-ink-soft/10 bg-ivory-deep/40 p-4">
+            <p className="font-body text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              {selectedSubcategory.name} details
+            </p>
+            {selectedSubcategory.fields.map((field) => (
+              <DynamicFieldInput
+                key={field.id}
+                field={field}
+                value={form.fieldValues?.[field.fieldKey]}
+                onChange={(value) =>
+                  field.fieldType === 'image'
+                    ? updateFieldValueAndSave(field.fieldKey, value)
+                    : updateFieldValue(field.fieldKey, value)
+                }
+                error={dynamicErrors[field.fieldKey]}
+                listingId={form.id}
+              />
+            ))}
+          </div>
+        )}
 
         {needsShipping && (
           <>

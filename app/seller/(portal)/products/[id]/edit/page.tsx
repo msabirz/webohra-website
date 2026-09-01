@@ -25,6 +25,8 @@ export default function EditProductPage() {
         }
         const data = await res.json();
         const l = data.listing;
+        const fieldValues: Record<string, unknown> = {};
+        for (const f of l.fields ?? []) fieldValues[f.fieldKey] = f.value;
         setInitial({
           id: l.id,
           slug: l.slug,
@@ -36,6 +38,7 @@ export default function EditProductPage() {
           shippingEstimateText: l.shippingEstimateText ?? '',
           stockQuantity: l.stockQuantity != null ? String(l.stockQuantity) : '',
           status: l.status,
+          fieldValues,
         });
       })
       .catch(() => setNotFound(true));
