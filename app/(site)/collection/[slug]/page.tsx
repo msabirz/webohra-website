@@ -14,12 +14,16 @@ import { buttonStyles } from '@/lib/button-styles';
 import { ListingDetailSkeleton } from '@/components/skeleton';
 import { authFetch } from '@/lib/session-client';
 import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
+import { VariantMenu, type Variant } from '@/components/variant-menu';
 
 type ListingDetail = {
   id: number;
   title: string;
   description: string;
-  price: string;
+  // null = this listing uses different types (see listings.price's own
+  // comment in db/schema.ts) — buyers pick one from `variants` below via
+  // VariantMenu instead of the single price/buy-box.
+  price: string | null;
   shippingMethod: 'self_managed' | 'delhivery';
   shippingEstimateText: string | null;
   status: string;
@@ -31,6 +35,7 @@ type ListingDetail = {
   jamaatCity: string | null;
   images: { id: number; url: string }[];
   fields: ListingFieldValue[];
+  variants: Variant[];
 };
 
 type FulfillmentChoice = 'delivery' | 'pickup';
@@ -91,6 +96,7 @@ export default function ListingDetailPage() {
 
   const isService = listing.listingType !== 'physical_product';
   const isPreview = listing.status !== 'active';
+  const hasVariants = listing.price === null;
 
   if (isService) {
     return (
@@ -129,9 +135,13 @@ export default function ListingDetailPage() {
             )}
           </div>
 
-          <p className="font-heading text-3xl font-semibold text-navy">
-            ₹{Number(listing.price).toLocaleString('en-IN')}
-          </p>
+          {hasVariants ? (
+            <p className="font-body text-sm text-ink-soft">Pick a type below — each is priced separately.</p>
+          ) : (
+            <p className="font-heading text-3xl font-semibold text-navy">
+              ₹{Number(listing.price).toLocaleString('en-IN')}
+            </p>
+          )}
 
           <p className="whitespace-pre-wrap font-body text-sm leading-relaxed text-ink-soft">
             {listing.description}
@@ -172,42 +182,46 @@ export default function ListingDetailPage() {
           </div>
 
           {choice === 'delivery' ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1 rounded-full border border-ink-soft/20 p-1">
-                  <button
-                    onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-ink-soft transition hover:bg-ivory-deep hover:text-ink"
-                    aria-label="Decrease quantity"
-                  >
-                    <Minus className="h-3.5 w-3.5" strokeWidth={2} />
-                  </button>
-                  <span className="w-6 text-center font-body text-sm font-medium">{quantity}</span>
-                  <button
-                    onClick={() => setQuantity((q) => Math.min(20, q + 1))}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-ink-soft transition hover:bg-ivory-deep hover:text-ink"
-                    aria-label="Increase quantity"
-                  >
-                    <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+            hasVariants ? (
+              <VariantMenu listingId={listing.id} variants={listing.variants} isService={false} />
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1 rounded-full border border-ink-soft/20 p-1">
+                    <button
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-ink-soft transition hover:bg-ivory-deep hover:text-ink"
+                      aria-label="Decrease quantity"
+                    >
+                      <Minus className="h-3.5 w-3.5" strokeWidth={2} />
+                    </button>
+                    <span className="w-6 text-center font-body text-sm font-medium">{quantity}</span>
+                    <button
+                      onClick={() => setQuantity((q) => Math.min(20, q + 1))}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-ink-soft transition hover:bg-ivory-deep hover:text-ink"
+                      aria-label="Increase quantity"
+                    >
+                      <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+                    </button>
+                  </div>
+                  <button onClick={handleAddToCart} className={buttonStyles('accent', 'lg', 'flex-1')}>
+                    {added ? (
+                      <>
+                        <Check className="h-4 w-4" strokeWidth={2.5} />
+                        Added
+                      </>
+                    ) : (
+                      'Add to Cart'
+                    )}
                   </button>
                 </div>
-                <button onClick={handleAddToCart} className={buttonStyles('accent', 'lg', 'flex-1')}>
-                  {added ? (
-                    <>
-                      <Check className="h-4 w-4" strokeWidth={2.5} />
-                      Added
-                    </>
-                  ) : (
-                    'Add to Cart'
-                  )}
-                </button>
+                {added && (
+                  <button onClick={openCart} className="font-body text-xs text-navy underline">
+                    View cart
+                  </button>
+                )}
               </div>
-              {added && (
-                <button onClick={openCart} className="font-body text-xs text-navy underline">
-                  View cart
-                </button>
-              )}
-            </div>
+            )
           ) : (
             <button
               onClick={() => setPickupModalOpen(true)}
@@ -217,7 +231,7 @@ export default function ListingDetailPage() {
             </button>
           )}
 
-          <WhatsAppBuyButton listingId={listing.id} size="lg" label="Buy on WhatsApp" />
+          {!hasVariants && <WhatsAppBuyButton listingId={listing.id} size="lg" label="Buy on WhatsApp" />}
         </div>
       </div>
 

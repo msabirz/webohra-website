@@ -24,7 +24,9 @@ type Product = {
   id: number;
   slug: string;
   title: string;
-  price: string;
+  // null = different types, no single price of its own (see listings.price's
+  // own comment in db/schema.ts).
+  price: string | null;
   status: ProductStatus;
   stockQuantity: number | null;
   categoryName: string;
@@ -65,7 +67,7 @@ function toCsv(rows: Product[]): string {
       p.title,
       p.categoryName,
       p.subcategoryName,
-      p.price,
+      p.price ?? 'Multiple types',
       p.stockQuantity ?? '',
       STATUS_LABEL[p.status],
       new Date(p.createdAt).toISOString().slice(0, 10),
@@ -310,7 +312,9 @@ export default function ProductsPage() {
                     </Link>
                   </td>
                   <td className="px-2 py-3 text-ink-soft">{p.subcategoryName}</td>
-                  <td className="px-2 py-3 text-ink">₹{Number(p.price).toLocaleString('en-IN')}</td>
+                  <td className="px-2 py-3 text-ink">
+                    {p.price !== null ? `₹${Number(p.price).toLocaleString('en-IN')}` : 'Multiple types'}
+                  </td>
                   <td className="px-2 py-3 text-ink-soft">
                     {p.listingType === 'physical_product'
                       ? (p.stockQuantity ?? '—')

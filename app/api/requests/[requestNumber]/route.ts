@@ -27,6 +27,7 @@ export async function GET(
       viewedAt: enquiries.viewedAt,
       respondedAt: enquiries.respondedAt,
       rejectionReason: enquiries.rejectionReason,
+      variantName: enquiries.variantName,
       listingTitle: listings.title,
       listingSlug: listings.slug,
       businessName: sellerProfiles.businessName,

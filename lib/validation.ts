@@ -21,7 +21,7 @@ const phoneField = () =>
     .trim()
     .regex(phoneRegex, 'Enter a valid 10-digit Indian mobile number');
 
-const nameField = (label: string) =>
+export const nameField = (label: string) =>
   z
     .string()
     .trim()
@@ -127,11 +127,21 @@ const fieldValuesField = z.record(z.string(), z.unknown()).optional();
 // to a subcategory-aware check in the route handlers instead — see
 // requireShippingEstimateIfPhysical in app/api/listings/route.ts and
 // app/api/listings/[idOrSlug]/route.ts.
+// Optional, not required: a listing is either simple (price set here) or
+// variant-based (price stays null forever, every real price lives in
+// listing_variants instead — see that table's own comment in db/schema.ts).
+// A brand-new variant-based listing is created bare, price omitted
+// entirely, exactly like today's "save first, then add photos" pattern —
+// variants get added afterward, once the listing has an id. Publishing
+// still requires either a price or at least one variant; see the PATCH
+// status handler in app/api/listings/[idOrSlug]/route.ts for that guard.
+const priceField = () => z.coerce.number().positive('Enter a price greater than 0').optional();
+
 export const listingCreateSchema = z.object({
   subcategoryId: z.number({ message: 'Select a category' }).int().positive(),
   title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
   description: z.string().trim().min(10, 'Description must be at least 10 characters'),
-  price: z.coerce.number({ message: 'Enter a price' }).positive('Enter a price greater than 0'),
+  price: priceField(),
   shippingMethod: z.enum(['self_managed', 'delhivery']),
   shippingEstimateText: z.string().trim().max(200).optional(),
   stockQuantity: stockQuantityField().optional(),
@@ -146,7 +156,7 @@ export const listingUpdateSchema = z.object({
   subcategoryId: z.number({ message: 'Select a category' }).int().positive(),
   title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
   description: z.string().trim().min(10, 'Description must be at least 10 characters'),
-  price: z.coerce.number({ message: 'Enter a price' }).positive('Enter a price greater than 0'),
+  price: priceField(),
   shippingMethod: z.enum(['self_managed', 'delhivery']),
   shippingEstimateText: z.string().trim().max(200).optional(),
   stockQuantity: stockQuantityField().optional(),
@@ -175,8 +185,29 @@ export type BulkListingDeleteInput = z.infer<typeof bulkListingDeleteSchema>;
 
 export const listingImageAttachSchema = z.object({
   url: z.string().trim().url('Not a valid image URL').max(500),
+  // Omitted/undefined = a photo of the listing itself; set = one specific
+  // variant's own photo. Same listing_images table either way.
+  variantId: z.number().int().positive().optional(),
 });
 export type ListingImageAttachInput = z.infer<typeof listingImageAttachSchema>;
+
+export const listingVariantCreateSchema = z.object({
+  name: nameField('Type name'),
+  price: z.coerce.number({ message: 'Enter a price' }).positive('Enter a price greater than 0'),
+  stockQuantity: stockQuantityField().optional(),
+});
+export type ListingVariantCreateInput = z.infer<typeof listingVariantCreateSchema>;
+
+export const listingVariantUpdateSchema = z.object({
+  name: nameField('Type name').optional(),
+  price: z.coerce.number({ message: 'Enter a price' }).positive('Enter a price greater than 0').optional(),
+  stockQuantity: stockQuantityField().optional(),
+});
+export type ListingVariantUpdateInput = z.infer<typeof listingVariantUpdateSchema>;
+
+export const listingVariantReorderSchema = z.object({
+  order: z.array(z.number().int().positive()).min(1, 'Nothing to reorder'),
+});
 
 export const listingImagesReorderSchema = z.object({
   order: z.array(z.number().int().positive()).min(1, 'Nothing to reorder'),
@@ -228,6 +259,10 @@ export const orderCreateSchema = z.object({
       z.object({
         listingId: z.number().int().positive(),
         quantity: z.number().int().min(1).max(20),
+        // Present only for a line that's a specific type of a variant-based
+        // listing — absent/undefined for a simple listing, same as
+        // everywhere else this pairing shows up (cart, order_items).
+        variantId: z.number().int().positive().optional(),
       }),
     )
     .min(1, 'Your cart is empty'),
@@ -466,6 +501,9 @@ export type AdminStaffInviteInput = z.infer<typeof adminStaffInviteSchema>;
 
 export const consultationRequestSchema = z.object({
   listingId: z.number().int().positive(),
+  // Present only when asking about one specific type of a variant-based
+  // service (e.g. Mehndi's "Hands only" vs "Full Bridal" coverage tiers).
+  variantId: z.number().int().positive().optional(),
   buyerName: nameField('Full name'),
   buyerPhone: phoneField(),
   message: z.string().trim().max(500).optional(),

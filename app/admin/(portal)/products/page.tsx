@@ -13,7 +13,8 @@ type AdminListing = {
   id: number;
   slug: string;
   title: string;
-  price: string;
+  // null = different types, no single price of its own.
+  price: string | null;
   status: Status;
   moderationNote: string | null;
   stockQuantity: number | null;
@@ -142,8 +143,8 @@ function ProductsView() {
                 <div className="min-w-0">
                   <p className="truncate font-body text-sm font-semibold text-ink">{l.title}</p>
                   <p className="truncate font-body text-xs text-ink-soft">
-                    {l.businessName ?? 'Unknown seller'} · {l.categoryName} · ₹
-                    {Number(l.price).toLocaleString('en-IN')}
+                    {l.businessName ?? 'Unknown seller'} · {l.categoryName} ·{' '}
+                    {l.price !== null ? `₹${Number(l.price).toLocaleString('en-IN')}` : 'Multiple types'}
                     {!l.sellerItsVerified && ' · seller unverified'}
                   </p>
                   {l.moderationNote && (

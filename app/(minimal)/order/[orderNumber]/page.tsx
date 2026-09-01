@@ -13,6 +13,10 @@ type OrderItem = {
   title: string;
   subcategoryName: string;
   businessName: string | null;
+  // Set when this line was a specific type of a variant-based listing —
+  // frozen at order time, same as unitPrice, so it reads correctly even if
+  // the type is later renamed or removed.
+  variantName: string | null;
   quantity: number;
   unitPrice: string;
   status: OrderItemStatus;
@@ -200,7 +204,8 @@ export default function OrderConfirmationPage() {
             <li key={item.id} className="flex items-center justify-between gap-3">
               <div>
                 <p className="font-body text-sm font-medium text-ink">
-                  {item.title} × {item.quantity}
+                  {item.title}
+                  {item.variantName && ` — ${item.variantName}`} × {item.quantity}
                 </p>
                 <p className="font-body text-xs text-ink-soft">
                   {item.businessName} · {item.subcategoryName}

@@ -37,6 +37,7 @@ export async function GET(
       unitPrice: orderItems.unitPrice,
       title: listings.title,
       subcategoryName: subcategories.name,
+      variantName: orderItems.variantName,
       status: orderItems.status,
       statusUpdatedAt: orderItems.statusUpdatedAt,
     })

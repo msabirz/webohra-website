@@ -8,13 +8,9 @@ import { useCart } from '@/components/cart-context';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { PhoneInput } from '@/components/phone-input';
 import { authFetch } from '@/lib/session-client';
+import { resolveCartLine, type CartListingSnapshot } from '@/lib/cart-line';
 
-type ListingSnapshot = {
-  id: number;
-  title: string;
-  price: string;
-  businessName: string | null;
-};
+type ListingSnapshot = CartListingSnapshot;
 
 type FormState = {
   buyerName: string;
@@ -74,8 +70,8 @@ export default function CheckoutPage() {
   }, [items, listings]);
 
   const subtotal = items.reduce((sum, item) => {
-    const listing = listings[item.listingId];
-    return listing ? sum + Number(listing.price) * item.quantity : sum;
+    const { price } = resolveCartLine(listings[item.listingId], item);
+    return price !== null ? sum + price * item.quantity : sum;
   }, 0);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -94,7 +90,19 @@ export default function CheckoutPage() {
       const res = await authFetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, paymentMethod: 'cod', items }),
+        body: JSON.stringify({
+          ...form,
+          paymentMethod: 'cod',
+          // The cart stores variantId: null for a simple listing (see
+          // CartItem's own comment) but the API's schema only accepts a
+          // real number or an omitted key, not literal null — dropped here
+          // rather than loosening the schema just for this one caller.
+          items: items.map((i) => ({
+            listingId: i.listingId,
+            quantity: i.quantity,
+            ...(i.variantId !== null && { variantId: i.variantId }),
+          })),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -240,17 +248,19 @@ export default function CheckoutPage() {
             <ul className="flex flex-col gap-2">
               {sellerItems.map((item) => {
                 const listing = listings[item.listingId];
+                const { price, variantName } = resolveCartLine(listing, item);
                 return (
                   <li
-                    key={item.listingId}
+                    key={`${item.listingId}-${item.variantId ?? 'simple'}`}
                     className="flex items-center justify-between gap-2 text-sm"
                   >
                     <p className="font-body text-ink">
-                      {listing?.title ?? `Collection #${item.listingId}`} × {item.quantity}
+                      {listing?.title ?? `Collection #${item.listingId}`}
+                      {variantName && ` — ${variantName}`} × {item.quantity}
                     </p>
-                    {listing && (
+                    {price !== null && (
                       <p className="font-body font-medium text-ink">
-                        ₹{(Number(listing.price) * item.quantity).toLocaleString('en-IN')}
+                        ₹{(price * item.quantity).toLocaleString('en-IN')}
                       </p>
                     )}
                   </li>

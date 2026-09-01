@@ -25,6 +25,7 @@ type RequestDetail = {
   viewedAt: string | null;
   respondedAt: string | null;
   rejectionReason: string | null;
+  variantName: string | null;
   listingTitle: string;
   listingSlug: string;
   businessName: string | null;
@@ -152,7 +153,10 @@ export default function RequestTrackingPage() {
           <Package className="h-4 w-4 text-ink-soft" strokeWidth={2} />
           Consultation
         </h2>
-        <p className="font-body text-sm text-ink">{req.listingTitle}</p>
+        <p className="font-body text-sm text-ink">
+          {req.listingTitle}
+          {req.variantName && ` — ${req.variantName}`}
+        </p>
         {req.businessName && <p className="font-body text-xs text-ink-soft">by {req.businessName}</p>}
         {req.message && (
           <p className="mt-2 rounded-lg bg-ivory-deep px-3 py-2 font-body text-xs text-ink-soft">

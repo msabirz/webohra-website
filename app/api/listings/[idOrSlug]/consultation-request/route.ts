@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { listings, enquiries, users } from '@/db/schema';
+import { listings, enquiries, users, listingVariants } from '@/db/schema';
 import { consultationRequestSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { generateRequestNumber } from '@/lib/ids';
@@ -42,6 +42,28 @@ export async function POST(
     return NextResponse.json({ error: 'Listing is no longer available' }, { status: 409 });
   }
 
+  // Same either/or as checkout: a variant-based listing needs a real
+  // variant picked (never a bare "consultation about nothing specific"),
+  // and a simple listing never carries one.
+  let variantId: number | null = null;
+  let variantName: string | null = null;
+  if (parsed.data.variantId !== undefined) {
+    const [variant] = await db
+      .select()
+      .from(listingVariants)
+      .where(eq(listingVariants.id, parsed.data.variantId));
+    if (!variant || variant.listingId !== listing.id) {
+      return NextResponse.json({ error: 'That type is no longer available' }, { status: 409 });
+    }
+    variantId = variant.id;
+    variantName = variant.name;
+  } else if (listing.price === null) {
+    return NextResponse.json(
+      { error: 'This listing has different types — pick one before requesting a consultation' },
+      { status: 409 },
+    );
+  }
+
   const session = await getSessionFromRequest(request);
   let buyerId: number | null = null;
   if (session) {
@@ -60,6 +82,8 @@ export async function POST(
       message: parsed.data.message || null,
       sellerId: listing.sellerId,
       listingId: listing.id,
+      variantId,
+      variantName,
       status: 'initiated',
     })
     .returning();

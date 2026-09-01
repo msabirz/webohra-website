@@ -34,6 +34,7 @@ export async function GET(
       title: listings.title,
       subcategoryName: subcategories.name,
       businessName: sellerProfiles.businessName,
+      variantName: orderItems.variantName,
       status: orderItems.status,
       statusUpdatedAt: orderItems.statusUpdatedAt,
     })

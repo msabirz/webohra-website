@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, desc, asc, eq, gte, ilike, inArray, lte } from 'drizzle-orm';
+import { and, desc, asc, eq, gte, ilike, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '@/db/index';
 import {
   listings,
@@ -9,6 +9,7 @@ import {
   sellerProfiles,
   jamaats,
   listingImages,
+  listingVariants,
 } from '@/db/schema';
 import { listingCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
@@ -44,22 +45,36 @@ export async function GET(request: Request) {
   const maxPrice = url.searchParams.get('maxPrice');
   const type = url.searchParams.get('type');
 
+  // A variant-based listing (price null) has no single price to sort/filter
+  // on — it's ranked and range-matched by its cheapest type instead, same
+  // number the card itself shows ("From ₹X"), so what a buyer filters by
+  // and what she sees always agree.
+  const variantMinPrice = db
+    .select({
+      listingId: listingVariants.listingId,
+      minPrice: sql<string>`min(${listingVariants.price})`.as('min_price'),
+    })
+    .from(listingVariants)
+    .groupBy(listingVariants.listingId)
+    .as('variant_min_price');
+  const displayPrice = sql<string>`coalesce(${listings.price}, ${variantMinPrice.minPrice})`;
+
   const conditions = [eq(listings.status, 'active')];
   if (subcategorySlug) conditions.push(eq(subcategories.slug, subcategorySlug));
   if (categorySlug) conditions.push(eq(categories.slug, categorySlug));
   if (q) conditions.push(ilike(listings.title, `%${q}%`));
   if (nearCity) conditions.push(ilike(jamaats.city, nearCity));
-  if (minPrice && !Number.isNaN(Number(minPrice))) conditions.push(gte(listings.price, minPrice));
-  if (maxPrice && !Number.isNaN(Number(maxPrice))) conditions.push(lte(listings.price, maxPrice));
+  if (minPrice && !Number.isNaN(Number(minPrice))) conditions.push(gte(displayPrice, minPrice));
+  if (maxPrice && !Number.isNaN(Number(maxPrice))) conditions.push(lte(displayPrice, maxPrice));
   if (type === 'physical_product' || type === 'local_service' || type === 'remote_service') {
     conditions.push(eq(subcategories.listingType, type));
   }
 
   const orderBy =
     sort === 'price_asc'
-      ? asc(listings.price)
+      ? asc(displayPrice)
       : sort === 'price_desc'
-        ? desc(listings.price)
+        ? desc(displayPrice)
         : desc(listings.createdAt);
 
   const rows = await db
@@ -68,6 +83,7 @@ export async function GET(request: Request) {
       slug: listings.slug,
       title: listings.title,
       price: listings.price,
+      displayPrice,
       shippingMethod: listings.shippingMethod,
       createdAt: listings.createdAt,
       subcategoryId: subcategories.id,
@@ -86,26 +102,41 @@ export async function GET(request: Request) {
     .innerJoin(users, eq(listings.sellerId, users.id))
     .leftJoin(sellerProfiles, eq(sellerProfiles.userId, users.id))
     .leftJoin(jamaats, eq(sellerProfiles.jamaatId, jamaats.id))
+    .leftJoin(variantMinPrice, eq(variantMinPrice.listingId, listings.id))
     .where(and(...conditions))
     .orderBy(orderBy)
     .limit(limit)
     .offset(offset);
 
   const listingIds = rows.map((row) => row.id);
+  const variantBasedIds = rows.filter((row) => row.price === null).map((row) => row.id);
+
   const covers = listingIds.length
     ? await db
         .select({ listingId: listingImages.listingId, url: listingImages.url })
         .from(listingImages)
-        .where(inArray(listingImages.listingId, listingIds))
+        .where(and(inArray(listingImages.listingId, listingIds), isNull(listingImages.variantId)))
         .orderBy(asc(listingImages.sortOrder))
     : [];
+  // A variant-based listing has no general photos of its own — they all
+  // live on its types instead — so its card falls back to the first type's
+  // own photos, in type order then that type's own photo order.
+  const variantCovers = variantBasedIds.length
+    ? await db
+        .select({ listingId: listingVariants.listingId, url: listingImages.url })
+        .from(listingImages)
+        .innerJoin(listingVariants, eq(listingImages.variantId, listingVariants.id))
+        .where(inArray(listingVariants.listingId, variantBasedIds))
+        .orderBy(asc(listingVariants.sortOrder), asc(listingImages.sortOrder))
+    : [];
+
   // ListingCard's mini-slider only ever needs a few photos to page through,
   // not every one a seller uploaded — capped so a full page of 60 listings
   // can't balloon the response size for photos nobody will scroll to.
   const MAX_CARD_IMAGES = 5;
   const coverByListingId = new Map<number, string>();
   const imagesByListingId = new Map<number, string[]>();
-  for (const img of covers) {
+  for (const img of [...covers, ...variantCovers]) {
     if (!coverByListingId.has(img.listingId)) coverByListingId.set(img.listingId, img.url);
     const existing = imagesByListingId.get(img.listingId);
     if (existing) {
@@ -173,7 +204,9 @@ export async function POST(request: Request) {
       subcategoryId,
       title,
       description,
-      price: price.toFixed(2),
+      // undefined here means "variant-based, no single price" — see
+      // priceField's comment in lib/validation.ts.
+      price: price !== undefined ? price.toFixed(2) : null,
       shippingMethod,
       shippingEstimateText: shippingMethod === 'self_managed' ? shippingEstimateText : null,
       stockQuantity: stockQuantity ?? null,

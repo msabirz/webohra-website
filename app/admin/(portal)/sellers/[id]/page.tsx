@@ -26,7 +26,8 @@ type SellerDetail = {
 type SellerListing = {
   id: number;
   title: string;
-  price: string;
+  // null = different types, no single price of its own.
+  price: string | null;
   status: string;
   subcategoryName: string;
   createdAt: string;
@@ -166,7 +167,7 @@ export default function AdminSellerDetailPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-body text-sm font-medium text-navy">
-                    ₹{Number(l.price).toLocaleString('en-IN')}
+                    {l.price !== null ? `₹${Number(l.price).toLocaleString('en-IN')}` : 'Multiple types'}
                   </span>
                   <span className="rounded-full bg-ink-soft/10 px-2.5 py-1 font-body text-xs text-ink-soft">
                     {l.status}

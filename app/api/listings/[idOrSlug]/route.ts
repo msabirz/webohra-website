@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   listings,
   subcategories,
@@ -8,6 +8,7 @@ import {
   sellerProfiles,
   jamaats,
   listingImages,
+  listingVariants,
 } from '@/db/schema';
 import { db } from '@/db/index';
 import { listingStatusUpdateSchema, listingUpdateSchema } from '@/lib/validation';
@@ -89,11 +90,50 @@ export async function GET(
     }
   }
 
+  // Scoped to the listing's own general photos — a variant-based listing's
+  // real photos live on its variants instead (see variants below), and
+  // without this filter they'd end up double-counted here too.
   const images = await db
     .select({ id: listingImages.id, url: listingImages.url })
     .from(listingImages)
-    .where(eq(listingImages.listingId, row.id))
+    .where(and(eq(listingImages.listingId, row.id), isNull(listingImages.variantId)))
     .orderBy(asc(listingImages.sortOrder));
+
+  // Only a variant-based listing (price null) has any — cheap to always
+  // query, but only worth shipping to the client when it's not simple.
+  let variants: Array<{
+    id: number;
+    name: string;
+    price: string;
+    stockQuantity: number | null;
+    images: { id: number; url: string }[];
+  }> = [];
+  if (row.price === null) {
+    const variantRows = await db
+      .select()
+      .from(listingVariants)
+      .where(eq(listingVariants.listingId, row.id))
+      .orderBy(asc(listingVariants.sortOrder));
+
+    const variantIds = variantRows.map((v) => v.id);
+    const variantImageRows = variantIds.length
+      ? await db
+          .select({ id: listingImages.id, url: listingImages.url, variantId: listingImages.variantId })
+          .from(listingImages)
+          .where(inArray(listingImages.variantId, variantIds))
+          .orderBy(asc(listingImages.sortOrder))
+      : [];
+
+    variants = variantRows.map((v) => ({
+      id: v.id,
+      name: v.name,
+      price: v.price,
+      stockQuantity: v.stockQuantity,
+      images: variantImageRows
+        .filter((img) => img.variantId === v.id)
+        .map((img) => ({ id: img.id, url: img.url })),
+    }));
+  }
 
   const fields = await getListingFieldValues(row.id);
 
@@ -102,7 +142,7 @@ export async function GET(
   // as browsable listing data.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { sellerPhone: _sellerPhone, ...publicListing } = row;
-  return NextResponse.json({ listing: { ...publicListing, images, fields } });
+  return NextResponse.json({ listing: { ...publicListing, images, variants, fields } });
 }
 
 /**
@@ -150,6 +190,25 @@ export async function PATCH(
         { error: 'Your ITS ID needs to be verified by Admin before you can publish listings' },
         { status: 403 },
       );
+    }
+
+    // Different-types listings publish once they have at least one type —
+    // an empty menu would show a real buyer a page with nothing to pick
+    // from or buy, which is worse than just staying a draft a little longer.
+    if (listing.price === null) {
+      const [{ count }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(listingVariants)
+        .where(eq(listingVariants.listingId, listing.id));
+      if (count === 0) {
+        return NextResponse.json(
+          {
+            error:
+              'Add at least one type before publishing — buyers need something to pick from. You can keep managing types from the Products page in the meantime.',
+          },
+          { status: 400 },
+        );
+      }
     }
   }
 
@@ -214,7 +273,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
       subcategoryId,
       title,
       description,
-      price: price.toFixed(2),
+      // undefined here means "variant-based, no single price" — the seller
+      // form always sends a real price for a simple listing, so this only
+      // ever nulls it out when she's genuinely using variants instead. See
+      // priceField's comment in lib/validation.ts.
+      price: price !== undefined ? price.toFixed(2) : null,
       shippingMethod,
       shippingEstimateText: shippingMethod === 'self_managed' ? shippingEstimateText : null,
       stockQuantity: stockQuantity ?? null,

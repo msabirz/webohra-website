@@ -12,6 +12,7 @@ type Enquiry = {
   status: 'initiated' | 'viewed' | 'accepted' | 'rejected' | 'completed' | 'auto_closed_no_update';
   createdAt: string;
   listingTitle: string;
+  variantName: string | null;
   businessName: string | null;
   buyerName: string | null;
   buyerPhone: string;
@@ -127,7 +128,9 @@ export default function AdminEnquiriesPage() {
             <div key={e.id} className="flex flex-col gap-2 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-body text-sm font-semibold text-ink">
-                  {e.listingTitle} <span className="font-normal text-ink-soft">· #{e.requestNumber}</span>
+                  {e.listingTitle}
+                  {e.variantName && ` — ${e.variantName}`}{' '}
+                  <span className="font-normal text-ink-soft">· #{e.requestNumber}</span>
                 </p>
                 <p className="font-body text-xs text-ink-soft">
                   {e.buyerName ?? e.buyerPhone} → {e.businessName ?? 'Unknown seller'} ·{' '}

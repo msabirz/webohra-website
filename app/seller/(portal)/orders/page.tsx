@@ -28,6 +28,7 @@ type OrderDetailItem = {
   unitPrice: string;
   title: string;
   subcategoryName: string;
+  variantName: string | null;
   status: OrderItemStatus;
   statusUpdatedAt: string | null;
 };
@@ -192,7 +193,8 @@ function OrderDetailModal({
                 <div className="flex items-center justify-between font-body text-sm">
                   <div>
                     <p className="text-ink">
-                      {item.title} × {item.quantity}
+                      {item.title}
+                      {item.variantName && ` — ${item.variantName}`} × {item.quantity}
                     </p>
                     <p className="text-xs text-ink-soft">{item.subcategoryName}</p>
                   </div>
