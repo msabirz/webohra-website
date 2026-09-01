@@ -1,3 +1,6 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Package, FileText } from 'lucide-react';
 import { categoryColor } from '@/lib/category-color';
@@ -16,10 +19,60 @@ export type ListingCardData = {
   subcategoryName: string;
   businessName: string | null;
   coverImageUrl?: string | null;
+  /** Up to a handful of the listing's own photos (see /api/listings), in
+   *  the seller's own sort order — powers the tap-through dots below. Falls
+   *  back to just `coverImageUrl` when a caller hasn't supplied this. */
+  imageUrls?: string[];
 };
 
+const AUTO_CYCLE_MS = 2800;
+
 export function ListingCard({ listing }: { listing: ListingCardData }) {
+  const [activeImage, setActiveImage] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isService = listing.listingType !== 'physical_product';
+  const images = listing.imageUrls?.length
+    ? listing.imageUrls
+    : listing.coverImageUrl
+      ? [listing.coverImageUrl]
+      : [];
+  const imageCount = images.length;
+
+  function stopCycle() {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }
+
+  function startCycle() {
+    stopCycle();
+    if (imageCount < 2) return;
+    intervalRef.current = setInterval(() => {
+      setActiveImage((prev) => (prev + 1) % imageCount);
+    }, AUTO_CYCLE_MS);
+  }
+
+  useEffect(() => {
+    startCycle();
+    return stopCycle;
+    // Re-run only when the photo count actually changes — imageCount is
+    // derived fresh each render, but its value is what matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageCount]);
+
+  function jumpTo(event: React.MouseEvent, index: number) {
+    // Dots sit inside the card's own full-bleed Link (see WhatsAppBuyButton/
+    // ConsultationRequestButton below for the same pattern) — without this,
+    // tapping a dot would also navigate to the PDP instead of just paging
+    // the preview.
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveImage(index);
+    // A manual pick restarts the auto-cycle from here, rather than letting
+    // whatever tick was already in flight immediately override her choice.
+    startCycle();
+  }
 
   return (
     <Link
@@ -30,12 +83,14 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
        *  it should carry most of the card's visual weight, with the text
        *  block beneath kept compact rather than competing for attention. */}
       <div
-        className="aspect-[4/5] overflow-hidden transition-transform duration-300 group-hover:scale-[1.03]"
-        style={!listing.coverImageUrl ? { backgroundColor: `${categoryColor(listing.categorySlug)}2e` } : undefined}
+        className="relative aspect-[4/5] overflow-hidden transition-transform duration-300 group-hover:scale-[1.03]"
+        style={images.length === 0 ? { backgroundColor: `${categoryColor(listing.categorySlug)}2e` } : undefined}
+        onMouseEnter={stopCycle}
+        onMouseLeave={startCycle}
       >
-        {listing.coverImageUrl ? (
+        {images.length > 0 ? (
           // eslint-disable-next-line @next/next/no-img-element -- seller-uploaded R2 URL, host not known at build time
-          <img src={listing.coverImageUrl} alt="" className="h-full w-full object-cover" />
+          <img src={images[activeImage]} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center" aria-hidden>
             {isService ? (
@@ -44,6 +99,28 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
               <Package className="h-14 w-14 text-ink/25" strokeWidth={1.5} />
             )}
           </div>
+        )}
+
+        {images.length > 1 && (
+          <>
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-ink/35 to-transparent"
+              aria-hidden
+            />
+            <div className="absolute inset-x-0 bottom-2 flex items-center justify-center gap-1">
+              {images.map((_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={(e) => jumpTo(e, index)}
+                  aria-label={`Show photo ${index + 1} of ${images.length}`}
+                  className={`h-1.5 rounded-full transition-all ${
+                    index === activeImage ? 'w-4 bg-white' : 'w-1.5 bg-white/60'
+                  }`}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
       <div className="flex flex-1 flex-col gap-0.5 p-4">

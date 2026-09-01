@@ -98,13 +98,28 @@ export async function GET(request: Request) {
         .where(inArray(listingImages.listingId, listingIds))
         .orderBy(asc(listingImages.sortOrder))
     : [];
+  // ListingCard's mini-slider only ever needs a few photos to page through,
+  // not every one a seller uploaded — capped so a full page of 60 listings
+  // can't balloon the response size for photos nobody will scroll to.
+  const MAX_CARD_IMAGES = 5;
   const coverByListingId = new Map<number, string>();
-  for (const cover of covers) {
-    if (!coverByListingId.has(cover.listingId)) coverByListingId.set(cover.listingId, cover.url);
+  const imagesByListingId = new Map<number, string[]>();
+  for (const img of covers) {
+    if (!coverByListingId.has(img.listingId)) coverByListingId.set(img.listingId, img.url);
+    const existing = imagesByListingId.get(img.listingId);
+    if (existing) {
+      if (existing.length < MAX_CARD_IMAGES) existing.push(img.url);
+    } else {
+      imagesByListingId.set(img.listingId, [img.url]);
+    }
   }
 
   return NextResponse.json({
-    listings: rows.map((row) => ({ ...row, coverImageUrl: coverByListingId.get(row.id) ?? null })),
+    listings: rows.map((row) => ({
+      ...row,
+      coverImageUrl: coverByListingId.get(row.id) ?? null,
+      imageUrls: imagesByListingId.get(row.id) ?? [],
+    })),
   });
 }
 
