@@ -200,13 +200,30 @@ Two distinct mechanisms — they are not interchangeable, and the UI must label 
 
 ---
 
+### 3.9 Listing Variants — Multiple Priced Options Within One Listing (designed, not yet built)
+**This section exists because Phase 1's data model assumes one listing = one price — a real gap surfaced by an actual seller category: food.** A seller selling "Roti" doesn't sell one thing at one price; she sells several named options (Manda, Chapati, Butter Naan), each priced differently, and the same pattern applies to services sold in tiers or packages. Designed here as a planned addition, kept as its own build (its own branch, reviewed separately) rather than folded silently into the Phase 1 baseline described above.
+
+- FR-49: A listing may optionally have multiple **variants** — named, independently priced sub-options (e.g., "Manda ₹40," "Chapati ₹35," "Butter Naan ₹60") — instead of a single listing-level price. Applies to both `physical_product` and service (`local_service`/`remote_service`) listings.
+- FR-50: **A listing is either simple (one price, exactly as everywhere else in this document) or variant-based — never both at once.** A variant-based listing's own price/stock fields are not independently purchasable; only its variants are. This mirrors how Amazon, Flipkart, and Shopify all model the same idea — a "parent" listing is never itself a buyable unit sitting alongside its own children.
+- FR-51: **Seller-facing creation is a single upfront branching question**, asked before price is entered: *"Do you sell just one type, or a few different types at different prices?"* Answering "just one type" continues exactly as the existing single-price flow (FR-8) with zero added friction or new fields. Answering "different types" replaces the single price field with a repeating name + price (+ optional stock) entry, and photos are then uploaded per named type rather than once for the whole listing — so a photo is never mismatched to the wrong type.
+- FR-52: **Converting an existing simple listing to variants later** (a seller who starts simple and only afterward wants to add a second type) carries her existing price and photos forward as the first variant, prompting her only to name it — it does not create a separate, still-independently-priced "base" listing sitting alongside the new variant. Existing order/enquiry history from before the conversion is unaffected, since price is already snapshotted per order/enquiry at the time it was created (Section 4), not read live off the listing.
+- FR-53: Buyer-facing display for a variant-based listing is a **menu-style list** — each variant shown as its own card (name, price, photo, its own Add to Cart / Take Consultation action) — not a single-select "pick one, then buy" picker, since a buyer may reasonably want more than one variant in the same order (e.g., 2 Manda + 1 Butter Naan).
+- FR-54: A variant-based listing's price on listing cards, search results, and price-range filtering is represented by its **lowest-priced variant** ("From ₹35"), not a separate parent price.
+
+**Vocabulary note, worth stating explicitly given who's actually filling this form in**: seller-facing UI uses the word **"type,"** never "variant" — the latter is e-commerce jargon most sellers on this platform (first-time online sellers, frequently without an e-commerce background) wouldn't use to describe their own catalogue. "Variant" stays a term used only in this document and in code, never in anything a seller reads.
+
+**Build status**: designed in full — data model, seller-facing flow, and buyer-facing flow all worked through — but not yet implemented. Planned for its own branch, separate from the Phase 1 baseline this document otherwise describes, given its size: new tables, seller-portal UI, both PDP and SDP buyer views, cart/checkout, and enquiry plumbing all need changes.
+
+---
+
 ## 4. Data Requirements (core entities)
 
 - `users` — role, ITS ID (sellers), registration status, phone-verified timestamp (buyers, at registration per FR-30), location
 - `listing_pins` — guest or registered buyer (session or account), listing, timestamp — the lightweight interest-expression record (FR-5b), entirely separate from seller contact
 - `seller_profiles` — linked to verified user
 - `categories` / `category_fields` — admin-configurable schema per category, including default `listing_type`
-- `listings` — category, `listing_type` (`physical_product` / `local_service` / `remote_service`), dynamic field values, media, shipping option, delivery estimate (self-declared text, or Delhivery-computed), location
+- `listings` — category, `listing_type` (`physical_product` / `local_service` / `remote_service`), dynamic field values, media, shipping option, delivery estimate (self-declared text, or Delhivery-computed), location. Price/stock/media are only meaningful when the listing has no variants (Section 3.9) — a variant-based listing's own price/stock go unused.
+- `listing_variants` *(designed, not yet built — Section 3.9)* — belongs to a listing, own name/price/stock/media, sort order. Order and enquiry records reference the specific variant purchased/asked about, alongside the listing itself, with its own price snapshotted at that time.
 - `media` — R2-backed, presigned upload URLs
 - `shipping_options` — self-managed (with seller-declared estimate) vs. Delhivery-managed (with API-computed estimate), per listing/seller
 - `order_stages` — tracks progress for `physical_product` listings only (Delivery); `local_service` and `remote_service` listings have no intermediate stage
