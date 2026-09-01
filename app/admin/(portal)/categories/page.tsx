@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { FolderTree, Plus, X } from 'lucide-react';
+import Link from 'next/link';
+import { FolderTree, Plus, X, ListTree } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton } from '@/components/skeleton';
@@ -122,12 +123,19 @@ export default function AdminCategoriesPage() {
                       <p className="font-body text-sm text-ink">{sub.name}</p>
                       <p className="font-body text-xs text-ink-soft">{TYPE_LABEL[sub.listingType]}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
                       {!sub.active && (
                         <span className="rounded-full bg-ink-soft/10 px-2 py-0.5 font-body text-[11px] text-ink-soft">
                           Inactive
                         </span>
                       )}
+                      <Link
+                        href={`/admin/categories/${sub.id}/fields`}
+                        className="flex items-center gap-1 font-body text-xs font-medium text-navy hover:underline"
+                      >
+                        <ListTree className="h-3.5 w-3.5" strokeWidth={2} />
+                        Fields
+                      </Link>
                       <button
                         onClick={() => toggleSubcategoryActive(sub)}
                         className="font-body text-xs font-medium text-navy hover:underline"

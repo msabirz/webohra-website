@@ -1,25 +1,26 @@
 import { eq } from 'drizzle-orm';
 import { db } from './index';
+import { slugifyTitle } from '../lib/ids';
 import {
   categories,
   subcategories,
+  subcategoryFields,
   jamaats,
   users,
   sellerProfiles,
   listings,
   banners,
 } from './schema';
-import { slugifyTitle } from '../lib/ids';
 
 /**
- * Seed data for 4 of the 5 Phase-1 categories: Food, Textile, Beauty &
- * Occasion, and IT & Services, each with 2 subcategories. Mehndi and Makeup
- * are the two local_service subcategories called out in the original spec
- * (they live under Beauty & Occasion); IT & Services' two are remote_service
- * (delivered online, not shipped or visited in person); everything else here
- * is physical_product.
- *
- * Art & Craft is intentionally left for a later pass.
+ * Seed data for all 5 Phase-1 categories. Mehndi and Makeup are the two
+ * local_service subcategories called out in the original spec (they live
+ * under Beauty & Occasion, alongside Imitation Jewellery — the one
+ * physical_product subcategory named in SRS §3.6's flow table but never
+ * actually seeded until now); IT & Services' two are remote_service
+ * (delivered online, not shipped or visited in person); everything else
+ * here is physical_product. Art & Craft's four subcategories were the
+ * "left for a later pass" — that pass is this one.
  */
 const CATEGORY_SEED: Array<{
   name: string;
@@ -52,6 +53,7 @@ const CATEGORY_SEED: Array<{
     subcategories: [
       { name: 'Mehndi', slug: 'mehndi', listingType: 'local_service' },
       { name: 'Makeup', slug: 'makeup', listingType: 'local_service' },
+      { name: 'Imitation Jewellery', slug: 'imitation-jewellery', listingType: 'physical_product' },
     ],
   },
   {
@@ -62,7 +64,126 @@ const CATEGORY_SEED: Array<{
       { name: 'Graphic Design', slug: 'graphic-design', listingType: 'remote_service' },
     ],
   },
+  {
+    name: 'Art & Craft',
+    slug: 'art-craft',
+    subcategories: [
+      { name: 'Handicrafts', slug: 'handicrafts', listingType: 'physical_product' },
+      { name: 'Home Decor', slug: 'home-decor', listingType: 'physical_product' },
+      { name: 'Paintings & Art', slug: 'paintings-art', listingType: 'physical_product' },
+      { name: 'Personalized/Gift Items', slug: 'personalized-gift-items', listingType: 'physical_product' },
+    ],
+  },
 ];
+
+/**
+ * FR-17's admin-configurable field schema, seeded per subcategory — the
+ * actual field spec worked out category by category with the project
+ * owner (see docs/WE_Bohra_SRS_Phase1.md §3.9's sibling, this is the
+ * concrete version of that design). Keyed by subcategory slug so it can
+ * reuse subcategoryIdBySlug from the loop above; `required: false` is the
+ * default so it can be omitted below when a field is optional.
+ */
+const FIELD_SEED: Record<
+  string,
+  Array<{
+    label: string;
+    fieldType: 'text' | 'number' | 'select' | 'multi_select' | 'boolean' | 'textarea' | 'image';
+    required?: boolean;
+    options?: string[];
+  }>
+> = {
+  'baked-goods': [
+    { label: 'Ingredients', fieldType: 'textarea', required: true },
+    { label: 'Veg / Non-veg / Egg', fieldType: 'select', required: true, options: ['Veg', 'Non-veg', 'Contains egg'] },
+    { label: 'Shelf life', fieldType: 'text', required: true },
+  ],
+  'snacks-preserves': [
+    { label: 'Ingredients', fieldType: 'textarea', required: true },
+    { label: 'Veg / Non-veg / Egg', fieldType: 'select', required: true, options: ['Veg', 'Non-veg', 'Contains egg'] },
+    { label: 'Shelf life', fieldType: 'text', required: true },
+  ],
+  apparel: [
+    { label: 'Size', fieldType: 'select', required: true, options: ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'Free Size'] },
+    { label: 'Fabric/Material', fieldType: 'text', required: true },
+    { label: 'Color', fieldType: 'text', required: true },
+    {
+      label: 'Embroidery/Work type',
+      fieldType: 'select',
+      required: true,
+      options: ['Hand embroidery', 'Zari', 'Mirror work', 'Machine embroidery', 'Plain/None'],
+    },
+    { label: 'Swatch/close-up photo', fieldType: 'image' },
+    { label: 'Care instructions', fieldType: 'textarea' },
+  ],
+  'home-textiles': [
+    { label: 'Dimensions', fieldType: 'text', required: true },
+    { label: 'Fabric/Material', fieldType: 'text', required: true },
+    { label: 'Set contents', fieldType: 'text' },
+  ],
+  mehndi: [
+    { label: 'Style', fieldType: 'select', required: true, options: ['Arabic', 'Indian/Traditional', 'Bridal', 'Minimalist'] },
+    {
+      label: 'Coverage area',
+      fieldType: 'select',
+      options: ['Hands only', 'Hands + Feet', 'Full Bridal (arms + legs)'],
+    },
+  ],
+  makeup: [
+    { label: 'Products used', fieldType: 'select', options: ['HD/Airbrush', 'Regular'] },
+    { label: 'Trial available', fieldType: 'boolean' },
+  ],
+  'imitation-jewellery': [
+    {
+      label: 'Material',
+      fieldType: 'select',
+      required: true,
+      options: ['Kundan', 'Pearl', 'Oxidized silver-tone', 'Stone-studded', 'American Diamond'],
+    },
+    { label: 'Type', fieldType: 'select', required: true, options: ['Earrings', 'Necklace set', 'Bangles', 'Ring', 'Full set'] },
+    { label: 'Occasion', fieldType: 'select', options: ['Bridal', 'Party', 'Daily wear'] },
+  ],
+  'web-development': [
+    {
+      label: 'Deliverable type',
+      fieldType: 'select',
+      required: true,
+      options: ['Landing page', 'Full website', 'E-commerce site', 'Web app'],
+    },
+    { label: 'Revisions included', fieldType: 'text' },
+    { label: 'Tech stack', fieldType: 'text' },
+  ],
+  'graphic-design': [
+    {
+      label: 'Deliverable type',
+      fieldType: 'select',
+      required: true,
+      options: ['Logo', 'Social media kit', 'Brochure/Flyer', 'Full brand identity'],
+    },
+    { label: 'File formats delivered', fieldType: 'multi_select', options: ['PNG', 'SVG', 'AI', 'PDF'] },
+    { label: 'Revisions included', fieldType: 'text' },
+  ],
+  handicrafts: [
+    { label: 'Material used', fieldType: 'text', required: true },
+    { label: 'Craft technique', fieldType: 'text' },
+    { label: 'Customizable', fieldType: 'boolean' },
+  ],
+  'home-decor': [
+    { label: 'Dimensions', fieldType: 'text', required: true },
+    { label: 'Material', fieldType: 'text', required: true },
+    { label: 'Placement', fieldType: 'select', options: ['Wall', 'Tabletop', 'Floor'] },
+  ],
+  'paintings-art': [
+    { label: 'Medium', fieldType: 'select', required: true, options: ['Acrylic', 'Oil', 'Watercolor', 'Calligraphy/Ink'] },
+    { label: 'Dimensions', fieldType: 'text', required: true },
+    { label: 'Framed', fieldType: 'boolean' },
+  ],
+  'personalized-gift-items': [
+    { label: 'Customization details', fieldType: 'text', required: true },
+    { label: 'Turnaround time', fieldType: 'text', required: true },
+    { label: 'Material', fieldType: 'text' },
+  ],
+};
 
 // Starter master list — a placeholder set until Admin curates the real one
 // (see app/api/admin/jamaats). One per major city for now.
@@ -206,6 +327,38 @@ async function seed() {
 
     console.log(`Seeded "${cat.name}" with ${cat.subcategories.length} subcategories.`);
   }
+
+  let fieldCount = 0;
+  for (const [slug, fields] of Object.entries(FIELD_SEED)) {
+    const subcategoryId = subcategoryIdBySlug.get(slug);
+    if (!subcategoryId) continue; // subcategory wasn't in CATEGORY_SEED — skip rather than fail the whole run
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      const fieldKey = slugifyTitle(field.label);
+      await db
+        .insert(subcategoryFields)
+        .values({
+          subcategoryId,
+          label: field.label,
+          fieldKey,
+          fieldType: field.fieldType,
+          required: field.required ?? false,
+          options: field.options ?? null,
+          sortOrder: i,
+        })
+        .onConflictDoUpdate({
+          target: [subcategoryFields.subcategoryId, subcategoryFields.fieldKey],
+          set: {
+            label: field.label,
+            required: field.required ?? false,
+            options: field.options ?? null,
+            sortOrder: i,
+          },
+        });
+      fieldCount += 1;
+    }
+  }
+  console.log(`Seeded ${fieldCount} subcategory fields across ${Object.keys(FIELD_SEED).length} subcategories.`);
 
   for (const jamaat of JAMAAT_SEED) {
     // onConflictDoUpdate (rather than DoNothing) so .returning() always gives

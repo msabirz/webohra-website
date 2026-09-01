@@ -1,0 +1,1 @@
+ALTER TABLE "subcategory_fields" ADD COLUMN "active" boolean DEFAULT true NOT NULL;
