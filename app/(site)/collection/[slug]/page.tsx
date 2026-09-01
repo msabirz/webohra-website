@@ -13,6 +13,7 @@ import { getStoredLocation } from '@/lib/location-client';
 import { buttonStyles } from '@/lib/button-styles';
 import { ListingDetailSkeleton } from '@/components/skeleton';
 import { authFetch } from '@/lib/session-client';
+import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
 
 type ListingDetail = {
   id: number;
@@ -29,6 +30,7 @@ type ListingDetail = {
   businessName: string | null;
   jamaatCity: string | null;
   images: { id: number; url: string }[];
+  fields: ListingFieldValue[];
 };
 
 type FulfillmentChoice = 'delivery' | 'pickup';
@@ -134,6 +136,15 @@ export default function ListingDetailPage() {
           <p className="whitespace-pre-wrap font-body text-sm leading-relaxed text-ink-soft">
             {listing.description}
           </p>
+
+          {listing.fields.length > 0 && (
+            <div className="rounded-2xl bg-ivory-deep/60 p-4">
+              <p className="mb-3 font-body text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                Details
+              </p>
+              <ListingDetailFields fields={listing.fields} />
+            </div>
+          )}
 
           {/* Fulfillment selector — radio rows, single CTA below, no tabs */}
           <div className="flex flex-col gap-2.5">

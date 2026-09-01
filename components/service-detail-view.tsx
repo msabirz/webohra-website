@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MessageCircle, ShieldCheck, Clock, Send, CheckCircle2 } from 'lucide-react';
 import { ConsultationRequestButton } from '@/components/consultation-request-button';
 import { MosaicGallery } from '@/components/mosaic-gallery';
+import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
 import { categoryColor } from '@/lib/category-color';
 
 type ServiceListing = {
@@ -16,6 +17,7 @@ type ServiceListing = {
   subcategoryName: string;
   businessName: string | null;
   images: { id: number; url: string }[];
+  fields: ListingFieldValue[];
 };
 
 // Icons deliberately mirror the ones used at each matching moment elsewhere
@@ -121,6 +123,13 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
               {listing.description}
             </p>
           </section>
+
+          {listing.fields.length > 0 && (
+            <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+              <h2 className="mb-3 font-heading text-lg font-semibold text-ink">Details</h2>
+              <ListingDetailFields fields={listing.fields} />
+            </section>
+          )}
 
           <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
             <h2 className="mb-5 font-heading text-lg font-semibold text-ink">
