@@ -87,14 +87,55 @@ export async function creditWalletTopup(params: {
 }
 
 /** Her wallet balance + recent transaction history, newest first — the
- *  whole audit trail a seller can see for herself on /seller/wallet. */
-export async function getWalletWithHistory(sellerId: number) {
+ *  whole audit trail a seller can see for herself on /seller/wallet, and
+ *  what Admin sees too (app/api/admin/wallets/[sellerId]), just with a
+ *  higher limit there. */
+export async function getWalletWithHistory(sellerId: number, limit = 50) {
   const wallet = await getOrCreateWallet(sellerId);
   const transactions = await db
     .select()
     .from(walletTransactions)
     .where(eq(walletTransactions.sellerId, sellerId))
     .orderBy(desc(walletTransactions.createdAt))
-    .limit(50);
+    .limit(limit);
   return { wallet, transactions };
+}
+
+/**
+ * The other way a wallet balance can ever change — Admin manually
+ * correcting it, always with a reason and always attributed to the staff
+ * member who did it (initiatedByStaffId + reason, both required at the app
+ * level here). This is deliberately the only non-gateway path into
+ * wallet_transactions: real top-ups are automatic (creditWalletTopup),
+ * everything else that isn't a real gateway payment goes through here, so
+ * a balance never moves silently or unaccountably (the "no one is scamming
+ * the wallet" requirement this whole audit trail exists for). Same
+ * atomic-batch reasoning as creditWalletTopup — the balance update and the
+ * audit row land together or not at all.
+ */
+export async function adjustWalletBalance(params: {
+  sellerId: number;
+  amountRupees: number;
+  reason: string;
+  staffId: number;
+}): Promise<{ balance: string }> {
+  const wallet = await getOrCreateWallet(params.sellerId);
+  const projectedBalance = (Number(wallet.balance) + params.amountRupees).toFixed(2);
+
+  await db.batch([
+    db
+      .update(sellerWallets)
+      .set({ balance: sql`${sellerWallets.balance} + ${params.amountRupees.toFixed(2)}` })
+      .where(eq(sellerWallets.sellerId, params.sellerId)),
+    db.insert(walletTransactions).values({
+      sellerId: params.sellerId,
+      type: 'admin_adjustment',
+      amount: params.amountRupees.toFixed(2),
+      initiatedByStaffId: params.staffId,
+      reason: params.reason,
+      balanceAfter: projectedBalance,
+    }),
+  ]);
+
+  return { balance: projectedBalance };
 }

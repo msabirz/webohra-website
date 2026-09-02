@@ -694,3 +694,24 @@ export const walletTopupVerifySchema = z.object({
   razorpaySignature: z.string().min(1),
 });
 export type WalletTopupVerifyInput = z.infer<typeof walletTopupVerifySchema>;
+
+// Admin manually correcting a seller's wallet balance — the one non-gateway
+// path into wallet_transactions (see lib/wallet.ts's adjustWalletBalance).
+// `reason` is required at the schema level, not just "nice to have" at the
+// app level, since an unexplained balance change is exactly what the audit
+// trail exists to prevent. `amountRupees` can be negative (a correction can
+// go either way); `refine` blocks a no-op zero adjustment, which would
+// otherwise create a confusing "why does this row exist" audit entry.
+export const adminWalletAdjustmentSchema = z.object({
+  amountRupees: z
+    .number()
+    .min(-100000, 'Adjustment is too large — check the amount')
+    .max(100000, 'Adjustment is too large — check the amount')
+    .refine((v) => v !== 0, 'Adjustment amount can\'t be zero'),
+  reason: z
+    .string()
+    .trim()
+    .min(5, 'Explain the reason for this adjustment')
+    .max(300),
+});
+export type AdminWalletAdjustmentInput = z.infer<typeof adminWalletAdjustmentSchema>;
