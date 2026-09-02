@@ -314,15 +314,26 @@ export const pickupRequestSchema = z.object({
   buyerName: nameField('Full name'),
   buyerPhone: phoneField(),
   // Her current/selected location (lib/location-client.ts) — re-checked
-  // server-side against the listing's seller jamaat city, same eligibility
-  // rule the PDP uses to decide whether to offer Pickup & Pay at all, so
-  // hitting this endpoint directly can't bypass the location match.
+  // server-side against the listing's resolved pickup city (see
+  // lib/pickup.ts), same eligibility rule the PDP uses to decide whether
+  // to offer Pickup & Pay at all, so hitting this endpoint directly can't
+  // bypass the location match.
   buyerCity: z.string().trim().min(2, 'Set your location first').max(100),
   requestedDate: z
     .string()
     .trim()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a valid date'),
-  requestedPlace: z.string().trim().min(3, 'Place must be at least 3 characters').max(200),
+  // Fulfillment & Subscriptions redesign, Phase 3 — HH:MM, 24h. The actual
+  // "at least N hours from now" check is listing-dependent
+  // (pickupLeadTimeHours), so it happens in the route, not here.
+  requestedTime: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Pick a valid time'),
+  // requestedPlace is no longer buyer-entered free text — where pickup
+  // actually happens is resolved server-side from the listing's own
+  // pickupAddressSource (seller's address or a WeBohra office), same
+  // reasoning as never trusting a client-supplied price at checkout.
 });
 export type PickupRequestInput = z.infer<typeof pickupRequestSchema>;
 

@@ -36,6 +36,15 @@ type ListingDetail = {
   images: { id: number; url: string }[];
   fields: ListingFieldValue[];
   variants: Variant[];
+  // Fulfillment & Subscriptions redesign, Phase 3 — per-listing Pickup &
+  // Pay (planning doc Decision 5). pickupCity is null when
+  // pickupEnabled is false OR the seller's pickup location can't be
+  // resolved yet (see lib/pickup.ts); pickupAddress is only ever present
+  // when she's opted this listing into showing it up front.
+  pickupEnabled: boolean;
+  pickupCity: string | null;
+  pickupAddress: { line1: string; line2: string | null; city: string; state: string; pincode: string } | null;
+  pickupLeadTimeHours: number | null;
 };
 
 type FulfillmentChoice = 'delivery' | 'pickup';
@@ -108,8 +117,15 @@ export default function ListingDetailPage() {
     );
   }
 
+  // Fulfillment & Subscriptions redesign, Phase 3 — per-listing (not
+  // seller-wide) eligibility: she has to have turned this on for this
+  // specific listing, and her resolved pickup location's city has to
+  // match the buyer's.
   const pickupEligible =
-    !!listing.jamaatCity && !!buyerCity && listing.jamaatCity.toLowerCase() === buyerCity.toLowerCase();
+    listing.pickupEnabled &&
+    !!listing.pickupCity &&
+    !!buyerCity &&
+    listing.pickupCity.toLowerCase() === buyerCity.toLowerCase();
 
   function handleAddToCart() {
     addItem(listing!.id, quantity);
@@ -166,7 +182,7 @@ export default function ListingDetailPage() {
               price="See details"
               subtitle={
                 listing.shippingMethod === 'delhivery'
-                  ? 'Shipped via Delhivery — real, live tracking.'
+                  ? 'Shipped via Delhivery.'
                   : listing.shippingEstimateText || 'Shipped by the seller directly.'
               }
             />
@@ -177,7 +193,7 @@ export default function ListingDetailPage() {
               disabled={!pickupEligible}
               title="Pickup & Pay"
               price="No shipping"
-              subtitle={pickupSubtitle(listing.jamaatCity, buyerCity, pickupEligible)}
+              subtitle={pickupSubtitle(listing.pickupEnabled, listing.pickupCity, buyerCity, pickupEligible)}
             />
           </div>
 
@@ -236,7 +252,13 @@ export default function ListingDetailPage() {
       </div>
 
       {pickupModalOpen && (
-        <PickupRequestModal listingId={listing.id} onClose={() => setPickupModalOpen(false)} />
+        <PickupRequestModal
+          listingId={listing.id}
+          pickupCity={listing.pickupCity}
+          pickupAddress={listing.pickupAddress}
+          pickupLeadTimeHours={listing.pickupLeadTimeHours}
+          onClose={() => setPickupModalOpen(false)}
+        />
       )}
     </div>
   );
@@ -282,14 +304,16 @@ function Breadcrumb({
  *  per the requester's ask that this be stated plainly, not just "not
  *  available". */
 function pickupSubtitle(
-  jamaatCity: string | null,
+  pickupEnabled: boolean,
+  pickupCity: string | null,
   buyerCity: string | undefined,
   eligible: boolean,
 ): string {
-  if (!jamaatCity) return 'This seller has no pickup point set up yet.';
-  if (eligible) return `Available in ${jamaatCity} — collect from the seller and pay her directly.`;
-  if (buyerCity) return `Only available in ${jamaatCity} — not ${buyerCity}.`;
-  return `Available in ${jamaatCity} — set your location to check eligibility.`;
+  if (!pickupEnabled) return 'Not offered for this listing.';
+  if (!pickupCity) return 'This seller hasn’t finished setting up her pickup location yet.';
+  if (eligible) return `Available in ${pickupCity} — collect from the seller and pay her directly.`;
+  if (buyerCity) return `Only available in ${pickupCity} — not ${buyerCity}.`;
+  return `Available in ${pickupCity} — set your location to check eligibility.`;
 }
 
 function FulfillmentRow({

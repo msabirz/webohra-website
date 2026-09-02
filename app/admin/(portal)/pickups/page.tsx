@@ -57,8 +57,9 @@ export default function AdminPickupsPage() {
       <div>
         <h1 className="font-heading text-2xl font-semibold text-ink">Pickups</h1>
         <p className="mt-1 font-body text-sm text-ink-soft">
-          FR-47: Customer Support receives and logs parcels dropped off at each jamaat for
-          Delhivery-managed sellers.
+          Every Pickup &amp; Pay request — a buyer collecting from a seller (or a WeBohra office)
+          and paying her in person. The real pickup address is always shown here, even when it&apos;s
+          hidden from the buyer&apos;s own tracking page.
         </p>
       </div>
 

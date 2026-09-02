@@ -8,7 +8,7 @@ import { useCart } from '@/components/cart-context';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { PhoneInput } from '@/components/phone-input';
 import { authFetch } from '@/lib/session-client';
-import { resolveCartLine, type CartListingSnapshot } from '@/lib/cart-line';
+import { resolveCartLine, computeShipmentGroups, type CartListingSnapshot } from '@/lib/cart-line';
 
 type ListingSnapshot = CartListingSnapshot;
 
@@ -73,6 +73,10 @@ export default function CheckoutPage() {
     const { price } = resolveCartLine(listings[item.listingId], item);
     return price !== null ? sum + price * item.quantity : sum;
   }, 0);
+
+  const shipmentGroups = useMemo(() => computeShipmentGroups(items, listings), [items, listings]);
+  const shippingTotal = shipmentGroups.reduce((sum, g) => sum + g.charge, 0);
+  const total = subtotal + shippingTotal;
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -230,7 +234,7 @@ export default function CheckoutPage() {
         {error && <p className="font-body text-sm text-red-700">{error}</p>}
 
         <button type="submit" disabled={submitting} className={buttonStyles('primary', 'lg')}>
-          {submitting ? 'Placing order…' : `Place order · ₹${subtotal.toLocaleString('en-IN')}`}
+          {submitting ? 'Placing order…' : `Place order · ₹${total.toLocaleString('en-IN')}`}
         </button>
       </form>
 
@@ -274,13 +278,25 @@ export default function CheckoutPage() {
             <span>Subtotal</span>
             <span>₹{subtotal.toLocaleString('en-IN')}</span>
           </div>
-          <div className="flex items-center justify-between text-ink-soft">
-            <span>Shipping</span>
-            <span>Calculated by seller</span>
-          </div>
+          {shipmentGroups.length > 0 ? (
+            shipmentGroups.map((g) => (
+              <div key={`${g.sellerId}-${g.method}`} className="flex items-center justify-between text-ink-soft">
+                <span>
+                  Shipping{shipmentGroups.length > 1 && g.businessName ? ` — ${g.businessName}` : ''}
+                  {g.method === 'delhivery' ? ' (Delhivery)' : ''}
+                </span>
+                <span>{g.charge > 0 ? `₹${g.charge.toLocaleString('en-IN')}` : 'Free'}</span>
+              </div>
+            ))
+          ) : (
+            <div className="flex items-center justify-between text-ink-soft">
+              <span>Shipping</span>
+              <span>Free</span>
+            </div>
+          )}
           <div className="mt-1.5 flex items-center justify-between border-t border-ink-soft/15 pt-1.5 font-semibold">
             <span>Total</span>
-            <span>₹{subtotal.toLocaleString('en-IN')}</span>
+            <span>₹{total.toLocaleString('en-IN')}</span>
           </div>
         </div>
       </div>
@@ -327,10 +343,16 @@ function TextField({
   inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
   placeholder?: string;
 }) {
+  // Derived from the label rather than threaded through as its own prop at
+  // every call site — every label used here is already unique on this page.
+  const id = `checkout-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`;
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="font-body text-sm font-medium text-ink">{label}</label>
+      <label htmlFor={id} className="font-body text-sm font-medium text-ink">
+        {label}
+      </label>
       <input
+        id={id}
         type={type}
         inputMode={inputMode}
         value={value}

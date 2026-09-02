@@ -16,6 +16,7 @@ import {
   webohraOffices,
   subscriptionPlans,
   subscriptionSettings,
+  sellerShipCities,
 } from './schema';
 
 /**
@@ -312,8 +313,24 @@ const DEMO_SELLERS: Array<{
   businessName: string;
   itsId: string;
   jamaatCity?: string;
+  // Fulfillment & Subscriptions redesign, Phase 2 — her real address, and
+  // the one self-ship city (planning doc Decision 2). Only seeded for the
+  // sellers who actually have a listing exercising Pickup & Pay below, so
+  // it's obvious which fields matter for that rather than padding every
+  // seller with unused data.
+  address?: { line1: string; city: string; state: string; pincode: string };
+  shipCity?: string;
 }> = [
-  { key: 'zainab', phone: '9999999999', email: 'zainab.test@webohra.test', businessName: "Zainab's Kitchen", itsId: '10000001', jamaatCity: 'Mumbai' },
+  {
+    key: 'zainab',
+    phone: '9999999999',
+    email: 'zainab.test@webohra.test',
+    businessName: "Zainab's Kitchen",
+    itsId: '10000001',
+    jamaatCity: 'Mumbai',
+    address: { line1: '12 Bohra Mohalla Street', city: 'Mumbai', state: 'Maharashtra', pincode: '400002' },
+    shipCity: 'Mumbai',
+  },
   { key: 'sakina', phone: '9888800001', email: 'sakina.test@webohra.test', password: 'TestPass123!', businessName: "Sakina's Threads", itsId: '10000002', jamaatCity: 'Surat' },
   { key: 'fatema', phone: '9888800002', email: 'fatema.test@webohra.test', password: 'TestPass123!', businessName: 'Fatema Beauty Studio', itsId: '10000003', jamaatCity: 'Pune' },
   { key: 'amina', phone: '9888800003', email: 'amina.test@webohra.test', password: 'TestPass123!', businessName: "Amina's Art & Craft Studio", itsId: '10000004', jamaatCity: 'Indore' },
@@ -336,6 +353,14 @@ type DemoListing = {
   // uses) — only fields with a value here get seeded; anything omitted is
   // left blank, same as a real seller skipping an optional field.
   fieldValues?: Record<string, string | number | boolean | string[]>;
+  // Fulfillment & Subscriptions redesign, Phase 3 — real shipping cost and
+  // Pickup & Pay config, seeded on a couple of listings so UAT has a
+  // working example of both instead of every field sitting blank.
+  selfShipCharge?: string;
+  pickupEnabled?: boolean;
+  pickupAddressSource?: 'seller' | 'office';
+  pickupLeadTimeHours?: number;
+  showAddressOnPdp?: boolean;
 };
 
 // One listing per subcategory (14 total — Baked Goods gets two, one of them
@@ -351,6 +376,13 @@ const DEMO_LISTINGS: DemoListing[] = [
     price: '299.00',
     shippingMethod: 'self_managed',
     shippingEstimateText: 'Ships within 2-3 business days',
+    // Pickup & Pay from her own address, not shown on the PDP up front —
+    // the "reveal only once confirmed" default path.
+    selfShipCharge: '40.00',
+    pickupEnabled: true,
+    pickupAddressSource: 'seller',
+    pickupLeadTimeHours: 24,
+    showAddressOnPdp: false,
     fieldValues: {
       ingredients: 'Refined flour, ghee, salt, cumin seeds',
       'veg-non-veg-egg': 'Veg',
@@ -396,6 +428,14 @@ const DEMO_LISTINGS: DemoListing[] = [
     price: '4500.00',
     shippingMethod: 'self_managed',
     shippingEstimateText: 'Ships within 2-3 weeks (made to order)',
+    // Pickup from the WeBohra office (resolved via her Surat jamaat's
+    // mapping, not her own address) — shown on the PDP up front this time,
+    // covering the other reveal path.
+    selfShipCharge: '75.00',
+    pickupEnabled: true,
+    pickupAddressSource: 'office',
+    pickupLeadTimeHours: 48,
+    showAddressOnPdp: true,
     fieldValues: {
       size: 'Free Size',
       'fabric-material': 'Georgette with satin lining',
@@ -734,11 +774,35 @@ async function seed() {
     const jamaatId = seller.jamaatCity ? (jamaatIdByCity.get(seller.jamaatCity) ?? null) : null;
     await db
       .insert(sellerProfiles)
-      .values({ userId: row.id, businessName: seller.businessName, jamaatId })
+      .values({
+        userId: row.id,
+        businessName: seller.businessName,
+        jamaatId,
+        ...(seller.address && {
+          addressLine1: seller.address.line1,
+          city: seller.address.city,
+          state: seller.address.state,
+          pincode: seller.address.pincode,
+        }),
+      })
       .onConflictDoUpdate({
         target: sellerProfiles.userId,
-        set: { businessName: seller.businessName, jamaatId },
+        set: {
+          businessName: seller.businessName,
+          jamaatId,
+          ...(seller.address && {
+            addressLine1: seller.address.line1,
+            city: seller.address.city,
+            state: seller.address.state,
+            pincode: seller.address.pincode,
+          }),
+        },
       });
+
+    if (seller.shipCity) {
+      await db.delete(sellerShipCities).where(eq(sellerShipCities.sellerId, row.id));
+      await db.insert(sellerShipCities).values({ sellerId: row.id, city: seller.shipCity });
+    }
   }
   console.log(`Seeded ${DEMO_SELLERS.length} demo sellers.`);
 
@@ -769,6 +833,12 @@ async function seed() {
         shippingMethod: listing.shippingMethod,
         shippingEstimateText: listing.shippingMethod === 'self_managed' ? listing.shippingEstimateText : null,
         status: 'active',
+        // Fulfillment & Subscriptions redesign, Phase 3.
+        selfShipCharge: listing.selfShipCharge ?? null,
+        pickupEnabled: listing.pickupEnabled ?? false,
+        pickupAddressSource: listing.pickupEnabled ? (listing.pickupAddressSource ?? null) : null,
+        pickupLeadTimeHours: listing.pickupLeadTimeHours ?? null,
+        showAddressOnPdp: listing.showAddressOnPdp ?? false,
       })
       .returning();
     listingCount += 1;
