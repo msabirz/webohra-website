@@ -1,48 +1,47 @@
 import { NextResponse } from 'next/server';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { pickupRequests, listings, sellerProfiles, jamaats } from '@/db/schema';
-import { getSessionFromRequest, isStaff } from '@/lib/auth';
+import { pickupRequests, listings } from '@/db/schema';
+import { getSessionFromRequest } from '@/lib/auth';
 
 /**
- * GET /api/admin/pickups — every Pickup & Pay request, admin/support
- * visibility on top of the seller's own view (see
- * /api/sellers/pickup-requests) — never gated by a listing's
- * showAddressOnPdp, staff always see the real resolved address. ?status=
- * filters.
+ * GET /api/sellers/pickup-requests — her own Pickup & Pay requests. Always
+ * shows the real resolved address (requestedPlace), regardless of that
+ * listing's showAddressOnPdp — the privacy gating in
+ * GET /api/listings/[idOrSlug] and GET /api/pickup-requests/[trackingNumber]
+ * only ever controls what a BUYER sees before/without her confirming;
+ * she needs the real address to actually be there. ?status= filters.
  */
 export async function GET(request: Request) {
   const session = await getSessionFromRequest(request);
-  if (!isStaff(session)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (!session) {
+    return NextResponse.json({ error: 'Sign in as a seller' }, { status: 401 });
   }
 
+  const sellerId = Number(session.sub);
   const url = new URL(request.url);
   const status = url.searchParams.get('status');
-  const conditions = [];
+  const conditions = [eq(pickupRequests.sellerId, sellerId)];
   if (status) conditions.push(eq(pickupRequests.status, status as 'pending' | 'received' | 'issue'));
 
   const rows = await db
     .select({
       id: pickupRequests.id,
+      trackingNumber: pickupRequests.trackingNumber,
       buyerName: pickupRequests.buyerName,
       buyerPhone: pickupRequests.buyerPhone,
       requestedDate: pickupRequests.requestedDate,
+      requestedTime: pickupRequests.requestedTime,
       requestedPlace: pickupRequests.requestedPlace,
       status: pickupRequests.status,
-      notes: pickupRequests.notes,
-      handledAt: pickupRequests.handledAt,
+      readyForPickupAt: pickupRequests.readyForPickupAt,
       createdAt: pickupRequests.createdAt,
+      listingId: listings.id,
       listingTitle: listings.title,
-      businessName: sellerProfiles.businessName,
-      jamaatCity: jamaats.city,
-      jamaatName: jamaats.name,
     })
     .from(pickupRequests)
     .innerJoin(listings, eq(pickupRequests.listingId, listings.id))
-    .leftJoin(sellerProfiles, eq(sellerProfiles.userId, pickupRequests.sellerId))
-    .leftJoin(jamaats, eq(sellerProfiles.jamaatId, jamaats.id))
-    .where(conditions.length ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(desc(pickupRequests.createdAt));
 
   return NextResponse.json({ pickups: rows });
