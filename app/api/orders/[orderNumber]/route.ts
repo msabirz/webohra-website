@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { orders, orderItems, listings, sellerProfiles, subcategories } from '@/db/schema';
+import { orders, orderItems, listings, sellerProfiles, subcategories, shipments } from '@/db/schema';
 
 /**
  * GET /api/orders/[orderNumber]
@@ -44,6 +44,19 @@ export async function GET(
     .leftJoin(sellerProfiles, eq(sellerProfiles.userId, orderItems.sellerId))
     .where(eq(orderItems.orderId, order.id));
 
+  // Fulfillment & Subscriptions redesign, Phase 3 — one row per (seller,
+  // method); charge is null for a method with no real cost yet (Delhivery).
+  const orderShipments = await db
+    .select({
+      sellerId: shipments.sellerId,
+      method: shipments.method,
+      charge: shipments.charge,
+      businessName: sellerProfiles.businessName,
+    })
+    .from(shipments)
+    .leftJoin(sellerProfiles, eq(sellerProfiles.userId, shipments.sellerId))
+    .where(eq(shipments.orderId, order.id));
+
   return NextResponse.json({
     order: {
       orderNumber: order.orderNumber,
@@ -58,5 +71,6 @@ export async function GET(
       createdAt: order.createdAt,
     },
     items,
+    shipments: orderShipments,
   });
 }

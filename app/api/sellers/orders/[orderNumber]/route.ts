@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { orders, orderItems, listings, subcategories } from '@/db/schema';
+import { orders, orderItems, listings, subcategories, shipments } from '@/db/schema';
 import { getSessionFromRequest } from '@/lib/auth';
 import { isForwardMove, isOrderItemStatus } from '@/lib/order-item-status';
 
@@ -52,6 +52,13 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
+  // Scoped to her own shipment(s) only, same reasoning as `items` above —
+  // never another seller's charge on a multi-seller order.
+  const sellerShipments = await db
+    .select({ method: shipments.method, charge: shipments.charge })
+    .from(shipments)
+    .where(and(eq(shipments.orderId, order.id), eq(shipments.sellerId, sellerId)));
+
   return NextResponse.json({
     order: {
       orderNumber: order.orderNumber,
@@ -66,6 +73,7 @@ export async function GET(
       createdAt: order.createdAt,
     },
     items,
+    shipments: sellerShipments,
   });
 }
 

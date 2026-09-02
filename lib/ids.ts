@@ -58,3 +58,18 @@ export function generateRequestNumber(): string {
   const dd = String(now.getDate()).padStart(2, '0');
   return `WR${yy}${mm}${dd}-${randomCode(5)}`;
 }
+
+/**
+ * Same idea again, for Pickup & Pay — the one gap in this pattern the
+ * Fulfillment & Subscriptions planning doc called out (orders and
+ * consultation requests both already had a public tracking identifier,
+ * Pickup & Pay never did). "WP" (WE Bohra Pickup) so the prefix alone
+ * says which kind of tracking page a code belongs on.
+ */
+export function generatePickupTrackingNumber(): string {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `WP${yy}${mm}${dd}-${randomCode(5)}`;
+}

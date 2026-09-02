@@ -19,6 +19,7 @@ import {
   getListingFieldValues,
   checkShippingEstimate,
 } from '@/lib/listing-fields';
+import { resolvePickupLocation } from '@/lib/pickup';
 
 /**
  * Accepts either the internal numeric id (used by the seller dashboard,
@@ -146,12 +147,32 @@ export async function GET(
 
   const fields = await getListingFieldValues(row.id);
 
+  // Fulfillment & Subscriptions redesign, Phase 3 — per-listing Pickup &
+  // Pay eligibility (planning doc Decision 5), replacing the old
+  // seller-wide jamaat-city check. `pickupAddress` is only ever included
+  // when she's opted this specific listing into showing it up front
+  // (showAddressOnPdp) — same "never expose more than the feature
+  // explicitly allows" rule as sellerPhone below. When it's off, the buyer
+  // still gets `pickupCity` to check eligibility with, just not the exact
+  // address — that's revealed later once a request exists (see
+  // pickup_requests.readyForPickupAt).
+  let pickupCity: string | null = null;
+  let pickupAddress: { line1: string; line2: string | null; city: string; state: string; pincode: string } | null =
+    null;
+  if (row.pickupEnabled) {
+    const location = await resolvePickupLocation(row.sellerId, row.pickupAddressSource);
+    pickupCity = location.city;
+    if (row.showAddressOnPdp) pickupAddress = location.address;
+  }
+
   // Never expose the seller's raw phone number here — FR-37: it's surfaced
   // only through the Contact Seller / Take Consultation action itself, not
   // as browsable listing data.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { sellerPhone: _sellerPhone, ...publicListing } = row;
-  return NextResponse.json({ listing: { ...publicListing, images, variants, fields } });
+  return NextResponse.json({
+    listing: { ...publicListing, images, variants, fields, pickupCity, pickupAddress },
+  });
 }
 
 /**

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { listings, orders, orderItems, listingVariants } from '@/db/schema';
+import { listings, orders, orderItems, listingVariants, shipments } from '@/db/schema';
 import { orderCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { generateOrderNumber } from '@/lib/ids';
@@ -101,6 +101,28 @@ export async function POST(request: Request) {
     }
   }
 
+  // One shipment per (seller, method) — mirrors lib/cart-line.ts's
+  // computeShipmentGroups exactly (see its own comment for why per-method,
+  // not just per-seller, and why the charge applies once per shipment).
+  // Computed from the same `listingById` lookup `resolved` already used,
+  // so this can never disagree with what was actually validated above.
+  const shipmentGroups = new Map<
+    string,
+    { sellerId: number; method: 'self_managed' | 'delhivery'; charge: number }
+  >();
+  for (const item of resolved) {
+    const listing = listingById.get(item.listingId);
+    if (!listing) continue;
+    const key = `${item.sellerId}:${listing.shippingMethod}`;
+    const itemCharge = listing.shippingMethod === 'self_managed' ? Number(listing.selfShipCharge ?? 0) : 0;
+    const existing = shipmentGroups.get(key);
+    if (existing) {
+      existing.charge = Math.max(existing.charge, itemCharge);
+    } else {
+      shipmentGroups.set(key, { sellerId: item.sellerId, method: listing.shippingMethod, charge: itemCharge });
+    }
+  }
+
   const session = await getSessionFromRequest(request);
 
   // Order numbers are random, so a unique-constraint collision is possible
@@ -140,5 +162,22 @@ export async function POST(request: Request) {
     )
     .returning();
 
-  return NextResponse.json({ order, items: insertedItems }, { status: 201 });
+  const insertedShipments = shipmentGroups.size
+    ? await db
+        .insert(shipments)
+        .values(
+          Array.from(shipmentGroups.values()).map((g) => ({
+            orderId: order.id,
+            sellerId: g.sellerId,
+            method: g.method,
+            // Null for methods with no real cost yet (delhivery — no live
+            // rate lookup exists, planning doc Decision 4/7) rather than a
+            // string '0.00' that would misleadingly claim a computed charge.
+            charge: g.method === 'self_managed' ? g.charge.toFixed(2) : null,
+          })),
+        )
+        .returning()
+    : [];
+
+  return NextResponse.json({ order, items: insertedItems, shipments: insertedShipments }, { status: 201 });
 }

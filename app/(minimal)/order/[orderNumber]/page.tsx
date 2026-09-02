@@ -35,6 +35,15 @@ type OrderDetail = {
   createdAt: string;
 };
 
+// Fulfillment & Subscriptions redesign, Phase 3 — one row per (seller,
+// method); charge is null for a method with no real cost yet (Delhivery).
+type OrderShipment = {
+  sellerId: number;
+  method: 'self_managed' | 'delhivery';
+  charge: string | null;
+  businessName: string | null;
+};
+
 const STEPS = [
   { icon: CheckCircle2, label: 'Order placed' },
   { icon: Package, label: 'Seller prepares' },
@@ -46,6 +55,7 @@ export default function OrderConfirmationPage() {
   const params = useParams<{ orderNumber: string }>();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
+  const [shipmentList, setShipmentList] = useState<OrderShipment[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
@@ -61,6 +71,7 @@ export default function OrderConfirmationPage() {
         const data = await res.json();
         setOrder(data.order);
         setItems(data.items ?? []);
+        setShipmentList(data.shipments ?? []);
       })
       .finally(() => setLoading(false));
   }
@@ -99,7 +110,9 @@ export default function OrderConfirmationPage() {
     );
   }
 
-  const total = items.reduce((sum, item) => sum + Number(item.unitPrice) * item.quantity, 0);
+  const subtotal = items.reduce((sum, item) => sum + Number(item.unitPrice) * item.quantity, 0);
+  const shippingTotal = shipmentList.reduce((sum, s) => sum + Number(s.charge ?? 0), 0);
+  const total = subtotal + shippingTotal;
   // An order can span several sellers, each fulfilling on her own timeline —
   // the overall bar only advances once every one of them has reached that
   // stage, same as the item-level pills shown below never getting ahead of
@@ -222,9 +235,24 @@ export default function OrderConfirmationPage() {
             </li>
           ))}
         </ul>
-        <div className="mt-3 flex items-center justify-between border-t border-ink-soft/10 pt-3 font-body text-sm font-semibold text-ink">
-          <span>Total</span>
-          <span>₹{total.toLocaleString('en-IN')}</span>
+        <div className="mt-3 flex flex-col gap-1.5 border-t border-ink-soft/10 pt-3 font-body text-sm">
+          <div className="flex items-center justify-between text-ink-soft">
+            <span>Subtotal</span>
+            <span>₹{subtotal.toLocaleString('en-IN')}</span>
+          </div>
+          {shipmentList.map((s) => (
+            <div key={`${s.sellerId}-${s.method}`} className="flex items-center justify-between text-ink-soft">
+              <span>
+                Shipping{shipmentList.length > 1 && s.businessName ? ` — ${s.businessName}` : ''}
+                {s.method === 'delhivery' ? ' (Delhivery)' : ''}
+              </span>
+              <span>{s.charge && Number(s.charge) > 0 ? `₹${Number(s.charge).toLocaleString('en-IN')}` : 'Free'}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between font-semibold text-ink">
+            <span>Total</span>
+            <span>₹{total.toLocaleString('en-IN')}</span>
+          </div>
         </div>
       </div>
 
