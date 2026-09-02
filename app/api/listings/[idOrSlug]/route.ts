@@ -57,6 +57,15 @@ export async function GET(
       stockQuantity: listings.stockQuantity,
       createdAt: listings.createdAt,
       sellerId: listings.sellerId,
+      // Fulfillment & Subscriptions redesign, Phase 2 — plain listing config,
+      // safe to always include (her actual address text isn't resolved
+      // here at all yet; that's Phase 3's job, and it's gated separately).
+      selfShipCharge: listings.selfShipCharge,
+      pickupEnabled: listings.pickupEnabled,
+      pickupAddressSource: listings.pickupAddressSource,
+      pickupLeadTimeHours: listings.pickupLeadTimeHours,
+      showAddressOnPdp: listings.showAddressOnPdp,
+      weight: listings.weight,
       subcategoryId: subcategories.id,
       subcategoryName: subcategories.name,
       subcategorySlug: subcategories.slug,
@@ -254,8 +263,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { subcategoryId, title, description, price, shippingMethod, shippingEstimateText, stockQuantity, fieldValues } =
-    parsed.data;
+  const {
+    subcategoryId,
+    title,
+    description,
+    price,
+    shippingMethod,
+    shippingEstimateText,
+    stockQuantity,
+    fieldValues,
+    selfShipCharge,
+    pickupEnabled,
+    pickupAddressSource,
+    pickupLeadTimeHours,
+    showAddressOnPdp,
+    weight,
+  } = parsed.data;
 
   const fieldCheck = await validateFieldValues(subcategoryId, fieldValues);
   if (!fieldCheck.ok) {
@@ -281,6 +304,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
       shippingMethod,
       shippingEstimateText: shippingMethod === 'self_managed' ? shippingEstimateText : null,
       stockQuantity: stockQuantity ?? null,
+      // Fulfillment & Subscriptions redesign, Phase 2.
+      selfShipCharge: selfShipCharge !== undefined ? selfShipCharge.toFixed(2) : null,
+      pickupEnabled: pickupEnabled ?? false,
+      pickupAddressSource: pickupEnabled ? (pickupAddressSource ?? null) : null,
+      pickupLeadTimeHours: pickupLeadTimeHours ?? null,
+      showAddressOnPdp: showAddressOnPdp ?? false,
+      weight: weight !== undefined ? weight.toFixed(3) : null,
     })
     .where(eq(listings.id, listing.id))
     .returning();

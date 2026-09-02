@@ -42,6 +42,15 @@ export type ProductFormValues = {
   // variants instead. Set from whether the fetched listing's own price is
   // null when editing (see the edit page's fetch).
   hasVariants?: boolean;
+  // Fulfillment & Subscriptions redesign, Phase 2 — every field below is
+  // optional and blank/off is exactly today's behavior, so an existing
+  // listing that never touches this section keeps working unchanged.
+  selfShipCharge: string;
+  pickupEnabled: boolean;
+  pickupAddressSource: 'seller' | 'office' | '';
+  pickupLeadTimeHours: string;
+  showAddressOnPdp: boolean;
+  weight: string;
 };
 
 const emptyForm: ProductFormValues = {
@@ -53,6 +62,12 @@ const emptyForm: ProductFormValues = {
   shippingEstimateText: '',
   stockQuantity: '',
   fieldValues: {},
+  selfShipCharge: '',
+  pickupEnabled: false,
+  pickupAddressSource: '',
+  pickupLeadTimeHours: '',
+  showAddressOnPdp: false,
+  weight: '',
 };
 
 export function ProductForm({ initial }: { initial?: ProductFormValues }) {
@@ -137,6 +152,12 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
     'shippingMethod',
     'shippingEstimateText',
     'stockQuantity',
+    'selfShipCharge',
+    'pickupEnabled',
+    'pickupAddressSource',
+    'pickupLeadTimeHours',
+    'showAddressOnPdp',
+    'weight',
   ]);
 
   function handleSubmit(event: FormEvent) {
@@ -177,6 +198,17 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
           ? Number(current.stockQuantity)
           : null,
       fieldValues: current.fieldValues ?? {},
+      // Fulfillment & Subscriptions redesign, Phase 2 — only sent for
+      // physical products, same gate as the rest of the shipping section.
+      selfShipCharge: needsShipping && current.selfShipCharge !== '' ? Number(current.selfShipCharge) : undefined,
+      pickupEnabled: needsShipping ? current.pickupEnabled : undefined,
+      pickupAddressSource: needsShipping && current.pickupEnabled && current.pickupAddressSource ? current.pickupAddressSource : undefined,
+      pickupLeadTimeHours:
+        needsShipping && current.pickupEnabled && current.pickupLeadTimeHours !== ''
+          ? Number(current.pickupLeadTimeHours)
+          : undefined,
+      showAddressOnPdp: needsShipping ? current.showAddressOnPdp : undefined,
+      weight: needsShipping && current.weight !== '' ? Number(current.weight) : undefined,
     };
 
     // Once this form has an id — whether it started in "edit" mode or got
@@ -487,7 +519,16 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
                 onChange={(e) => update('shippingMethod', e.target.value as ProductFormValues['shippingMethod'])}
               >
                 <option value="self_managed">I&apos;ll ship it myself</option>
-                <option value="delhivery">Ship via Delhivery</option>
+                {/* Delhivery isn't offered as a new choice yet — no live
+                 *  courier integration exists (planning doc Decision 7).
+                 *  Kept selectable only for a listing that's already using
+                 *  it, so opening one to edit doesn't silently reset her
+                 *  saved choice. */}
+                {form.shippingMethod === 'delhivery' && (
+                  <option value="delhivery" disabled>
+                    Ship via Delhivery (being redesigned — can&apos;t select this for a new listing)
+                  </option>
+                )}
               </Select>
             </Field>
 
@@ -507,6 +548,113 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
                   required
                 />
               </Field>
+            )}
+
+            {form.shippingMethod === 'self_managed' && (
+              <div className="flex flex-col gap-4 rounded-xl border border-ink-soft/10 bg-ivory-deep/40 p-4">
+                <p className="font-body text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                  Delivery &amp; pickup details
+                </p>
+
+                <Field
+                  label="Delivery charge (₹)"
+                  htmlFor="selfShipCharge"
+                  error={errors.selfShipCharge}
+                  hint="Shown to the buyer at checkout. Leave blank if you haven't decided yet."
+                >
+                  <TextInput
+                    id="selfShipCharge"
+                    name="selfShipCharge"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.selfShipCharge}
+                    onChange={(e) => update('selfShipCharge', e.target.value)}
+                    placeholder="e.g. 50"
+                  />
+                </Field>
+
+                <label className="flex items-center gap-2 font-body text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={form.pickupEnabled}
+                    onChange={(e) => update('pickupEnabled', e.target.checked)}
+                    className="h-4 w-4 rounded border-ink-soft/30 text-navy focus:ring-navy/30"
+                  />
+                  Allow Pickup &amp; Pay for this listing
+                </label>
+
+                {form.pickupEnabled && (
+                  <>
+                    <Field label="Pickup from" htmlFor="pickupAddressSource" error={errors.pickupAddressSource}>
+                      <Select
+                        id="pickupAddressSource"
+                        name="pickupAddressSource"
+                        value={form.pickupAddressSource}
+                        onChange={(e) =>
+                          update('pickupAddressSource', e.target.value as ProductFormValues['pickupAddressSource'])
+                        }
+                      >
+                        <option value="" disabled>
+                          Choose where buyers collect from
+                        </option>
+                        <option value="seller">My own address</option>
+                        <option value="office">A WeBohra office</option>
+                      </Select>
+                    </Field>
+
+                    <Field
+                      label="Minimum notice (hours)"
+                      htmlFor="pickupLeadTimeHours"
+                      error={errors.pickupLeadTimeHours}
+                      hint="Buyers can only pick a slot at least this many hours after ordering."
+                    >
+                      <TextInput
+                        id="pickupLeadTimeHours"
+                        name="pickupLeadTimeHours"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={form.pickupLeadTimeHours}
+                        onChange={(e) => update('pickupLeadTimeHours', e.target.value)}
+                        placeholder="e.g. 24"
+                      />
+                    </Field>
+
+                    <label className="flex items-center gap-2 font-body text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={form.showAddressOnPdp}
+                        onChange={(e) => update('showAddressOnPdp', e.target.checked)}
+                        className="h-4 w-4 rounded border-ink-soft/30 text-navy focus:ring-navy/30"
+                      />
+                      Show my pickup address on this listing&apos;s page
+                    </label>
+                    <p className="-mt-2 font-body text-xs text-ink-soft">
+                      Off by default — your address stays private until you mark a specific order
+                      ready for pickup. Turning this on shows it to everyone browsing this listing.
+                    </p>
+                  </>
+                )}
+
+                <Field
+                  label="Weight (kg)"
+                  htmlFor="weight"
+                  error={errors.weight}
+                  hint="Optional — used for delivery cost calculations once that's available."
+                >
+                  <TextInput
+                    id="weight"
+                    name="weight"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.weight}
+                    onChange={(e) => update('weight', e.target.value)}
+                    placeholder="e.g. 0.5"
+                  />
+                </Field>
+              </div>
             )}
           </>
         )}

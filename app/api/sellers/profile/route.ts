@@ -33,7 +33,8 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const { businessName, plansDelhiveryShipping, jamaatId } = parsed.data;
+  const { businessName, plansDelhiveryShipping, jamaatId, addressLine1, addressLine2, city, state, pincode } =
+    parsed.data;
 
   if (plansDelhiveryShipping && jamaatId) {
     const [jamaat] = await db.select().from(jamaats).where(eq(jamaats.id, jamaatId));
@@ -47,7 +48,18 @@ export async function PATCH(request: Request) {
 
   const [updated] = await db
     .update(sellerProfiles)
-    .set({ businessName, jamaatId: plansDelhiveryShipping ? jamaatId : null })
+    .set({
+      businessName,
+      jamaatId: plansDelhiveryShipping ? jamaatId : null,
+      // Fulfillment & Subscriptions redesign, Phase 2 — only touched when
+      // sent, so this same endpoint stays safe to call from forms that
+      // don't include an address section at all.
+      ...(addressLine1 !== undefined && { addressLine1 }),
+      ...(addressLine2 !== undefined && { addressLine2: addressLine2 || null }),
+      ...(city !== undefined && { city }),
+      ...(state !== undefined && { state }),
+      ...(pincode !== undefined && { pincode }),
+    })
     .where(eq(sellerProfiles.userId, userId))
     .returning();
 

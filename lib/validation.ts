@@ -31,6 +31,14 @@ export const nameField = (label: string) =>
 const emailField = () =>
   z.string().trim().toLowerCase().email('Enter a valid email address').max(200);
 
+// India Post pincodes are always 6 digits, but kept at 5-6 per the
+// requester's explicit call — lenient on the low end, never more than 6.
+export const pincodeField = () =>
+  z
+    .string()
+    .trim()
+    .regex(/^\d{5,6}$/, 'Enter a valid pincode (5-6 digits)');
+
 const passwordField = () =>
   z.string().min(8, 'Password must be at least 8 characters').max(72);
 
@@ -97,12 +105,29 @@ export const sellerProfileUpdateSchema = z
     businessName: nameField('Business name'),
     plansDelhiveryShipping: z.boolean(),
     jamaatId: z.number().int().positive().optional(),
+    // Her real address — added for the Fulfillment & Subscriptions redesign
+    // (self-ship origin, Pickup & Pay's seller-location option). Optional:
+    // she can update her business name without being forced to fill this
+    // in the same request, and plenty of existing sellers have none yet.
+    addressLine1: z.string().trim().min(3, 'Address must be at least 3 characters').max(200).optional(),
+    addressLine2: z.string().trim().max(200).optional().or(z.literal('')),
+    city: nameField('City').optional(),
+    state: nameField('State').optional(),
+    pincode: pincodeField().optional(),
   })
   .refine((data) => !data.plansDelhiveryShipping || !!data.jamaatId, {
     message: 'Select your nearest jamaat for Delhivery pickup',
     path: ['jamaatId'],
   });
 export type SellerProfileUpdateInput = z.infer<typeof sellerProfileUpdateSchema>;
+
+// Fulfillment & Subscriptions redesign — self-ship city (planning doc
+// Decision 2: one city for now, modeled so more can be added later without
+// a migration; this endpoint only ever writes one row per seller today).
+export const sellerShipCityUpdateSchema = z.object({
+  city: nameField('City'),
+});
+export type SellerShipCityUpdateInput = z.infer<typeof sellerShipCityUpdateSchema>;
 
 // A physical product's stock on hand — coerced from the form's text/number
 // input; empty string means "not tracked", never zero.
@@ -137,6 +162,23 @@ const fieldValuesField = z.record(z.string(), z.unknown()).optional();
 // status handler in app/api/listings/[idOrSlug]/route.ts for that guard.
 const priceField = () => z.coerce.number().positive('Enter a price greater than 0').optional();
 
+// Fulfillment & Subscriptions redesign, Phase 2 — every field here is
+// optional and defaults preserve today's behavior exactly (no charge, no
+// Pickup & Pay) so an existing listing that never sets any of these keeps
+// working unchanged. 'delhivery' stays a valid shippingMethod value at the
+// data/API level (an existing listing already using it must stay valid) —
+// only the seller-facing form stops offering it as a new choice, per
+// Decision 7 (no partial "coming soon"; not offered anywhere until the
+// live integration exists).
+const fulfillmentFields = {
+  selfShipCharge: z.coerce.number().nonnegative('Charge can’t be negative').optional(),
+  pickupEnabled: z.boolean().optional(),
+  pickupAddressSource: z.enum(['seller', 'office']).optional(),
+  pickupLeadTimeHours: z.coerce.number().int().nonnegative().max(720, 'Keep it under 30 days').optional(),
+  showAddressOnPdp: z.boolean().optional(),
+  weight: z.coerce.number().positive('Weight must be greater than 0').optional(),
+};
+
 export const listingCreateSchema = z.object({
   subcategoryId: z.number({ message: 'Select a category' }).int().positive(),
   title: z.string().trim().min(3, 'Title must be at least 3 characters').max(200),
@@ -146,6 +188,7 @@ export const listingCreateSchema = z.object({
   shippingEstimateText: z.string().trim().max(200).optional(),
   stockQuantity: stockQuantityField().optional(),
   fieldValues: fieldValuesField,
+  ...fulfillmentFields,
 });
 
 export type ListingCreateInput = z.infer<typeof listingCreateSchema>;
@@ -161,6 +204,7 @@ export const listingUpdateSchema = z.object({
   shippingEstimateText: z.string().trim().max(200).optional(),
   stockQuantity: stockQuantityField().optional(),
   fieldValues: fieldValuesField,
+  ...fulfillmentFields,
 });
 export type ListingUpdateInput = z.infer<typeof listingUpdateSchema>;
 
@@ -224,14 +268,6 @@ export const uploadPresignSchema = z.object({
   listingId: z.number().int().positive(),
 });
 export type UploadPresignInput = z.infer<typeof uploadPresignSchema>;
-
-// India Post pincodes are always 6 digits, but kept at 5-6 per the
-// requester's explicit call — lenient on the low end, never more than 6.
-export const pincodeField = () =>
-  z
-    .string()
-    .trim()
-    .regex(/^\d{5,6}$/, 'Enter a valid pincode (5-6 digits)');
 
 export const orderCreateSchema = z.object({
   // Checkout collects contact info directly rather than requiring an
