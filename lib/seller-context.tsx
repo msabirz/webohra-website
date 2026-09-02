@@ -17,7 +17,14 @@ export type SellerMe = {
     jamaatId: number | null;
     jamaatName: string | null;
     jamaatCity: string | null;
+    // Fulfillment & Subscriptions redesign, Phase 2.
+    addressLine1: string | null;
+    addressLine2: string | null;
+    city: string | null;
+    state: string | null;
+    pincode: string | null;
   };
+  sellerShipCity: string | null;
 };
 
 /** Populated once by app/seller/(portal)/layout.tsx after the auth gate

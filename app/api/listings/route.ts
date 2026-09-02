@@ -179,8 +179,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const { subcategoryId, title, description, price, shippingMethod, shippingEstimateText, stockQuantity, fieldValues } =
-    parsed.data;
+  const {
+    subcategoryId,
+    title,
+    description,
+    price,
+    shippingMethod,
+    shippingEstimateText,
+    stockQuantity,
+    fieldValues,
+    selfShipCharge,
+    pickupEnabled,
+    pickupAddressSource,
+    pickupLeadTimeHours,
+    showAddressOnPdp,
+    weight,
+  } = parsed.data;
 
   const fieldCheck = await validateFieldValues(subcategoryId, fieldValues);
   if (!fieldCheck.ok) {
@@ -211,6 +225,14 @@ export async function POST(request: Request) {
       shippingEstimateText: shippingMethod === 'self_managed' ? shippingEstimateText : null,
       stockQuantity: stockQuantity ?? null,
       status: 'draft',
+      // Fulfillment & Subscriptions redesign, Phase 2 — all optional, all
+      // default to today's exact behavior (no charge, Pickup & Pay off).
+      selfShipCharge: selfShipCharge !== undefined ? selfShipCharge.toFixed(2) : null,
+      pickupEnabled: pickupEnabled ?? false,
+      pickupAddressSource: pickupEnabled ? (pickupAddressSource ?? null) : null,
+      pickupLeadTimeHours: pickupLeadTimeHours ?? null,
+      showAddressOnPdp: showAddressOnPdp ?? false,
+      weight: weight !== undefined ? weight.toFixed(3) : null,
     })
     .returning();
 

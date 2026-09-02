@@ -44,6 +44,13 @@ export default function EditProductPage() {
           stockQuantity: l.stockQuantity != null ? String(l.stockQuantity) : '',
           status: l.status,
           fieldValues,
+          // Fulfillment & Subscriptions redesign, Phase 2.
+          selfShipCharge: l.selfShipCharge ?? '',
+          pickupEnabled: l.pickupEnabled ?? false,
+          pickupAddressSource: l.pickupAddressSource ?? '',
+          pickupLeadTimeHours: l.pickupLeadTimeHours != null ? String(l.pickupLeadTimeHours) : '',
+          showAddressOnPdp: l.showAddressOnPdp ?? false,
+          weight: l.weight ?? '',
         });
       })
       .catch(() => setNotFound(true));

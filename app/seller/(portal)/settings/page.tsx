@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { ShieldCheck, ShieldAlert, KeyRound, Store, User as UserIcon } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, KeyRound, Store, User as UserIcon, MapPin, Truck } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { useSellerPortal } from '@/lib/seller-context';
@@ -26,6 +26,21 @@ export default function SellerSettingsPage() {
   const [businessSaving, setBusinessSaving] = useState(false);
   const [businessSaved, setBusinessSaved] = useState(false);
   const [businessError, setBusinessError] = useState<string | null>(null);
+
+  // Address — Fulfillment & Subscriptions redesign, Phase 2. Needed as the
+  // origin for self-managed shipping and Pickup & Pay from her own address;
+  // didn't exist before this.
+  const [addressLine1, setAddressLine1] = useState(me.sellerProfile.addressLine1 ?? '');
+  const [addressLine2, setAddressLine2] = useState(me.sellerProfile.addressLine2 ?? '');
+  const [addrCity, setAddrCity] = useState(me.sellerProfile.city ?? '');
+  const [addrState, setAddrState] = useState(me.sellerProfile.state ?? '');
+  const [addrPincode, setAddrPincode] = useState(me.sellerProfile.pincode ?? '');
+
+  // Self-ship city (planning doc Decision 2) — one for now.
+  const [shipCity, setShipCity] = useState(me.sellerShipCity ?? '');
+  const [shipCitySaving, setShipCitySaving] = useState(false);
+  const [shipCitySaved, setShipCitySaved] = useState(false);
+  const [shipCityError, setShipCityError] = useState<string | null>(null);
 
   // Password
   const [newPassword, setNewPassword] = useState('');
@@ -78,6 +93,11 @@ export default function SellerSettingsPage() {
           businessName,
           plansDelhiveryShipping: plansDelhivery,
           jamaatId: plansDelhivery && jamaatId ? Number(jamaatId) : undefined,
+          addressLine1: addressLine1 || undefined,
+          addressLine2,
+          city: addrCity || undefined,
+          state: addrState || undefined,
+          pincode: addrPincode || undefined,
         }),
       });
       if (!res.ok) {
@@ -90,6 +110,29 @@ export default function SellerSettingsPage() {
       setTimeout(() => setBusinessSaved(false), 2000);
     } finally {
       setBusinessSaving(false);
+    }
+  }
+
+  async function saveShipCity(event: FormEvent) {
+    event.preventDefault();
+    setShipCitySaving(true);
+    setShipCityError(null);
+    setShipCitySaved(false);
+    try {
+      const res = await authFetch('/api/sellers/ship-city', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ city: shipCity }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setShipCityError(data.issues?.city?.[0] ?? data.error ?? 'Could not save.');
+        return;
+      }
+      setShipCitySaved(true);
+      setTimeout(() => setShipCitySaved(false), 2000);
+    } finally {
+      setShipCitySaving(false);
     }
   }
 
@@ -175,9 +218,63 @@ export default function SellerSettingsPage() {
             ))}
           </select>
         )}
+        <div className="mt-1 flex flex-col gap-3 border-t border-ink-soft/10 pt-4">
+          <p className="flex items-center gap-2 font-body text-xs font-semibold uppercase tracking-wide text-ink-soft">
+            <MapPin className="h-3.5 w-3.5" strokeWidth={2} />
+            Your address
+          </p>
+          <p className="-mt-2 font-body text-xs text-ink-soft">
+            Used as the pickup point for self-managed shipping and Pickup &amp; Pay, when you choose
+            your own address instead of a WeBohra office. Kept private by default — only shared with
+            a buyer once you&apos;re ready, or if you choose to show it on a specific listing.
+          </p>
+          <input
+            value={addressLine1}
+            onChange={(e) => setAddressLine1(e.target.value)}
+            placeholder="Address line 1"
+            className={inputStyles}
+          />
+          <input
+            value={addressLine2}
+            onChange={(e) => setAddressLine2(e.target.value)}
+            placeholder="Address line 2 (optional)"
+            className={inputStyles}
+          />
+          <div className="grid grid-cols-2 gap-2.5">
+            <input value={addrCity} onChange={(e) => setAddrCity(e.target.value)} placeholder="City" className={inputStyles} />
+            <input value={addrState} onChange={(e) => setAddrState(e.target.value)} placeholder="State" className={inputStyles} />
+          </div>
+          <input
+            value={addrPincode}
+            onChange={(e) => setAddrPincode(e.target.value)}
+            placeholder="Pincode"
+            className={`${inputStyles} max-w-[160px]`}
+          />
+        </div>
         {businessError && <p className="font-body text-sm text-red-700">{businessError}</p>}
         <button type="submit" disabled={businessSaving} className={buttonStyles('primary', 'md')}>
           {businessSaving ? 'Saving…' : businessSaved ? 'Saved ✓' : 'Save business details'}
+        </button>
+      </form>
+
+      <form onSubmit={saveShipCity} className="flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+        <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-ink">
+          <Truck className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+          Self-ship city
+        </h2>
+        <p className="-mt-2 font-body text-xs text-ink-soft">
+          Which city you deliver yourself to. Buyers outside it won&apos;t be able to choose
+          self-managed shipping on your listings — one city for now.
+        </p>
+        <input
+          value={shipCity}
+          onChange={(e) => setShipCity(e.target.value)}
+          placeholder="e.g. Mumbai"
+          className={`${inputStyles} max-w-xs`}
+        />
+        {shipCityError && <p className="font-body text-sm text-red-700">{shipCityError}</p>}
+        <button type="submit" disabled={shipCitySaving} className={buttonStyles('secondary', 'md')}>
+          {shipCitySaving ? 'Saving…' : shipCitySaved ? 'Saved ✓' : 'Save self-ship city'}
         </button>
       </form>
 
