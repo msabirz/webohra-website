@@ -9,6 +9,7 @@ import {
   ShoppingBag,
   MessageSquare,
   Handshake,
+  Layers,
   Settings,
   LogOut,
   Sparkles,
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: '/seller/orders', label: 'Orders', icon: ShoppingBag },
   { href: '/seller/enquiries', label: 'Enquiries', icon: MessageSquare },
   { href: '/seller/pickups', label: 'Pickups', icon: Handshake },
+  { href: '/seller/subscription', label: 'Subscription', icon: Layers },
   { href: '/seller/settings', label: 'Settings', icon: Settings },
 ];
 

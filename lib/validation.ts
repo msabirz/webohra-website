@@ -655,3 +655,13 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
     .optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
+
+// Fulfillment & Subscriptions redesign, Phase 4 — a seller choosing/
+// switching her own plan. Recharge isn't selectable yet (Phase 5 adds the
+// real wallet top-up this needs — offering it now would leave her stuck
+// at ₹0 balance immediately), so billingMode is always 'plan' here.
+export const sellerSubscriptionChooseSchema = z.object({
+  sellerType: z.enum(['product', 'service']),
+  planId: z.number().int().positive(),
+});
+export type SellerSubscriptionChooseInput = z.infer<typeof sellerSubscriptionChooseSchema>;

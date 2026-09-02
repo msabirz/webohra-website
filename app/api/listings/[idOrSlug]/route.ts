@@ -20,6 +20,7 @@ import {
   checkShippingEstimate,
 } from '@/lib/listing-fields';
 import { resolvePickupLocation } from '@/lib/pickup';
+import { checkPublishGate } from '@/lib/subscriptions';
 
 /**
  * Accepts either the internal numeric id (used by the seller dashboard,
@@ -240,6 +241,16 @@ export async function PATCH(
         );
       }
     }
+
+    // Fulfillment & Subscriptions redesign, Phase 4 — the actual
+    // enforcement point. Every existing seller was grandfathered onto a
+    // real plan before this shipped, so this only blocks someone with
+    // genuinely no subscription, or a listing configured beyond what her
+    // specific plan includes.
+    const gate = await checkPublishGate(listing);
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.error }, { status: 403 });
+    }
   }
 
   const [updated] = await db
@@ -309,6 +320,29 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
   const shippingCheck = await checkShippingEstimate(subcategoryId, shippingMethod, shippingEstimateText);
   if (!shippingCheck.ok) {
     return NextResponse.json({ error: 'Invalid input', issues: shippingCheck.issues }, { status: 400 });
+  }
+
+  // Fulfillment & Subscriptions redesign, Phase 4. PATCH is where a listing
+  // first crosses into active, but Save changes can just as easily flip
+  // pickupEnabled/pickupAddressSource/shippingMethod on a listing that's
+  // *already* active — without this, that edit would silently outrun
+  // whatever her plan actually allows until she happened to unpublish and
+  // republish. Draft listings skip this; PATCH re-checks them at publish
+  // time regardless, and a draft that never satisfies her current plan
+  // shouldn't be blocked from just being edited in the meantime.
+  if (listing.status === 'active') {
+    const resolvedPickupEnabled = pickupEnabled ?? false;
+    const gate = await checkPublishGate({
+      id: listing.id,
+      sellerId: listing.sellerId,
+      subcategoryId,
+      pickupEnabled: resolvedPickupEnabled,
+      pickupAddressSource: resolvedPickupEnabled ? (pickupAddressSource ?? null) : null,
+      shippingMethod,
+    });
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.error }, { status: 403 });
+    }
   }
 
   const [updated] = await db
