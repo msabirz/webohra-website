@@ -127,6 +127,13 @@
       "when": 1788285092121,
       "tag": "0017_striped_skin",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788346629561,
+      "tag": "0018_flaky_hellfire_club",
+      "breakpoints": true
     }
   ]
 }

@@ -80,6 +80,67 @@ export const pickupRequestStatusEnum = pgEnum('pickup_request_status', [
   'issue',
 ]);
 
+// --- Fulfillment & Subscriptions redesign (planning doc: "Fulfillment &
+// Subscriptions") — schema landing ahead of the feature it backs, same
+// pattern as orders/order_items originally did. Nothing below is read or
+// written by any route yet; this phase is additive-only groundwork. ---
+
+/** Where a buyer's pickup, or a Delhivery parcel, actually originates —
+ *  the seller's own address, or a WeBohra office. Shared by both
+ *  listings.pickupAddressSource and listings.delhiveryPickupSource since
+ *  it's the same choice either way. */
+export const pickupAddressSourceEnum = pgEnum('pickup_address_source', [
+  'seller',
+  'office',
+]);
+
+/** One row per (order, seller, method) in the new `shipments` table — see
+ *  its own comment for why a seller can have more than one shipment in a
+ *  single order. */
+export const shipmentMethodEnum = pgEnum('shipment_method', [
+  'self_managed',
+  'delhivery',
+  'pickup_and_pay',
+]);
+
+/** Who ended an order — a buyer cancelling herself vs. Admin stepping in
+ *  after a seller missed her window (e.g. a Delhivery parcel never reached
+ *  the WeBohra office in time). Kept distinct so reporting never conflates
+ *  the two. Only meaningful once orders.status is 'cancelled'. */
+export const cancelledByEnum = pgEnum('cancelled_by', ['buyer', 'ops']);
+
+export const sellerTypeEnum = pgEnum('seller_type', ['product', 'service']);
+
+/** A seller is on exactly one of these per seller_type — a flat monthly
+ *  plan, or pay-as-you-go via her wallet. Never both at once for the same
+ *  seller_type (see seller_subscriptions' own comment). */
+export const billingModeEnum = pgEnum('billing_mode', ['plan', 'recharge']);
+
+export const subscriptionStatusEnum = pgEnum('subscription_status', [
+  'active',
+  'lapsed',
+  'cancelled',
+]);
+
+/** How a buyer reaches a service seller — gated per subscription_plans
+ *  tier (see the planning doc's service-tier table). 'masked_relay' is the
+ *  previously-deferred contingency design (root CLAUDE.md's "documented
+ *  contingency — do not build unless explicitly asked") — now scoped to
+ *  Gold-tier only. */
+export const contactModeEnum = pgEnum('contact_mode', [
+  'whatsapp_number',
+  'direct_whatsapp',
+  'masked_relay',
+]);
+
+/** Every row in wallet_transactions is one of these — the whole audit
+ *  trail the "no one is scamming the wallet" requirement rests on. */
+export const walletTransactionTypeEnum = pgEnum('wallet_transaction_type', [
+  'topup',
+  'commission_deduction',
+  'admin_adjustment',
+]);
+
 // ---------------------------------------------------------------------------
 // Tables
 // ---------------------------------------------------------------------------
@@ -230,6 +291,30 @@ export const listings = pgTable('listings', {
   // back to the seller so a moderation action is never an unexplained
   // disappearance. Null the rest of the time.
   moderationNote: varchar('moderation_note', { length: 300 }),
+  // --- Fulfillment & Subscriptions redesign — all nullable/defaulted so
+  // every existing listing keeps behaving exactly as it does today until
+  // the buyer-facing phase (Phase 3) actually reads these. ---
+  // Flat fee for self-managed shipping, seller's own number — shown at
+  // checkout once Phase 3 lands. Null today means "not set yet," not free.
+  selfShipCharge: numeric('self_ship_charge', { precision: 10, scale: 2 }),
+  // Per-listing Pickup & Pay toggle — replaces today's seller-wide (jamaat-
+  // city-match) eligibility once Phase 3 switches buyer-facing checks over
+  // to this. Defaults off so no existing listing silently gains Pickup &
+  // Pay the moment this column exists.
+  pickupEnabled: boolean('pickup_enabled').notNull().default(false),
+  pickupAddressSource: pickupAddressSourceEnum('pickup_address_source'),
+  delhiveryPickupSource: pickupAddressSourceEnum('delhivery_pickup_source'),
+  // Minimum hours' notice before a buyer's Pickup & Pay slot picker allows
+  // a date/time to be selected.
+  pickupLeadTimeHours: integer('pickup_lead_time_hours'),
+  // Whether her pickup address is shown on the PDP itself vs. only revealed
+  // once she marks a specific order "ready for pickup" (the safer default —
+  // see pickup_requests.readyForPickupAt). Off by default deliberately.
+  showAddressOnPdp: boolean('show_address_on_pdp').notNull().default(false),
+  // Kilograms, 3-decimal precision (gram-level). Optional — only meaningful
+  // once real Delhivery rate lookups exist; listing_variants.weight can
+  // override this per type.
+  weight: numeric('weight', { precision: 10, scale: 3 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -253,6 +338,10 @@ export const listingVariants = pgTable('listing_variants', {
   // Same meaning/nullability as listings.stockQuantity — null means not tracked.
   stockQuantity: integer('stock_quantity'),
   sortOrder: integer('sort_order').notNull().default(0),
+  // Overrides listings.weight for this one variant when set (e.g. a Roti
+  // listing's Butter Naan legitimately weighs more than its Chapati) — null
+  // falls back to the listing's own weight. See the planning doc's Risk 2.
+  weight: numeric('weight', { precision: 10, scale: 3 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -328,6 +417,27 @@ export const listingPins = pgTable('listing_pins', {
 });
 
 /**
+ * A WeBohra-operated, volunteer-staffed location — distinct from a jamaat
+ * (a community institution WeBohra doesn't run). The drop-off point for a
+ * Delhivery-bound parcel a seller chooses not to have picked up from her
+ * own address, and an alternate collection point for Pickup & Pay. Several
+ * jamaats can share one office (see jamaats.officeId below) rather than
+ * needing a 1:1 office per jamaat. Admin-managed.
+ */
+export const webohraOffices = pgTable('webohra_offices', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 150 }).notNull(),
+  addressLine1: varchar('address_line1', { length: 200 }).notNull(),
+  addressLine2: varchar('address_line2', { length: 200 }),
+  city: varchar('city', { length: 100 }).notNull(),
+  state: varchar('state', { length: 100 }).notNull(),
+  pincode: varchar('pincode', { length: 10 }).notNull(),
+  contactPhone: varchar('contact_phone', { length: 20 }),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Fixed pickup-point list for Delhivery-managed sellers (FR-46, FR-47) — her
  * nearest jamaat becomes the shipping origin instead of her home address.
  * This is master data Admin curates (Section 3.3, FR-12-style config table),
@@ -340,6 +450,9 @@ export const jamaats = pgTable(
     city: varchar('city', { length: 100 }).notNull(),
     name: varchar('name', { length: 150 }).notNull(),
     active: boolean('active').notNull().default(true),
+    // Which WeBohra office serves this jamaat, admin-mapped — null until
+    // Admin sets it (see the planning doc's admin capabilities section).
+    officeId: integer('office_id').references(() => webohraOffices.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [unique('jamaats_city_name_unique').on(table.city, table.name)],
@@ -359,6 +472,17 @@ export const sellerProfiles = pgTable('seller_profiles', {
   // Set only if she registered intending to use Delhivery-managed shipping
   // for at least one listing (FR-46). Null means self-managed shipping only.
   jamaatId: integer('jamaat_id').references(() => jamaats.id, { onDelete: 'set null' }),
+  // Her real address — didn't exist before the Fulfillment & Subscriptions
+  // redesign (only businessName/jamaatId did). Needed as the shipping
+  // origin for self-ship, Delhivery-from-seller, and Pickup & Pay's
+  // seller-location option. Nullable: existing sellers have none yet, and
+  // Phase 2 collects it without forcing every current seller to backfill
+  // it before anything else works.
+  addressLine1: varchar('address_line1', { length: 200 }),
+  addressLine2: varchar('address_line2', { length: 200 }),
+  city: varchar('city', { length: 100 }),
+  state: varchar('state', { length: 100 }),
+  pincode: varchar('pincode', { length: 10 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -430,6 +554,12 @@ export const orders = pgTable('orders', {
   pincode: varchar('pincode', { length: 10 }).notNull(),
   paymentMethod: paymentMethodEnum('payment_method').notNull().default('cod'),
   status: orderStatusEnum('status').notNull().default('placed'),
+  // Only ever set alongside status: 'cancelled' — distinguishes a buyer
+  // cancelling herself from Admin stepping in after a seller missed her
+  // fulfillment window (planning doc Decision 6), so reporting can always
+  // tell the two apart.
+  cancelledBy: cancelledByEnum('cancelled_by'),
+  cancellationReason: varchar('cancellation_reason', { length: 300 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -486,7 +616,22 @@ export const pickupRequests = pgTable('pickup_requests', {
   buyerName: varchar('buyer_name', { length: 150 }).notNull(),
   buyerPhone: varchar('buyer_phone', { length: 20 }).notNull(),
   requestedDate: varchar('requested_date', { length: 10 }).notNull(), // YYYY-MM-DD
+  // HH:MM, 24h — added alongside requestedDate rather than replacing it, so
+  // existing rows (date-only) stay valid; nullable until Phase 3's slot
+  // picker starts setting it. Same varchar convention as requestedDate.
+  requestedTime: varchar('requested_time', { length: 5 }),
   requestedPlace: varchar('requested_place', { length: 200 }).notNull(),
+  // Public tracking identifier, same convention as orders.orderNumber /
+  // enquiries.requestNumber — didn't exist before (Pickup & Pay was the one
+  // gap in that pattern). Nullable + unique: NULLs don't collide under a
+  // unique constraint, so existing rows are untouched until Phase 3 backfills
+  // real values for new requests going forward.
+  trackingNumber: varchar('tracking_number', { length: 20 }).unique(),
+  // Set the moment the seller marks this request "ready for pickup" — the
+  // trigger that reveals her address to this specific buyer when
+  // listings.showAddressOnPdp is off (planning doc Decision 5). Null means
+  // not ready yet, or the listing shows its address unconditionally instead.
+  readyForPickupAt: timestamp('ready_for_pickup_at', { withTimezone: true }),
   // FR-47: Customer Support's own receiving/logging workflow, layered on
   // top of the buyer-facing request above — 'pending' until a staff member
   // logs the parcel as physically received at the jamaat, or flags an
@@ -535,5 +680,215 @@ export const banners = pgTable('banners', {
   colorHex: varchar('color_hex', { length: 7 }).notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
   active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// Fulfillment & Subscriptions redesign — new tables
+// ---------------------------------------------------------------------------
+
+/**
+ * Eligible self-managed-shipping cities for one seller. Modeled as its own
+ * table (not a single column on seller_profiles) specifically so a future
+ * "let her ship to more than one city" doesn't need a migration — v1's
+ * onboarding UI just only ever inserts one row per seller. Today's launch
+ * scope is still same-city-only (planning doc Decision 2).
+ */
+export const sellerShipCities = pgTable(
+  'seller_ship_cities',
+  {
+    id: serial('id').primaryKey(),
+    sellerId: integer('seller_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    city: varchar('city', { length: 100 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('seller_ship_cities_seller_city_unique').on(table.sellerId, table.city)],
+);
+
+/**
+ * One row per (order, seller, method) — deliberately not one row per
+ * (order, seller). A buyer can have a self-managed item and a Delhivery
+ * item from the same seller in one order; forcing one shipping method per
+ * seller per order would either invent a blended charge that matches
+ * neither courier's real pricing, or silently drop one method. Charge is
+ * per shipment, not per item within it (planning doc's Risk 1 resolution —
+ * mirrors how Amazon bills FBA/FBM items from one seller separately).
+ * expectedAtOfficeBy/arrivedAtOfficeAt back the admin-escalation flow when
+ * a seller's parcel needs to reach a WeBohra office before Delhivery picks
+ * it up or a Pickup & Pay buyer collects it — the FR-47 concept that used
+ * to live (awkwardly) on pickup_requests' own status enum lives here now.
+ */
+export const shipments = pgTable('shipments', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id')
+    .notNull()
+    .references(() => orders.id, { onDelete: 'cascade' }),
+  sellerId: integer('seller_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  method: shipmentMethodEnum('method').notNull(),
+  // Null for pickup_and_pay (no shipping charge at all — buyer pays the
+  // seller directly in person).
+  charge: numeric('charge', { precision: 10, scale: 2 }),
+  // Resolved address snapshot for this shipment — the seller's own address
+  // or the WeBohra office's, captured at shipment-creation time so it
+  // reads the same later even if her address or the office mapping changes.
+  addressLine1: varchar('address_line1', { length: 200 }),
+  addressLine2: varchar('address_line2', { length: 200 }),
+  city: varchar('city', { length: 100 }),
+  state: varchar('state', { length: 100 }),
+  pincode: varchar('pincode', { length: 10 }),
+  expectedAtOfficeBy: timestamp('expected_at_office_by', { withTimezone: true }),
+  arrivedAtOfficeAt: timestamp('arrived_at_office_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One row per pricing tier, per seller_type — the whole point being that
+ * every gate here is a plain column admin can edit, not logic keyed off a
+ * tier name in code (planning doc's "admin manageability" answer). Archived
+ * via `active`, never deleted, same reasoning as subcategory_fields — a
+ * seller already on a retired plan must keep working exactly as before.
+ */
+export const subscriptionPlans = pgTable(
+  'subscription_plans',
+  {
+    id: serial('id').primaryKey(),
+    sellerType: sellerTypeEnum('seller_type').notNull(),
+    // Stable key ("basic", "silver", "gold", "diamond", ...) — display name
+    // can change without breaking anything keyed off this.
+    tierKey: varchar('tier_key', { length: 30 }).notNull(),
+    name: varchar('name', { length: 60 }).notNull(),
+    monthlyPrice: numeric('monthly_price', { precision: 10, scale: 2 }).notNull(),
+    // Null = unlimited.
+    maxActiveListings: integer('max_active_listings'),
+    allowsPickupAndPay: boolean('allows_pickup_and_pay').notNull().default(false),
+    // Only meaningful when allowsPickupAndPay is true — whether she can
+    // also choose the WeBohra office as the pickup address, not just her own.
+    pickupOfficeOption: boolean('pickup_office_option').notNull().default(false),
+    allowsDelhivery: boolean('allows_delhivery').notNull().default(false),
+    prioritySupport: boolean('priority_support').notNull().default(false),
+    remindersEnabled: boolean('reminders_enabled').notNull().default(false),
+    // Service plans only — null for product plans.
+    contactMode: contactModeEnum('contact_mode'),
+    // How many free bonus listings this plan grants in the OTHER
+    // seller_type, at that type's Basic-tier feature level (planning doc
+    // item 11) — e.g. a product seller trying out services for free.
+    bonusOtherCategoryListings: integer('bonus_other_category_listings').notNull().default(0),
+    active: boolean('active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('subscription_plans_seller_type_tier_key_unique').on(table.sellerType, table.tierKey)],
+);
+
+/**
+ * One active row per (seller, seller_type) — not per seller. A seller who
+ * lists both products and services can hold a product subscription and a
+ * service subscription at the same time (planning doc item 11); this is
+ * what makes that possible without a second table. Shell for now — no live
+ * billing drives `status`/`renewsAt` yet, matches the rest of this build.
+ */
+export const sellerSubscriptions = pgTable(
+  'seller_subscriptions',
+  {
+    id: serial('id').primaryKey(),
+    sellerId: integer('seller_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sellerType: sellerTypeEnum('seller_type').notNull(),
+    billingMode: billingModeEnum('billing_mode').notNull(),
+    // Null when billingMode is 'recharge' — a recharge seller has no plan
+    // row, her feature set instead defaults from
+    // subscription_settings.rechargeDefaultPlanId.
+    planId: integer('plan_id').references(() => subscriptionPlans.id, { onDelete: 'restrict' }),
+    status: subscriptionStatusEnum('status').notNull().default('active'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    renewsAt: timestamp('renews_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('seller_subscriptions_seller_type_unique').on(table.sellerId, table.sellerType)],
+);
+
+/** Recharge-mode balance — one row per seller. Real money in, via a real
+ *  payment gateway (sandbox/test mode for now); see wallet_transactions for
+ *  every movement in or out. */
+export const sellerWallets = pgTable('seller_wallets', {
+  id: serial('id').primaryKey(),
+  sellerId: integer('seller_id')
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  balance: numeric('balance', { precision: 10, scale: 2 }).notNull().default('0'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The full audit trail behind seller_wallets.balance — nothing changes a
+ * balance without a row here. Automatic top-ups (gatewayPaymentId set,
+ * initiatedByStaffId null) are the normal path; admin_adjustment rows
+ * (initiatedByStaffId set, reason required at the app level) are the only
+ * other way a balance moves, specifically so an adjustment can never be
+ * silent or unaccountable (the requester's explicit "no one is scamming"
+ * requirement).
+ */
+export const walletTransactions = pgTable('wallet_transactions', {
+  id: serial('id').primaryKey(),
+  sellerId: integer('seller_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  type: walletTransactionTypeEnum('type').notNull(),
+  amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
+  orderId: integer('order_id').references(() => orders.id, { onDelete: 'set null' }),
+  // Links a topup row back to the real gateway transaction it came from.
+  gatewayPaymentId: varchar('gateway_payment_id', { length: 100 }),
+  // Set only for admin_adjustment rows — who authorized it. Null means the
+  // system did it automatically (a real gateway top-up or an order's
+  // commission deduction).
+  initiatedByStaffId: integer('initiated_by_staff_id').references(() => users.id, { onDelete: 'set null' }),
+  reason: varchar('reason', { length: 300 }),
+  balanceAfter: numeric('balance_after', { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Single-row platform-wide config for the numbers that aren't per-plan —
+ *  the app is expected to only ever have one row here. */
+export const subscriptionSettings = pgTable('subscription_settings', {
+  id: serial('id').primaryKey(),
+  // Below this wallet balance, a recharge seller's listings show as Out of
+  // Stock (visible, not purchasable) rather than being delisted.
+  walletMinThreshold: numeric('wallet_min_threshold', { precision: 10, scale: 2 }).notNull().default('0'),
+  // Which plan's feature set a recharge-mode seller gets by default —
+  // admin-configurable rather than hardcoded to Basic (planning doc item 8).
+  rechargeDefaultPlanId: integer('recharge_default_plan_id').references(() => subscriptionPlans.id, {
+    onDelete: 'set null',
+  }),
+  // Cut WeBohra takes from a bonus-listing sale (planning doc item 11) —
+  // e.g. 10.00 means 10%.
+  bonusListingCommissionPercent: numeric('bonus_listing_commission_percent', { precision: 5, scale: 2 })
+    .notNull()
+    .default('10.00'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A service seller's showcase — confirmed separate from a purchasable
+ * listing (planning doc item 4), particularly relevant for IT & Services
+ * sellers who have a portfolio of past work distinct from what she's
+ * actually selling right now. The service pages themselves still need a
+ * redesign to surface this; this table just makes the data storable.
+ */
+export const portfolioItems = pgTable('portfolio_items', {
+  id: serial('id').primaryKey(),
+  sellerId: integer('seller_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 150 }).notNull(),
+  link: varchar('link', { length: 500 }),
+  imageUrl: varchar('image_url', { length: 500 }),
+  sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
