@@ -20,6 +20,10 @@ type PickupDetail = {
   listingSlug: string;
   businessName: string | null;
   place: string | null;
+  // Only ever set when `place` isn't — the resolved city, shown pre-reveal
+  // so this page isn't less informative than the request modal was before
+  // she even submitted.
+  city: string | null;
 };
 
 export default function PickupTrackingPage() {
@@ -98,8 +102,8 @@ export default function PickupTrackingPage() {
           <p className="font-body text-sm text-ink-soft">{req.place}</p>
         ) : (
           <p className="font-body text-sm text-ink-soft">
-            The exact pickup location will be shared once {req.businessName ?? 'the seller'} confirms your
-            request.
+            {req.city ? `${req.city} — exact` : 'The exact'} address will be shared once{' '}
+            {req.businessName ?? 'the seller'} confirms your request.
           </p>
         )}
         <p className="mt-3 font-body text-xs text-ink-soft">

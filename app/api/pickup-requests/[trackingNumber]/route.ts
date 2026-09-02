@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { pickupRequests, listings, sellerProfiles } from '@/db/schema';
+import { resolvePickupLocation } from '@/lib/pickup';
 
 /**
  * GET /api/pickup-requests/[trackingNumber]
@@ -39,6 +40,8 @@ export async function GET(
       listingSlug: listings.slug,
       businessName: sellerProfiles.businessName,
       showAddressOnPdp: listings.showAddressOnPdp,
+      sellerId: pickupRequests.sellerId,
+      pickupAddressSource: listings.pickupAddressSource,
     })
     .from(pickupRequests)
     .innerJoin(listings, eq(pickupRequests.listingId, listings.id))
@@ -50,6 +53,12 @@ export async function GET(
   }
 
   const addressRevealed = row.showAddressOnPdp || !!row.readyForPickupAt;
+
+  // Even pre-reveal, the buyer should see the city — same as the request
+  // modal itself already does before she ever submits ("Mumbai — exact
+  // address shared once the seller confirms"). Resolved the same way the
+  // PDP does, so the two never disagree.
+  const location = await resolvePickupLocation(row.sellerId, row.pickupAddressSource);
 
   return NextResponse.json({
     request: {
@@ -66,6 +75,7 @@ export async function GET(
       // gets told it'll be shared, same "never expose more than the
       // feature allows" pattern as sellerPhone elsewhere.
       place: addressRevealed ? row.requestedPlace : null,
+      city: addressRevealed ? null : location.city,
       createdAt: row.createdAt,
     },
   });
