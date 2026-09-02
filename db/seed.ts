@@ -13,6 +13,9 @@ import {
   listings,
   listingVariants,
   banners,
+  webohraOffices,
+  subscriptionPlans,
+  subscriptionSettings,
 } from './schema';
 
 /**
@@ -195,6 +198,96 @@ const JAMAAT_SEED = [
   { city: 'Surat', name: 'Central Jamaat' },
   { city: 'Pune', name: 'Camp Jamaat' },
   { city: 'Indore', name: 'Central Jamaat' },
+];
+
+// One WeBohra office per jamaat city — Fulfillment & Subscriptions redesign
+// (Phase 1). A real deployment would likely have fewer offices than
+// jamaats (several jamaats sharing one), but one-per-city is the simplest
+// starter mapping until Admin curates a real one, same reasoning as
+// JAMAAT_SEED itself.
+const WEBOHRA_OFFICE_SEED = [
+  { city: 'Mumbai', name: 'WeBohra Office — Mumbai', addressLine1: 'Shop 4, Bohra Bazaar', state: 'Maharashtra', pincode: '400003', contactPhone: '9820000001' },
+  { city: 'Surat', name: 'WeBohra Office — Surat', addressLine1: '12 Vohra Sheri', state: 'Gujarat', pincode: '395003', contactPhone: '9820000002' },
+  { city: 'Pune', name: 'WeBohra Office — Pune', addressLine1: '3rd Floor, Camp Complex', state: 'Maharashtra', pincode: '411001', contactPhone: '9820000003' },
+  { city: 'Indore', name: 'WeBohra Office — Indore', addressLine1: '22 Jaora Compound', state: 'Madhya Pradesh', pincode: '452001', contactPhone: '9820000004' },
+];
+
+// The actual tier design from the Fulfillment & Subscriptions planning
+// doc — every gate here is a real, admin-editable column (see
+// subscription_plans in db/schema.ts), this is just its starting values.
+const SUBSCRIPTION_PLAN_SEED: Array<{
+  sellerType: 'product' | 'service';
+  tierKey: string;
+  name: string;
+  monthlyPrice: string;
+  maxActiveListings?: number;
+  allowsPickupAndPay?: boolean;
+  pickupOfficeOption?: boolean;
+  allowsDelhivery?: boolean;
+  prioritySupport?: boolean;
+  remindersEnabled?: boolean;
+  contactMode?: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay';
+  bonusOtherCategoryListings?: number;
+  sortOrder: number;
+}> = [
+  { sellerType: 'product', tierKey: 'basic', name: 'Basic', monthlyPrice: '253.00', sortOrder: 0, bonusOtherCategoryListings: 1 },
+  { sellerType: 'product', tierKey: 'silver', name: 'Silver', monthlyPrice: '553.00', allowsPickupAndPay: true, sortOrder: 1, bonusOtherCategoryListings: 1 },
+  {
+    sellerType: 'product',
+    tierKey: 'gold',
+    name: 'Gold',
+    monthlyPrice: '786.00',
+    allowsPickupAndPay: true,
+    pickupOfficeOption: true,
+    prioritySupport: true,
+    remindersEnabled: true,
+    sortOrder: 2,
+    bonusOtherCategoryListings: 2,
+  },
+  {
+    sellerType: 'product',
+    tierKey: 'diamond',
+    name: 'Diamond',
+    monthlyPrice: '1071.00',
+    allowsPickupAndPay: true,
+    pickupOfficeOption: true,
+    allowsDelhivery: true,
+    prioritySupport: true,
+    remindersEnabled: true,
+    sortOrder: 3,
+    bonusOtherCategoryListings: 2,
+  },
+  {
+    sellerType: 'service',
+    tierKey: 'basic',
+    name: 'Basic',
+    monthlyPrice: '153.00',
+    maxActiveListings: 1,
+    contactMode: 'whatsapp_number',
+    sortOrder: 0,
+    bonusOtherCategoryListings: 1,
+  },
+  {
+    sellerType: 'service',
+    tierKey: 'silver',
+    name: 'Silver',
+    monthlyPrice: '553.00',
+    maxActiveListings: 4,
+    contactMode: 'direct_whatsapp',
+    sortOrder: 1,
+    bonusOtherCategoryListings: 1,
+  },
+  {
+    sellerType: 'service',
+    tierKey: 'gold',
+    name: 'Gold',
+    monthlyPrice: '786.00',
+    maxActiveListings: 6,
+    contactMode: 'masked_relay',
+    prioritySupport: true,
+    sortOrder: 2,
+    bonusOtherCategoryListings: 2,
+  },
 ];
 
 /**
@@ -559,6 +652,55 @@ async function seed() {
     jamaatIdByCity.set(jamaat.city, row.id);
   }
   console.log(`Seeded ${JAMAAT_SEED.length} jamaats.`);
+
+  // webohra_offices has no natural unique key (no city+name constraint like
+  // jamaats), so idempotency here is "does one with this exact name already
+  // exist" — same check-then-skip pattern DEMO_LISTINGS/BANNER_SEED already
+  // use below for the same reason.
+  let officeCount = 0;
+  for (const office of WEBOHRA_OFFICE_SEED) {
+    let officeId: number;
+    const [existingOffice] = await db.select().from(webohraOffices).where(eq(webohraOffices.name, office.name));
+    if (existingOffice) {
+      officeId = existingOffice.id;
+    } else {
+      const [created] = await db.insert(webohraOffices).values(office).returning();
+      officeId = created.id;
+      officeCount += 1;
+    }
+    const jamaatId = jamaatIdByCity.get(office.city);
+    if (jamaatId) {
+      await db.update(jamaats).set({ officeId }).where(eq(jamaats.id, jamaatId));
+    }
+  }
+  console.log(`Seeded ${officeCount} WeBohra offices, mapped to their city's jamaat.`);
+
+  const subscriptionPlanIdByKey = new Map<string, number>();
+  for (const plan of SUBSCRIPTION_PLAN_SEED) {
+    const { sellerType, tierKey, maxActiveListings, ...rest } = plan;
+    const [row] = await db
+      .insert(subscriptionPlans)
+      .values({ sellerType, tierKey, maxActiveListings: maxActiveListings ?? null, ...rest })
+      .onConflictDoUpdate({
+        target: [subscriptionPlans.sellerType, subscriptionPlans.tierKey],
+        set: { maxActiveListings: maxActiveListings ?? null, ...rest },
+      })
+      .returning();
+    subscriptionPlanIdByKey.set(`${sellerType}:${tierKey}`, row.id);
+  }
+  console.log(`Seeded ${SUBSCRIPTION_PLAN_SEED.length} subscription plans.`);
+
+  const [existingSettings] = await db.select().from(subscriptionSettings).limit(1);
+  const productBasicPlanId = subscriptionPlanIdByKey.get('product:basic') ?? null;
+  if (existingSettings) {
+    await db
+      .update(subscriptionSettings)
+      .set({ rechargeDefaultPlanId: productBasicPlanId, updatedAt: new Date() })
+      .where(eq(subscriptionSettings.id, existingSettings.id));
+  } else {
+    await db.insert(subscriptionSettings).values({ rechargeDefaultPlanId: productBasicPlanId });
+  }
+  console.log('Seeded subscription settings (recharge defaults to Product Basic).');
 
   const sellerIdByKey = new Map<string, number>();
   for (const seller of DEMO_SELLERS) {

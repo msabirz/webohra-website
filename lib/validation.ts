@@ -227,7 +227,7 @@ export type UploadPresignInput = z.infer<typeof uploadPresignSchema>;
 
 // India Post pincodes are always 6 digits, but kept at 5-6 per the
 // requester's explicit call — lenient on the low end, never more than 6.
-const pincodeField = () =>
+export const pincodeField = () =>
   z
     .string()
     .trim()
@@ -446,6 +446,9 @@ export const adminJamaatUpdateSchema = z.object({
   city: nameField('City').optional(),
   name: nameField('Jamaat name').optional(),
   active: z.boolean().optional(),
+  // Which WeBohra office serves this jamaat — null explicitly clears the
+  // mapping (not the same as omitting the key, which leaves it untouched).
+  officeId: z.number().int().positive().nullable().optional(),
 });
 export type AdminJamaatUpdateInput = z.infer<typeof adminJamaatUpdateSchema>;
 
@@ -514,3 +517,94 @@ export const enquiryRejectSchema = z.object({
   reason: z.string().trim().max(300).optional(),
 });
 export type EnquiryRejectInput = z.infer<typeof enquiryRejectSchema>;
+
+// ---------------------------------------------------------------------------
+// Fulfillment & Subscriptions redesign — Phase 1 (admin config)
+// ---------------------------------------------------------------------------
+
+export const adminWebohraOfficeCreateSchema = z.object({
+  name: nameField('Office name'),
+  addressLine1: z.string().trim().min(3, 'Address must be at least 3 characters').max(200),
+  addressLine2: z.string().trim().max(200).optional(),
+  city: nameField('City'),
+  state: nameField('State'),
+  pincode: pincodeField(),
+  contactPhone: phoneField().optional(),
+});
+export type AdminWebohraOfficeCreateInput = z.infer<typeof adminWebohraOfficeCreateSchema>;
+
+export const adminWebohraOfficeUpdateSchema = z.object({
+  name: nameField('Office name').optional(),
+  addressLine1: z.string().trim().min(3, 'Address must be at least 3 characters').max(200).optional(),
+  addressLine2: z.string().trim().max(200).optional().or(z.literal('')),
+  city: nameField('City').optional(),
+  state: nameField('State').optional(),
+  pincode: pincodeField().optional(),
+  contactPhone: phoneField().optional().or(z.literal('')),
+  active: z.boolean().optional(),
+});
+export type AdminWebohraOfficeUpdateInput = z.infer<typeof adminWebohraOfficeUpdateSchema>;
+
+const sellerTypeValue = z.enum(['product', 'service']);
+const contactModeValue = z.enum(['whatsapp_number', 'direct_whatsapp', 'masked_relay']);
+
+// tierKey is a stable, code-facing slug ("basic", "gold", ...) — display
+// name can change freely without breaking anything keyed off this.
+const tierKeyField = () =>
+  z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9_]+$/, 'Use lowercase letters, numbers, and underscores only')
+    .min(2)
+    .max(30);
+
+export const adminSubscriptionPlanCreateSchema = z.object({
+  sellerType: sellerTypeValue,
+  tierKey: tierKeyField(),
+  name: nameField('Plan name'),
+  monthlyPrice: z.number().nonnegative('Price can’t be negative'),
+  // Absent/undefined = unlimited listings. Explicit null isn't accepted
+  // here — omit the key instead, so "unlimited" is a deliberate choice,
+  // not a typo that silently became one.
+  maxActiveListings: z.number().int().positive().optional(),
+  allowsPickupAndPay: z.boolean().default(false),
+  pickupOfficeOption: z.boolean().default(false),
+  allowsDelhivery: z.boolean().default(false),
+  prioritySupport: z.boolean().default(false),
+  remindersEnabled: z.boolean().default(false),
+  // Service plans only — validated against sellerType in the route itself
+  // (a product plan with a contactMode set would be silently meaningless,
+  // better to reject it outright than accept dead data).
+  contactMode: contactModeValue.optional(),
+  bonusOtherCategoryListings: z.number().int().min(0).max(10).default(0),
+  sortOrder: z.number().int().min(0).default(0),
+});
+export type AdminSubscriptionPlanCreateInput = z.infer<typeof adminSubscriptionPlanCreateSchema>;
+
+export const adminSubscriptionPlanUpdateSchema = z.object({
+  name: nameField('Plan name').optional(),
+  monthlyPrice: z.number().nonnegative('Price can’t be negative').optional(),
+  maxActiveListings: z.number().int().positive().nullable().optional(),
+  allowsPickupAndPay: z.boolean().optional(),
+  pickupOfficeOption: z.boolean().optional(),
+  allowsDelhivery: z.boolean().optional(),
+  prioritySupport: z.boolean().optional(),
+  remindersEnabled: z.boolean().optional(),
+  contactMode: contactModeValue.nullable().optional(),
+  bonusOtherCategoryListings: z.number().int().min(0).max(10).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  active: z.boolean().optional(),
+});
+export type AdminSubscriptionPlanUpdateInput = z.infer<typeof adminSubscriptionPlanUpdateSchema>;
+
+export const adminSubscriptionSettingsUpdateSchema = z.object({
+  walletMinThreshold: z.number().nonnegative('Threshold can’t be negative').optional(),
+  rechargeDefaultPlanId: z.number().int().positive().nullable().optional(),
+  bonusListingCommissionPercent: z
+    .number()
+    .min(0, 'Commission can’t be negative')
+    .max(100, 'Commission can’t exceed 100%')
+    .optional(),
+});
+export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;

@@ -6,16 +6,23 @@ import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { RowListSkeleton } from '@/components/skeleton';
 
-type Jamaat = { id: number; city: string; name: string; active: boolean };
+type Jamaat = { id: number; city: string; name: string; active: boolean; officeId: number | null };
+type Office = { id: number; name: string; city: string; active: boolean };
 
 export default function AdminJamaatsPage() {
   const [jamaats, setJamaats] = useState<Jamaat[] | null>(null);
+  const [offices, setOffices] = useState<Office[]>([]);
   const [formOpen, setFormOpen] = useState(false);
 
   async function load() {
-    const res = await authFetch('/api/admin/jamaats');
-    const data = await res.json();
-    setJamaats(data.jamaats ?? []);
+    const [jamaatsRes, officesRes] = await Promise.all([
+      authFetch('/api/admin/jamaats'),
+      authFetch('/api/admin/webohra-offices'),
+    ]);
+    const jamaatsData = await jamaatsRes.json();
+    const officesData = await officesRes.json();
+    setJamaats(jamaatsData.jamaats ?? []);
+    setOffices(officesData.offices ?? []);
   }
 
   useEffect(() => {
@@ -27,6 +34,15 @@ export default function AdminJamaatsPage() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !jamaat.active }),
+    });
+    load();
+  }
+
+  async function setOffice(jamaat: Jamaat, officeId: string) {
+    await authFetch(`/api/admin/jamaats/${jamaat.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ officeId: officeId ? Number(officeId) : null }),
     });
     load();
   }
@@ -68,6 +84,19 @@ export default function AdminJamaatsPage() {
                 <p className="truncate font-body text-sm font-semibold text-ink">{j.name}</p>
                 <p className="truncate font-body text-xs text-ink-soft">{j.city}</p>
               </div>
+              <select
+                value={j.officeId ?? ''}
+                onChange={(e) => setOffice(j, e.target.value)}
+                className={inputStyles + ' !w-auto max-w-[180px] !py-1.5 text-xs'}
+                aria-label={`WeBohra office for ${j.name}`}
+              >
+                <option value="">No office mapped</option>
+                {offices.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name} ({o.city})
+                  </option>
+                ))}
+              </select>
               {!j.active && (
                 <span className="rounded-full bg-ink-soft/10 px-2 py-0.5 font-body text-[11px] text-ink-soft">Inactive</span>
               )}

@@ -13,6 +13,8 @@ import {
   Truck,
   Image as ImageIcon,
   MapPin,
+  Building2,
+  Layers,
   Users,
   Settings,
   LogOut,
@@ -34,6 +36,8 @@ const NAV_ITEMS = [
   { href: '/admin/pickups', label: 'Pickups', icon: Truck, roles: ['customer_support', 'admin', 'super_admin'] },
   { href: '/admin/banners', label: 'Banners', icon: ImageIcon, roles: ['admin', 'super_admin'] },
   { href: '/admin/jamaats', label: 'Jamaats', icon: MapPin, roles: ['admin', 'super_admin'] },
+  { href: '/admin/webohra-offices', label: 'WeBohra Offices', icon: Building2, roles: ['admin', 'super_admin'] },
+  { href: '/admin/subscription-plans', label: 'Subscription Plans', icon: Layers, roles: ['admin', 'super_admin'] },
   { href: '/admin/staff', label: 'Staff', icon: Users, roles: ['super_admin'] },
   { href: '/admin/settings', label: 'Settings', icon: Settings, roles: ['customer_support', 'admin', 'super_admin'] },
 ] as const;
