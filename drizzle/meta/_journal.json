@@ -141,6 +141,13 @@
       "when": 1788357507589,
       "tag": "0019_hard_blazing_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788370897868,
+      "tag": "0020_mysterious_malcolm_colcord",
+      "breakpoints": true
     }
   ]
 }

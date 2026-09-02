@@ -287,9 +287,12 @@ export const orderCreateSchema = z.object({
   city: z.string().trim().min(2, 'City must be at least 2 characters').max(100),
   state: z.string().trim().min(2, 'State must be at least 2 characters').max(100),
   pincode: pincodeField(),
-  // 'online' isn't accepted here yet — no payment gateway exists (see
-  // paymentMethodEnum in db/schema.ts). Checkout only ever submits 'cod'.
-  paymentMethod: z.literal('cod'),
+  // Fulfillment & Subscriptions redesign, Phase 5b — 'online' is real
+  // Razorpay payment now, but only when every item resolves to the same
+  // seller (checked server-side in app/api/orders/route.ts against the
+  // actual resolved listings, never trusted from this payload alone — a
+  // multi-seller cart claiming 'online' here just gets rejected there).
+  paymentMethod: z.enum(['cod', 'online']),
   items: z
     .array(
       z.object({
@@ -304,6 +307,19 @@ export const orderCreateSchema = z.object({
     .min(1, 'Your cart is empty'),
 });
 export type OrderCreateInput = z.infer<typeof orderCreateSchema>;
+
+// Fulfillment & Subscriptions redesign, Phase 5b — the buyer's browser
+// confirming a Razorpay payment against a specific order, same shape as
+// walletTopupVerifySchema (that one's seller-authenticated; this one is
+// guest-friendly, same trust model as the rest of checkout — ownership is
+// established by orderNumber + the order's own stored razorpayOrderId
+// matching, not a session).
+export const orderPaymentVerifySchema = z.object({
+  razorpayOrderId: z.string().min(1),
+  razorpayPaymentId: z.string().min(1),
+  razorpaySignature: z.string().min(1),
+});
+export type OrderPaymentVerifyInput = z.infer<typeof orderPaymentVerifySchema>;
 
 export const orderCancelSchema = z.object({
   reason: z.string().trim().max(300).optional(),

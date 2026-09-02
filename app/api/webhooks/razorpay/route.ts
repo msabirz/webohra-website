@@ -1,17 +1,27 @@
 import { NextResponse } from 'next/server';
 import { verifyRazorpayWebhookSignature } from '@/lib/razorpay';
 import { creditWalletTopup } from '@/lib/wallet';
+import { confirmOrderPayment, markOrderPaymentFailed } from '@/lib/order-payment';
 
 /**
  * POST /api/webhooks/razorpay — Razorpay's own server calling us directly,
- * no seller session involved. This is the authoritative crediting path:
- * /api/sellers/wallet/verify is the fast, browser-driven happy path, but a
- * closed tab or a lost connection right after payment would otherwise leave
- * her charged with nothing to show for it. Configured in the Razorpay
- * dashboard for `order.paid` and `payment.failed` only (the two events this
- * session's setup selected) — anything else Razorpay sends here is
- * acknowledged and ignored rather than erroring, since webhook config in
- * the dashboard can outpace what this handler currently knows how to do.
+ * no session involved. This is the authoritative crediting/confirming
+ * path for both real-money flows on this platform — a closed tab or a
+ * lost connection right after payment would otherwise leave her charged
+ * with nothing to show for it:
+ *   - wallet_topup (Phase 5a) — /api/sellers/wallet/verify is the fast,
+ *     browser-driven happy path; this is the fallback.
+ *   - order_payment (Phase 5b) — /api/orders/[orderNumber]/verify-payment
+ *     is that same fast path for a buyer's checkout order.
+ * Every Razorpay order this platform creates stamps `notes.purpose` at
+ * creation time specifically so this one handler can tell which of the two
+ * a given event is about — see createRazorpayOrder's callers.
+ *
+ * Configured in the Razorpay dashboard for `order.paid` and
+ * `payment.failed` only (the two events this session's setup selected) —
+ * anything else Razorpay sends here is acknowledged and ignored rather
+ * than erroring, since webhook config in the dashboard can outpace what
+ * this handler currently knows how to do.
  *
  * Must read the raw body text before any JSON parsing — the signature is
  * computed over the exact bytes Razorpay sent, and re-serializing parsed
@@ -30,25 +40,36 @@ export async function POST(request: Request) {
   if (event.event === 'order.paid') {
     const orderEntity = event.payload?.order?.entity;
     const paymentEntity = event.payload?.payment?.entity;
-    const sellerId = orderEntity?.notes?.sellerId ? Number(orderEntity.notes.sellerId) : null;
     const purpose = orderEntity?.notes?.purpose;
 
-    // Only wallet top-ups are wired up in this phase — a future Razorpay
-    // order created for something else (buyer checkout, once that lands)
-    // would also fire order.paid here and must not be mistaken for one.
-    if (purpose === 'wallet_topup' && sellerId && paymentEntity?.id) {
-      await creditWalletTopup({
-        sellerId,
-        amountRupees: (paymentEntity.amount ?? orderEntity.amount) / 100,
-        gatewayPaymentId: paymentEntity.id,
-      });
+    if (purpose === 'wallet_topup') {
+      const sellerId = orderEntity?.notes?.sellerId ? Number(orderEntity.notes.sellerId) : null;
+      if (sellerId && paymentEntity?.id) {
+        await creditWalletTopup({
+          sellerId,
+          amountRupees: (paymentEntity.amount ?? orderEntity.amount) / 100,
+          gatewayPaymentId: paymentEntity.id,
+        });
+      }
+    } else if (purpose === 'order_payment') {
+      const orderNumber = orderEntity?.notes?.orderNumber;
+      if (orderNumber && paymentEntity?.id) {
+        await confirmOrderPayment({ orderNumber, gatewayPaymentId: paymentEntity.id });
+      }
     }
   } else if (event.event === 'payment.failed') {
-    // No wallet_transactions row — nothing here ever moved a real rupee, and
-    // that table's whole point is that every row is a real balance change
-    // (see its own comment). Logged for visibility only.
+    const paymentEntity = event.payload?.payment?.entity;
+    // No wallet_transactions row for a failed top-up — nothing here ever
+    // moved a real rupee, and that table's whole point is that every row
+    // is a real balance change (see its own comment). A failed order
+    // payment DOES get a real state change, though — she needs a
+    // non-'pending' status to see "try again" instead of an eternal
+    // ambiguous wait.
+    if (paymentEntity?.notes?.purpose === 'order_payment' && paymentEntity.notes.orderNumber) {
+      await markOrderPaymentFailed(paymentEntity.notes.orderNumber);
+    }
     console.log(
-      `[razorpay-webhook] payment.failed: ${event.payload?.payment?.entity?.id ?? 'unknown'} — ${event.payload?.payment?.entity?.error_description ?? 'no reason given'}`,
+      `[razorpay-webhook] payment.failed: ${paymentEntity?.id ?? 'unknown'} — ${paymentEntity?.error_description ?? 'no reason given'}`,
     );
   }
 

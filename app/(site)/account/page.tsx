@@ -11,6 +11,8 @@ import { Skeleton, RowListSkeleton } from '@/components/skeleton';
 type OrderSummary = {
   orderNumber: string;
   status: 'placed' | 'cancelled';
+  paymentMethod: 'cod' | 'online';
+  paymentStatus: 'pending' | 'paid' | 'failed' | null;
   createdAt: string;
   itemCount: number;
   total: number;
@@ -23,6 +25,17 @@ const STATUS_LABEL: Record<OrderSummary['status'], string> = {
 const STATUS_CLASS: Record<OrderSummary['status'], string> = {
   placed: 'bg-teal/10 text-teal-deep',
   cancelled: 'bg-red-50 text-red-600',
+};
+// Fulfillment & Subscriptions redesign, Phase 5b — an online order that
+// hasn't cleared payment yet gets its own badge instead of the generic
+// "Placed" one, since "placed" alone would misleadingly read as done.
+const PAYMENT_STATUS_LABEL: Record<'pending' | 'failed', string> = {
+  pending: 'Payment pending',
+  failed: 'Payment failed',
+};
+const PAYMENT_STATUS_CLASS: Record<'pending' | 'failed', string> = {
+  pending: 'bg-gold/15 text-gold-soft',
+  failed: 'bg-red-50 text-red-600',
 };
 
 type RequestSummary = {
@@ -272,11 +285,21 @@ export default function AccountPage() {
                     <span className="font-body text-sm font-semibold text-navy">
                       ₹{order.total.toLocaleString('en-IN')}
                     </span>
-                    <span
-                      className={`rounded-full px-2.5 py-1 font-body text-xs font-semibold ${STATUS_CLASS[order.status]}`}
-                    >
-                      {STATUS_LABEL[order.status]}
-                    </span>
+                    {order.status === 'placed' &&
+                    order.paymentMethod === 'online' &&
+                    (order.paymentStatus === 'pending' || order.paymentStatus === 'failed') ? (
+                      <span
+                        className={`rounded-full px-2.5 py-1 font-body text-xs font-semibold ${PAYMENT_STATUS_CLASS[order.paymentStatus]}`}
+                      >
+                        {PAYMENT_STATUS_LABEL[order.paymentStatus]}
+                      </span>
+                    ) : (
+                      <span
+                        className={`rounded-full px-2.5 py-1 font-body text-xs font-semibold ${STATUS_CLASS[order.status]}`}
+                      >
+                        {STATUS_LABEL[order.status]}
+                      </span>
+                    )}
                   </div>
                 </Link>
               </li>

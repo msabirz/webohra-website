@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { orders, orderItems, listings, sellerProfiles, subcategories, shipments } from '@/db/schema';
+import { getRazorpayKeyId } from '@/lib/razorpay';
 
 /**
  * GET /api/orders/[orderNumber]
@@ -13,6 +14,13 @@ import { orders, orderItems, listings, sellerProfiles, subcategories, shipments 
  * address back since it's her own receipt, but never buyerPhone/buyerEmail
  * beyond what she already knows — kept out of the response to limit what a
  * leaked link exposes.
+ *
+ * Includes paymentStatus and (only while still pending/failed) razorpayOrderId
+ * — Fulfillment & Subscriptions redesign, Phase 5b — so her own order page
+ * can show a real "payment pending"/"payment failed" state and let her
+ * reopen the SAME Razorpay order to retry, rather than silently pretending
+ * every order shown here is already confirmed. razorpayOrderId is withheld
+ * once paid; nothing needs it anymore at that point.
  */
 export async function GET(
   _request: Request,
@@ -57,6 +65,15 @@ export async function GET(
     .leftJoin(sellerProfiles, eq(sellerProfiles.userId, shipments.sellerId))
     .where(eq(shipments.orderId, order.id));
 
+  // Only needed to reopen Razorpay's checkout for a retry — an already-paid
+  // or COD order has nothing to retry, so this stays null for both, rather
+  // than handing back a live payment amount/key nobody asked for.
+  const retryable = order.paymentMethod === 'online' && order.paymentStatus !== 'paid' && order.razorpayOrderId;
+  const retryAmountRupees = retryable
+    ? items.reduce((sum, i) => sum + Number(i.unitPrice) * i.quantity, 0) +
+      orderShipments.reduce((sum, s) => sum + Number(s.charge ?? 0), 0)
+    : null;
+
   return NextResponse.json({
     order: {
       orderNumber: order.orderNumber,
@@ -67,6 +84,10 @@ export async function GET(
       state: order.state,
       pincode: order.pincode,
       paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      razorpayOrderId: retryable ? order.razorpayOrderId : null,
+      razorpayKeyId: retryable ? getRazorpayKeyId() : null,
+      retryAmountRupees,
       status: order.status,
       createdAt: order.createdAt,
     },

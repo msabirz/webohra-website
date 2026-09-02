@@ -25,7 +25,11 @@ export async function GET(
   const sellerId = Number(session.sub);
 
   const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber));
-  if (!order) {
+  if (!order || (order.paymentMethod === 'online' && order.paymentStatus !== 'paid')) {
+    // An unpaid online order isn't real work for her yet — same 404 as a
+    // genuinely nonexistent order, not just hidden from the list (see
+    // GET /api/sellers/orders' own comment), so a guessed order number
+    // can't be used to peek at it either.
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
@@ -103,7 +107,7 @@ export async function PATCH(
   }
 
   const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber));
-  if (!order) {
+  if (!order || (order.paymentMethod === 'online' && order.paymentStatus !== 'paid')) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
   if (order.status === 'cancelled') {

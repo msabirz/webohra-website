@@ -503,6 +503,11 @@ export const otpCodes = pgTable('otp_codes', {
 
 export const paymentMethodEnum = pgEnum('payment_method', ['cod', 'online']);
 
+/** Only ever meaningful for paymentMethod: 'online' — null for every COD
+ *  order (see orders.paymentStatus' own comment for why null, not
+ *  'pending', is the honest value there). */
+export const orderPaymentStatusEnum = pgEnum('order_payment_status', ['pending', 'paid', 'failed']);
+
 /** Cancellation is only offered while an order is still 'placed' — the
  *  finer-grained fulfillment progress (packed/shipped/delivered) lives per
  *  line item on order_items instead, since one order can span multiple
@@ -524,12 +529,13 @@ export const orderItemStatusEnum = pgEnum('order_item_status', [
 /**
  * Orders/order_items are the SRS §8 "data model layer not yet built" for
  * Buy Now/Add to Cart + Checkout — named there specifically so it wouldn't
- * be discovered mid-build. Built now as a real, working *shell*: it records
- * genuine buyer intent, a real shipping address, and seller-facing order
- * data, but "placing an order" never actually charges anything — no
- * Razorpay integration exists yet, so `payment_method` only ever accepts
- * 'cod' today; 'online' is modeled for when that integration lands, but the
- * checkout UI keeps it visibly disabled rather than pretending it works.
+ * be discovered mid-build. Records genuine buyer intent and a real shipping
+ * address regardless of paymentMethod. `online` (Fulfillment &
+ * Subscriptions redesign, Phase 5b) is real Razorpay payment, but only ever
+ * offered when every item in the cart is from the same seller — Phase 5c's
+ * Route integration is what will let a multi-seller cart pay online too, by
+ * splitting the payout at the gateway; until then a multi-seller cart stays
+ * COD-only, same as before this phase.
  */
 export const orders = pgTable('orders', {
   id: serial('id').primaryKey(),
@@ -553,6 +559,25 @@ export const orders = pgTable('orders', {
   state: varchar('state', { length: 100 }).notNull(),
   pincode: varchar('pincode', { length: 10 }).notNull(),
   paymentMethod: paymentMethodEnum('payment_method').notNull().default('cod'),
+  // Fulfillment & Subscriptions redesign, Phase 5b — null for COD (never in
+  // a payment pipeline to begin with, so null is the honest value, not
+  // 'pending' as if something's in progress); 'pending' the instant an
+  // online order is created, then 'paid'/'failed' once Razorpay resolves it
+  // (see lib/order-payment.ts). Sellers/Admin never see an order here until
+  // this is 'paid' — see GET /api/sellers/orders and /api/admin/orders'
+  // own comments — but the buyer herself always can, on her own order page,
+  // since she needs to know if her payment is still pending or failed.
+  paymentStatus: orderPaymentStatusEnum('payment_status'),
+  // Set once a Razorpay order exists for this order (online payment only) —
+  // lets the buyer's own order page reopen the same checkout to retry a
+  // pending/failed payment instead of starting an entirely new order.
+  razorpayOrderId: varchar('razorpay_order_id', { length: 100 }).unique(),
+  // Set only once payment actually clears — unique (nulls excepted, same
+  // convention as wallet_transactions.gatewayPaymentId) so the verify call
+  // and the webhook can never both credit the same payment to two different
+  // orders, and so confirmOrderPayment's idempotency check has something
+  // real to key off.
+  razorpayPaymentId: varchar('razorpay_payment_id', { length: 100 }).unique(),
   status: orderStatusEnum('status').notNull().default('placed'),
   // Only ever set alongside status: 'cancelled' — distinguishes a buyer
   // cancelling herself from Admin stepping in after a seller missed her

@@ -17,6 +17,7 @@ type Order = {
   buyerPhone: string;
   city: string;
   paymentMethod: 'cod' | 'online';
+  paymentStatus: 'pending' | 'paid' | 'failed' | null;
   status: 'placed' | 'cancelled';
   createdAt: string;
   itemCount: number;
@@ -46,10 +47,22 @@ type OrderDetail = {
     state: string;
     pincode: string;
     paymentMethod: string;
+    paymentStatus: 'pending' | 'paid' | 'failed' | null;
     status: string;
     createdAt: string;
   };
   items: OrderDetailItem[];
+};
+
+const PAYMENT_STATUS_CLASS: Record<'pending' | 'paid' | 'failed', string> = {
+  pending: 'bg-gold/15 text-gold-soft',
+  paid: 'bg-teal/10 text-teal-deep',
+  failed: 'bg-red-50 text-red-600',
+};
+const PAYMENT_STATUS_LABEL: Record<'pending' | 'paid' | 'failed', string> = {
+  pending: 'Payment pending',
+  paid: 'Paid',
+  failed: 'Payment failed',
 };
 
 const STATUS_CLASS: Record<Order['status'], string> = {
@@ -149,6 +162,7 @@ export default function AdminOrdersPage() {
                 <th className="px-2 py-3">City</th>
                 <th className="px-2 py-3">Items</th>
                 <th className="px-2 py-3">Total</th>
+                <th className="px-2 py-3">Payment</th>
                 <th className="px-2 py-3">Status</th>
                 <th className="px-2 py-3">Placed</th>
               </tr>
@@ -165,6 +179,17 @@ export default function AdminOrdersPage() {
                   <td className="px-2 py-3 text-ink-soft">{o.city}</td>
                   <td className="px-2 py-3 text-ink-soft">{o.itemCount}</td>
                   <td className="px-2 py-3 text-ink">₹{o.total.toLocaleString('en-IN')}</td>
+                  <td className="px-2 py-3">
+                    {o.paymentMethod === 'cod' ? (
+                      <span className="font-body text-xs text-ink-soft">COD</span>
+                    ) : (
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${PAYMENT_STATUS_CLASS[o.paymentStatus ?? 'pending']}`}
+                      >
+                        {PAYMENT_STATUS_LABEL[o.paymentStatus ?? 'pending']}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-3">
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_CLASS[o.status]}`}>
                       {o.status}
@@ -218,7 +243,12 @@ function OrderDetailModal({
           <p className="font-medium text-ink">{detail.order.buyerName}</p>
           <p>{detail.order.addressLine1}{detail.order.addressLine2 ? `, ${detail.order.addressLine2}` : ''}</p>
           <p>{detail.order.city}, {detail.order.state} {detail.order.pincode}</p>
-          <p className="mt-1">Payment: {detail.order.paymentMethod.toUpperCase()} · Status: {detail.order.status}</p>
+          <p className="mt-1">
+            Payment: {detail.order.paymentMethod.toUpperCase()}
+            {detail.order.paymentMethod === 'online' &&
+              ` (${PAYMENT_STATUS_LABEL[detail.order.paymentStatus ?? 'pending']})`}{' '}
+            · Status: {detail.order.status}
+          </p>
         </div>
 
         <div className="flex flex-col gap-3">

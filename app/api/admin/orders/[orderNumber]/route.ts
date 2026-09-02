@@ -39,6 +39,13 @@ export async function PATCH(
   if (order.status === 'cancelled') {
     return NextResponse.json({ error: 'This order was cancelled.' }, { status: 400 });
   }
+  if (order.paymentMethod === 'online' && order.paymentStatus !== 'paid') {
+    // Advancing fulfillment on money that never arrived would defeat the
+    // point of gating checkout on payment in the first place — even Admin
+    // can look at a pending/failed online order (see the list route's own
+    // comment), but can't move its items forward until it's actually paid.
+    return NextResponse.json({ error: "This order hasn't been paid for yet." }, { status: 400 });
+  }
 
   const [item] = await db
     .select()
