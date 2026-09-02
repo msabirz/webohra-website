@@ -1,6 +1,12 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { sellerSubscriptions, subscriptionPlans, listings, subcategories } from '@/db/schema';
+import {
+  sellerSubscriptions,
+  subscriptionPlans,
+  subscriptionSettings,
+  listings,
+  subcategories,
+} from '@/db/schema';
 
 export type SellerType = 'product' | 'service';
 
@@ -10,14 +16,19 @@ export function sellerTypeForListingType(
   return listingType === 'physical_product' ? 'product' : 'service';
 }
 
-/** Her currently active plan for one seller_type, or null if she has none
- *  (never subscribed, or on the recharge model instead — recharge has no
- *  plan row at all, see seller_subscriptions.planId's own comment). */
+/**
+ * Her currently active plan for one seller_type, or null if she has none at
+ * all (never subscribed). A recharge-mode seller has a real seller_subscriptions
+ * row but no planId of her own (see that column's comment) — her feature
+ * set is Admin's configured rechargeDefaultPlanId instead (Fulfillment &
+ * Subscriptions redesign, Phase 5), resolved here so every caller of this
+ * function — the publish gate included — treats a funded recharge seller
+ * exactly like a plan seller without needing to know the difference.
+ */
 export async function getActivePlan(sellerId: number, sellerType: SellerType) {
-  const [row] = await db
-    .select({ plan: subscriptionPlans })
+  const [subscription] = await db
+    .select()
     .from(sellerSubscriptions)
-    .innerJoin(subscriptionPlans, eq(sellerSubscriptions.planId, subscriptionPlans.id))
     .where(
       and(
         eq(sellerSubscriptions.sellerId, sellerId),
@@ -25,7 +36,32 @@ export async function getActivePlan(sellerId: number, sellerType: SellerType) {
         eq(sellerSubscriptions.status, 'active'),
       ),
     );
-  return row?.plan ?? null;
+  if (!subscription) return null;
+
+  if (subscription.billingMode === 'plan') {
+    if (!subscription.planId) return null;
+    const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId));
+    return plan ?? null;
+  }
+
+  // Recharge mode — Admin may not have configured a default plan yet
+  // (subscription_settings.rechargeDefaultPlanId is nullable); that's a
+  // real "no plan" state, not an error, same as any other unsubscribed
+  // seller. rechargeDefaultPlanId is a single platform-wide id with its own
+  // fixed sellerType, unlike a chosen plan (whose sellerType is validated to
+  // match at selection time — see PUT /api/sellers/subscriptions) — if
+  // Admin ever points it at the wrong type of plan, a wrong-typed plan
+  // (e.g. a service seller silently getting product-plan fields, contactMode
+  // included, all null) is worse than no plan at all, so that mismatch is
+  // treated the same as "not configured."
+  const [settings] = await db.select().from(subscriptionSettings).limit(1);
+  if (!settings?.rechargeDefaultPlanId) return null;
+  const [plan] = await db
+    .select()
+    .from(subscriptionPlans)
+    .where(eq(subscriptionPlans.id, settings.rechargeDefaultPlanId));
+  if (!plan || plan.sellerType !== sellerType) return null;
+  return plan;
 }
 
 /**

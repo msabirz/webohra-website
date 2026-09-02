@@ -843,7 +843,11 @@ export const walletTransactions = pgTable('wallet_transactions', {
   amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
   orderId: integer('order_id').references(() => orders.id, { onDelete: 'set null' }),
   // Links a topup row back to the real gateway transaction it came from.
-  gatewayPaymentId: varchar('gateway_payment_id', { length: 100 }),
+  // Unique (nulls excepted, same convention as pickup_requests.trackingNumber)
+  // — Phase 5's client-side verify call and the Razorpay webhook can both
+  // try to credit the same payment; this is what makes crediting it twice
+  // impossible at the database level, not just by convention in the code.
+  gatewayPaymentId: varchar('gateway_payment_id', { length: 100 }).unique(),
   // Set only for admin_adjustment rows — who authorized it. Null means the
   // system did it automatically (a real gateway top-up or an order's
   // commission deduction).

@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Handshake,
   Layers,
+  Wallet,
   Settings,
   LogOut,
   Sparkles,
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { href: '/seller/enquiries', label: 'Enquiries', icon: MessageSquare },
   { href: '/seller/pickups', label: 'Pickups', icon: Handshake },
   { href: '/seller/subscription', label: 'Subscription', icon: Layers },
+  { href: '/seller/wallet', label: 'Wallet', icon: Wallet },
   { href: '/seller/settings', label: 'Settings', icon: Settings },
 ];
 

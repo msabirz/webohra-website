@@ -1,0 +1,1 @@
+ALTER TABLE "wallet_transactions" ADD CONSTRAINT "wallet_transactions_gateway_payment_id_unique" UNIQUE("gateway_payment_id");
