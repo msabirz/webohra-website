@@ -20,12 +20,20 @@ import { authFetch, getAuthToken } from '@/lib/session-client';
  */
 export function ConsultationRequestButton({
   listingId,
+  variantId,
+  variantName,
   size = 'sm',
   label = 'Take Consultation',
   width = 'full',
   shape = 'pill',
 }: {
   listingId: number;
+  /** Set when this button is for one specific type of a variant-based
+   *  service (e.g. Mehndi's "Full Bridal" coverage tier). `variantName` is
+   *  shown in the request modal so she knows exactly what she's asking
+   *  about before sending. */
+  variantId?: number;
+  variantName?: string;
   size?: ButtonSize;
   label?: string;
   width?: 'full' | 'share' | 'auto';
@@ -54,16 +62,27 @@ export function ConsultationRequestButton({
         <MessageCircle className="h-3.5 w-3.5" strokeWidth={2} />
         {label}
       </button>
-      {open && <ConsultationRequestModal listingId={listingId} onClose={() => setOpen(false)} />}
+      {open && (
+        <ConsultationRequestModal
+          listingId={listingId}
+          variantId={variantId}
+          variantName={variantName}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </>
   );
 }
 
 function ConsultationRequestModal({
   listingId,
+  variantId,
+  variantName,
   onClose,
 }: {
   listingId: number;
+  variantId?: number;
+  variantName?: string;
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
@@ -94,7 +113,13 @@ function ConsultationRequestModal({
       const res = await fetch(`/api/listings/${listingId}/consultation-request`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listingId, buyerName: name, buyerPhone: phone, message: message || undefined }),
+        body: JSON.stringify({
+          listingId,
+          ...(variantId && { variantId }),
+          buyerName: name,
+          buyerPhone: phone,
+          message: message || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -179,7 +204,14 @@ function ConsultationRequestModal({
             </button>
           </div>
           <p className="-mt-2 font-body text-sm text-ink-soft">
-            Send a request — the seller will reach out to you on WhatsApp once she accepts.
+            {variantName ? (
+              <>
+                About <span className="font-semibold text-ink">{variantName}</span> — the seller
+                will reach out to you on WhatsApp once she accepts.
+              </>
+            ) : (
+              'Send a request — the seller will reach out to you on WhatsApp once she accepts.'
+            )}
           </p>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="cr-name" className="font-body text-sm font-medium text-ink">

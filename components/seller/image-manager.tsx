@@ -18,8 +18,12 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024;
  * usable once the product already exists (needs a listingId), so
  * ProductForm's "new product" flow saves as a draft first — on the same
  * page, no navigation — before this section becomes visible.
+ *
+ * `variantId`, when passed, scopes every call to one specific type's own
+ * photos instead of the listing's general gallery — same component, same
+ * upload flow, rendered once per variant on a variant-based listing.
  */
-export function ImageManager({ listingId }: { listingId: number }) {
+export function ImageManager({ listingId, variantId }: { listingId: number; variantId?: number }) {
   const [images, setImages] = useState<ProductImage[] | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,10 +35,11 @@ export function ImageManager({ listingId }: { listingId: number }) {
   const dragCounter = useRef(0);
 
   const load = useCallback(async () => {
-    const res = await authFetch(`/api/listings/${listingId}/images`);
+    const query = variantId ? `?variantId=${variantId}` : '';
+    const res = await authFetch(`/api/listings/${listingId}/images${query}`);
     const data = await res.json();
     setImages(data.images ?? []);
-  }, [listingId]);
+  }, [listingId, variantId]);
 
   useEffect(() => {
     load();
@@ -46,7 +51,7 @@ export function ImageManager({ listingId }: { listingId: number }) {
 
     const remaining = MAX_IMAGES - (images?.length ?? 0);
     if (remaining <= 0) {
-      setError(`A product can have up to ${MAX_IMAGES} photos.`);
+      setError(`Up to ${MAX_IMAGES} photos.`);
       return;
     }
 
@@ -88,7 +93,7 @@ export function ImageManager({ listingId }: { listingId: number }) {
           const attachRes = await authFetch(`/api/listings/${listingId}/images`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: presignData.publicUrl }),
+            body: JSON.stringify({ url: presignData.publicUrl, ...(variantId && { variantId }) }),
           });
           const attachData = await attachRes.json();
           if (!attachRes.ok) {

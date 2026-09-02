@@ -20,6 +20,7 @@ type Enquiry = {
   viewedAt: string | null;
   respondedAt: string | null;
   rejectionReason: string | null;
+  variantName: string | null;
   listingId: number;
   listingTitle: string;
 };
@@ -151,7 +152,11 @@ export default function SellerEnquiriesPage() {
             >
               <div className="min-w-0">
                 <p className="font-body text-sm font-semibold text-ink">
-                  {e.buyerName} <span className="font-normal text-ink-soft">· {e.listingTitle}</span>
+                  {e.buyerName}{' '}
+                  <span className="font-normal text-ink-soft">
+                    · {e.listingTitle}
+                    {e.variantName && ` — ${e.variantName}`}
+                  </span>
                 </p>
                 <p className="truncate font-body text-xs text-ink-soft">
                   {e.message || 'No message'} · {new Date(e.createdAt).toLocaleDateString('en-IN')}
@@ -235,7 +240,8 @@ function EnquiryDetailModal({
           <div>
             <h2 className="font-heading text-lg font-semibold text-ink">{enquiry.buyerName}</h2>
             <p className="font-body text-xs text-ink-soft">
-              {enquiry.listingTitle} · #{enquiry.requestNumber}
+              {enquiry.listingTitle}
+              {enquiry.variantName && ` — ${enquiry.variantName}`} · #{enquiry.requestNumber}
             </p>
           </div>
           <button onClick={onClose} className="rounded-full p-1.5 text-ink-soft hover:bg-ivory-deep hover:text-ink" aria-label="Close">

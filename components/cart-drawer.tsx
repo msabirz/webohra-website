@@ -5,13 +5,10 @@ import Link from 'next/link';
 import { X, Minus, Plus, Trash2, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/components/cart-context';
 import { buttonStyles } from '@/lib/button-styles';
+import { resolveCartLine, type CartListingSnapshot } from '@/lib/cart-line';
 
-type ListingSnapshot = {
-  id: number;
-  title: string;
-  price: string;
+type ListingSnapshot = CartListingSnapshot & {
   sellerId: number;
-  businessName: string | null;
   shippingMethod: 'self_managed' | 'delhivery';
 };
 
@@ -19,7 +16,7 @@ export function CartDrawer() {
   const { items, isOpen, closeCart, updateQuantity, removeItem, count } = useCart();
   const [listings, setListings] = useState<Record<number, ListingSnapshot>>({});
 
-  const ids = useMemo(() => items.map((i) => i.listingId), [items]);
+  const ids = useMemo(() => [...new Set(items.map((i) => i.listingId))], [items]);
 
   useEffect(() => {
     if (ids.length === 0) return;
@@ -44,8 +41,8 @@ export function CartDrawer() {
   }, [ids.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const subtotal = items.reduce((sum, item) => {
-    const listing = listings[item.listingId];
-    return listing ? sum + Number(listing.price) * item.quantity : sum;
+    const { price } = resolveCartLine(listings[item.listingId], item);
+    return price !== null ? sum + price * item.quantity : sum;
   }, 0);
 
   if (!isOpen) return null;
@@ -77,22 +74,24 @@ export function CartDrawer() {
             <ul className="flex flex-col gap-3">
               {items.map((item) => {
                 const listing = listings[item.listingId];
+                const { price, variantName } = resolveCartLine(listing, item);
                 return (
                   <li
-                    key={item.listingId}
+                    key={`${item.listingId}-${item.variantId ?? 'simple'}`}
                     className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="font-body text-sm font-semibold text-ink">
                           {listing?.title ?? `Collection #${item.listingId}`}
+                          {variantName && <span className="font-normal text-ink-soft"> — {variantName}</span>}
                         </p>
                         {listing?.businessName && (
                           <p className="font-body text-xs text-ink-soft">{listing.businessName}</p>
                         )}
                       </div>
                       <button
-                        onClick={() => removeItem(item.listingId)}
+                        onClick={() => removeItem(item.listingId, item.variantId)}
                         aria-label="Remove item"
                         className="rounded-full p-1.5 text-ink-soft/50 transition hover:bg-ivory-deep hover:text-red-600"
                       >
@@ -103,7 +102,7 @@ export function CartDrawer() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-1 rounded-full border border-ink-soft/15 p-1">
                         <button
-                          onClick={() => updateQuantity(item.listingId, item.quantity - 1)}
+                          onClick={() => updateQuantity(item.listingId, item.quantity - 1, item.variantId)}
                           className="flex h-6 w-6 items-center justify-center rounded-full text-ink-soft transition hover:bg-ivory-deep"
                           aria-label="Decrease quantity"
                         >
@@ -113,16 +112,16 @@ export function CartDrawer() {
                           {item.quantity}
                         </span>
                         <button
-                          onClick={() => updateQuantity(item.listingId, item.quantity + 1)}
+                          onClick={() => updateQuantity(item.listingId, item.quantity + 1, item.variantId)}
                           className="flex h-6 w-6 items-center justify-center rounded-full text-ink-soft transition hover:bg-ivory-deep"
                           aria-label="Increase quantity"
                         >
                           <Plus className="h-3 w-3" strokeWidth={2} />
                         </button>
                       </div>
-                      {listing && (
+                      {price !== null && (
                         <p className="font-body text-sm font-semibold text-navy">
-                          ₹{(Number(listing.price) * item.quantity).toLocaleString('en-IN')}
+                          ₹{(price * item.quantity).toLocaleString('en-IN')}
                         </p>
                       )}
                     </div>

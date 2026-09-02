@@ -210,7 +210,13 @@ export const listings = pgTable('listings', {
     .references(() => subcategories.id, { onDelete: 'restrict' }),
   title: varchar('title', { length: 200 }).notNull(),
   description: text('description').notNull(),
-  price: numeric('price', { precision: 10, scale: 2 }).notNull(),
+  // Nullable — a listing is either simple (this is its one real price) or
+  // variant-based (every purchasable price lives in listing_variants
+  // instead, and this stays null). Never both: there is deliberately no
+  // "parent price" sitting alongside variants a buyer could also buy at,
+  // matching how Amazon/Flipkart/Shopify all model the same idea. See
+  // listing_variants' own comment for the seller-facing side of this.
+  price: numeric('price', { precision: 10, scale: 2 }),
   shippingMethod: shippingMethodEnum('shipping_method').notNull(),
   // Seller-declared estimate text, only meaningful for self_managed shipping
   // (Delhivery-managed gets a real, API-computed estimate instead — SRS §3.7).
@@ -228,16 +234,43 @@ export const listings = pgTable('listings', {
 });
 
 /**
+ * Named, individually-priced options within one listing — "Manda ₹40,"
+ * "Chapati ₹35," "Butter Naan ₹60" instead of one flat price for "Roti."
+ * Only ever present when the listing is variant-based (listings.price is
+ * null in that case, see its own comment) — a listing with zero rows here
+ * is a plain single-price listing exactly as before this table existed.
+ * Applies to both physical_product and service listings equally (a Mehndi
+ * listing's "Hands only / Hands + Feet / Full Bridal" coverage tiers use
+ * this same mechanism, not a separate one).
+ */
+export const listingVariants = pgTable('listing_variants', {
+  id: serial('id').primaryKey(),
+  listingId: integer('listing_id')
+    .notNull()
+    .references(() => listings.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  price: numeric('price', { precision: 10, scale: 2 }).notNull(),
+  // Same meaning/nullability as listings.stockQuantity — null means not tracked.
+  stockQuantity: integer('stock_quantity'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * One row per product photo. A listing can have several (seller-uploaded,
  * stored in Cloudflare R2 — see lib/storage/r2.ts); sortOrder controls the
  * gallery order, with the lowest value acting as the cover image everywhere
- * a single thumbnail is shown (listing cards, cart, etc.).
+ * a single thumbnail is shown (listing cards, cart, etc.). variantId is
+ * null for a photo that belongs to the listing itself (the simple case, or
+ * general photos of a variant-based listing as a whole); set when a photo
+ * belongs to one specific variant instead (e.g. that variant's own swatch).
  */
 export const listingImages = pgTable('listing_images', {
   id: serial('id').primaryKey(),
   listingId: integer('listing_id')
     .notNull()
     .references(() => listings.id, { onDelete: 'cascade' }),
+  variantId: integer('variant_id').references(() => listingVariants.id, { onDelete: 'cascade' }),
   url: varchar('url', { length: 500 }).notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -267,6 +300,12 @@ export const enquiries = pgTable('enquiries', {
   listingId: integer('listing_id')
     .notNull()
     .references(() => listings.id, { onDelete: 'cascade' }),
+  // Same reasoning as order_items.variantId/variantName — null for a
+  // request against a simple listing, set (with a name snapshot) when it
+  // was about one specific type of a variant-based one. onDelete: 'set
+  // null' so deleting a variant later can't corrupt or fail a past request.
+  variantId: integer('variant_id').references(() => listingVariants.id, { onDelete: 'set null' }),
+  variantName: varchar('variant_name', { length: 100 }),
   status: enquiryStatusEnum('status').notNull().default('initiated'),
   // Set the moment the seller opens it in her Enquiries list — 'initiated' -> 'viewed'.
   viewedAt: timestamp('viewed_at', { withTimezone: true }),
@@ -414,6 +453,15 @@ export const orderItems = pgTable('order_items', {
   status: orderItemStatusEnum('status').notNull().default('placed'),
   // Set whenever status changes — null until the first update past 'placed'.
   statusUpdatedAt: timestamp('status_updated_at', { withTimezone: true }),
+  // Null for an order against a simple listing (today's whole history) —
+  // set when it was a specific type of a variant-based listing. onDelete:
+  // 'set null' (not 'restrict' or 'cascade') deliberately: a seller
+  // deleting a variant later must never fail or silently corrupt a past
+  // order. variantName is a snapshot for the same reason unitPrice already
+  // is one — a receipt should read the same years later even if the
+  // variant is renamed or gone.
+  variantId: integer('variant_id').references(() => listingVariants.id, { onDelete: 'set null' }),
+  variantName: varchar('variant_name', { length: 100 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

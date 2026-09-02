@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { listings, orders, orderItems } from '@/db/schema';
+import { listings, orders, orderItems, listingVariants } from '@/db/schema';
 import { orderCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { generateOrderNumber } from '@/lib/ids';
@@ -11,10 +11,11 @@ import { generateOrderNumber } from '@/lib/ids';
  *
  * Checkout, guest-friendly per FR-5b (unlike Contact Seller, Buy Now/Add to
  * Cart doesn't require a buyer account). Price and seller are always looked
- * up server-side from the live listing — never trusted from the cart. This
- * is the "UI-only cart" shell: it creates a real order + address record,
- * but no payment is actually collected — payment_method only ever accepts
- * 'cod' right now (see paymentMethodEnum in db/schema.ts).
+ * up server-side from the live listing (or its variant) — never trusted
+ * from the cart. This is the "UI-only cart" shell: it creates a real order
+ * + address record, but no payment is actually collected — payment_method
+ * only ever accepts 'cod' right now (see paymentMethodEnum in
+ * db/schema.ts).
  *
  * If she's signed in, the order links to her account (userId) so it shows
  * up in her profile's order history — but an Authorization header is never
@@ -33,9 +34,29 @@ export async function POST(request: Request) {
 
   const { items, buyerEmail, ...orderFields } = parsed.data;
   const listingIds = items.map((i) => i.listingId);
+  const variantIds = items.map((i) => i.variantId).filter((id): id is number => id !== undefined);
 
-  const foundListings = await db.select().from(listings).where(inArray(listings.id, listingIds));
+  const [foundListings, foundVariants] = await Promise.all([
+    db.select().from(listings).where(inArray(listings.id, listingIds)),
+    variantIds.length
+      ? db.select().from(listingVariants).where(inArray(listingVariants.id, variantIds))
+      : Promise.resolve([]),
+  ]);
   const listingById = new Map(foundListings.map((l) => [l.id, l]));
+  const variantById = new Map(foundVariants.map((v) => [v.id, v]));
+
+  // Resolves each item's real seller/price/name once, up front — both so
+  // the validity checks below and the insert further down read from the
+  // exact same resolution, and so a bad item fails the whole checkout
+  // before any row is written rather than partway through.
+  const resolved: Array<{
+    listingId: number;
+    sellerId: number;
+    quantity: number;
+    unitPrice: string;
+    variantId: number | null;
+    variantName: string | null;
+  }> = [];
 
   for (const item of items) {
     const listing = listingById.get(item.listingId);
@@ -44,6 +65,39 @@ export async function POST(request: Request) {
         { error: `Listing #${item.listingId} is no longer available` },
         { status: 409 },
       );
+    }
+
+    if (item.variantId !== undefined) {
+      const variant = variantById.get(item.variantId);
+      if (!variant || variant.listingId !== listing.id) {
+        return NextResponse.json(
+          { error: `That type is no longer available for listing #${item.listingId}` },
+          { status: 409 },
+        );
+      }
+      resolved.push({
+        listingId: listing.id,
+        sellerId: listing.sellerId,
+        quantity: item.quantity,
+        unitPrice: variant.price,
+        variantId: variant.id,
+        variantName: variant.name,
+      });
+    } else {
+      if (listing.price === null) {
+        return NextResponse.json(
+          { error: `Listing #${item.listingId} has different types — pick one before adding it to cart` },
+          { status: 409 },
+        );
+      }
+      resolved.push({
+        listingId: listing.id,
+        sellerId: listing.sellerId,
+        quantity: item.quantity,
+        unitPrice: listing.price,
+        variantId: null,
+        variantName: null,
+      });
     }
   }
 
@@ -74,16 +128,15 @@ export async function POST(request: Request) {
   const insertedItems = await db
     .insert(orderItems)
     .values(
-      items.map((item) => {
-        const listing = listingById.get(item.listingId)!;
-        return {
-          orderId: order.id,
-          listingId: listing.id,
-          sellerId: listing.sellerId,
-          quantity: item.quantity,
-          unitPrice: listing.price,
-        };
-      }),
+      resolved.map((item) => ({
+        orderId: order.id,
+        listingId: item.listingId,
+        sellerId: item.sellerId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        variantId: item.variantId,
+        variantName: item.variantName,
+      })),
     )
     .returning();
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Package, FileText } from 'lucide-react';
+import { Package, FileText, ChevronRight } from 'lucide-react';
 import { categoryColor } from '@/lib/category-color';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import { WhatsAppBuyButton } from '@/components/whatsapp-buy-button';
@@ -12,7 +12,12 @@ export type ListingCardData = {
   id: number;
   slug: string;
   title: string;
-  price: string;
+  // null = this listing uses different types (see listings.price's own
+  // comment in db/schema.ts) — `displayPrice` (the cheapest type) is what
+  // the card actually shows, prefixed "From", and there's no single quick
+  // action to fire from the grid since no type has been picked yet.
+  price: string | null;
+  displayPrice: string;
   listingType: 'physical_product' | 'local_service' | 'remote_service';
   categoryName: string;
   categorySlug: string;
@@ -31,6 +36,7 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
   const [activeImage, setActiveImage] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isService = listing.listingType !== 'physical_product';
+  const hasVariants = listing.price === null;
   const images = listing.imageUrls?.length
     ? listing.imageUrls
     : listing.coverImageUrl
@@ -134,11 +140,19 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
         )}
         <p className="truncate font-body text-sm text-ink-soft">{listing.title}</p>
         <p className="mt-1 font-heading text-lg font-semibold text-navy">
-          {isService ? 'Starting at ' : ''}
-          ₹{Number(listing.price).toLocaleString('en-IN')}
+          {isService || hasVariants ? 'Starting at ' : ''}
+          ₹{Number(listing.displayPrice).toLocaleString('en-IN')}
         </p>
         <div className="mt-auto flex flex-row gap-2 pt-2.5">
-          {isService ? (
+          {hasVariants ? (
+            // No single type picked yet from the grid — the card's own Link
+            // already goes to the PDP/SDP, this is just a visible affordance
+            // rather than a real second click target.
+            <span className="flex w-full items-center justify-center gap-1 rounded-xl bg-ivory-deep px-2 py-2 font-body text-xs font-semibold text-ink-soft">
+              View options
+              <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+            </span>
+          ) : isService ? (
             <ConsultationRequestButton listingId={listing.id} label="Take Consultation" width="full" shape="box" />
           ) : (
             <>

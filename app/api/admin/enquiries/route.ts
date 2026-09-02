@@ -34,6 +34,7 @@ export async function GET(request: Request) {
       status: enquiries.status,
       createdAt: enquiries.createdAt,
       listingTitle: listings.title,
+      variantName: enquiries.variantName,
       businessName: sellerProfiles.businessName,
       buyerName: enquiries.buyerName,
       buyerPhone: enquiries.buyerPhone,

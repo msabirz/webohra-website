@@ -33,7 +33,12 @@ export default function EditProductPage() {
           subcategoryId: String(l.subcategoryId),
           title: l.title,
           description: l.description,
-          price: l.price,
+          // null means she's already using different types (see
+          // listings.price's own comment in db/schema.ts) — mapped to '' here
+          // since ProductFormValues.price is always a string, and hasVariants
+          // carries the actual signal for which mode this listing is in.
+          price: l.price ?? '',
+          hasVariants: l.price === null,
           shippingMethod: l.shippingMethod,
           shippingEstimateText: l.shippingEstimateText ?? '',
           stockQuantity: l.stockQuantity != null ? String(l.stockQuantity) : '',

@@ -7,6 +7,7 @@ import { Field, TextInput, TextArea, Select, SubmitButton } from '@/components/f
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles } from '@/lib/button-styles';
 import { ImageManager } from '@/components/seller/image-manager';
+import { VariantManager } from '@/components/seller/variant-manager';
 import { DynamicFieldInput, type SubcategoryFieldDef } from '@/components/seller/dynamic-field-input';
 
 type ListingType = 'physical_product' | 'local_service' | 'remote_service';
@@ -35,6 +36,12 @@ export type ProductFormValues = {
   // field's own fieldType. Populated from GET /api/listings/[id]'s `fields`
   // array when editing, empty when creating.
   fieldValues?: Record<string, unknown>;
+  // undefined = not yet decided (a brand-new, unsaved listing — the
+  // branching question shows). false = simple, one price (today's flow).
+  // true = different types — price stays empty/unused, real prices live in
+  // variants instead. Set from whether the fetched listing's own price is
+  // null when editing (see the edit page's fetch).
+  hasVariants?: boolean;
 };
 
 const emptyForm: ProductFormValues = {
@@ -96,6 +103,32 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
     save({ fieldValues: nextFieldValues });
   }
 
+  const [convertError, setConvertError] = useState<string | null>(null);
+
+  // The retroactive path: an already-saved simple listing, edited later to
+  // add a second type. Her current price/photos become the first variant
+  // (named here), the listing's own price goes null — one atomic server
+  // call (see the route's own comment for why), not several the client
+  // could leave half-done.
+  async function convertToVariants() {
+    const name = prompt(
+      `Let's name what you already have — ₹${form.price}, with its current photos. What do you call it?`,
+    );
+    if (!name || !name.trim() || !form.id) return;
+    setConvertError(null);
+    const res = await authFetch(`/api/listings/${form.id}/convert-to-variants`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setConvertError(data.error ?? 'Could not switch to different types.');
+      return;
+    }
+    setForm((prev) => ({ ...prev, hasVariants: true, price: '' }));
+  }
+
   const STATIC_KEYS = new Set([
     'subcategoryId',
     'title',
@@ -131,10 +164,18 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
       subcategoryId: Number(current.subcategoryId),
       title: current.title,
       description: current.description,
-      price: current.price,
+      // Omitted entirely (not an empty string) when she's using different
+      // types — the schema's price field is optional specifically so this
+      // undefined key gets dropped by JSON.stringify, not coerced into a
+      // "0 is not a valid price" error. See priceField's comment in
+      // lib/validation.ts.
+      price: current.hasVariants ? undefined : current.price,
       shippingMethod: needsShipping ? current.shippingMethod : 'self_managed',
       shippingEstimateText: needsShipping ? current.shippingEstimateText : undefined,
-      stockQuantity: needsShipping && current.stockQuantity !== '' ? Number(current.stockQuantity) : null,
+      stockQuantity:
+        needsShipping && !current.hasVariants && current.stockQuantity !== ''
+          ? Number(current.stockQuantity)
+          : null,
       fieldValues: current.fieldValues ?? {},
     };
 
@@ -274,10 +315,22 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
         </div>
       )}
 
-      {form.id && (
+      {form.id && !form.hasVariants && (
         <div className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
           <h2 className="font-heading text-sm font-semibold text-ink">Photos</h2>
           <ImageManager listingId={form.id} />
+        </div>
+      )}
+
+      {form.id && form.hasVariants && (
+        <div className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+          <div>
+            <h2 className="font-heading text-sm font-semibold text-ink">Types</h2>
+            <p className="mt-0.5 font-body text-xs text-ink-soft">
+              Each type has its own name, price, and photos — this is what buyers actually pick from.
+            </p>
+          </div>
+          <VariantManager listingId={form.id} />
         </div>
       )}
 
@@ -335,19 +388,57 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
           />
         </Field>
 
-        <Field label="Price (₹)" htmlFor="price" error={errors.price}>
-          <TextInput
-            id="price"
-            name="price"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.price}
-            onChange={(e) => update('price', e.target.value)}
-            placeholder="500"
-            required
-          />
-        </Field>
+        {form.hasVariants === undefined ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-dashed border-ink-soft/25 bg-ivory-deep/30 p-4 text-center">
+            <p className="font-body text-sm font-medium text-ink">
+              Do you sell just one type, or a few different types at different prices?
+            </p>
+            <p className="font-body text-xs text-ink-soft">e.g. Manda, Chapati, Butter Naan — each its own price.</p>
+            <div className="flex justify-center gap-2 pt-1">
+              <button type="button" onClick={() => update('hasVariants', false)} className={buttonStyles('secondary', 'sm')}>
+                Just one type
+              </button>
+              <button type="button" onClick={() => update('hasVariants', true)} className={buttonStyles('accent', 'sm')}>
+                A few different types
+              </button>
+            </div>
+          </div>
+        ) : form.hasVariants ? (
+          <div className="rounded-xl border border-dashed border-ink-soft/25 bg-ivory-deep/30 p-4 text-center">
+            <p className="font-body text-sm text-ink-soft">
+              Using different types — save the basics below, then add each type&apos;s name and price
+              in the Types section that appears.
+            </p>
+          </div>
+        ) : (
+          <>
+            <Field label="Price (₹)" htmlFor="price" error={errors.price}>
+              <TextInput
+                id="price"
+                name="price"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.price}
+                onChange={(e) => update('price', e.target.value)}
+                placeholder="500"
+                required
+              />
+            </Field>
+            {form.id && (
+              <div>
+                <button
+                  type="button"
+                  onClick={convertToVariants}
+                  className="font-body text-xs font-medium text-navy hover:underline"
+                >
+                  + Add another type
+                </button>
+                {convertError && <p className="mt-1 font-body text-xs text-red-700">{convertError}</p>}
+              </div>
+            )}
+          </>
+        )}
 
         {selectedSubcategory && selectedSubcategory.fields.length > 0 && (
           <div className="flex flex-col gap-5 rounded-xl border border-ink-soft/10 bg-ivory-deep/40 p-4">
@@ -373,18 +464,20 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
 
         {needsShipping && (
           <>
-            <Field label="Stock on hand" htmlFor="stockQuantity" error={errors.stockQuantity} hint="Leave blank if you don't want to track inventory for this product.">
-              <TextInput
-                id="stockQuantity"
-                name="stockQuantity"
-                type="number"
-                min="0"
-                step="1"
-                value={form.stockQuantity}
-                onChange={(e) => update('stockQuantity', e.target.value)}
-                placeholder="e.g. 20"
-              />
-            </Field>
+            {!form.hasVariants && (
+              <Field label="Stock on hand" htmlFor="stockQuantity" error={errors.stockQuantity} hint="Leave blank if you don't want to track inventory for this product.">
+                <TextInput
+                  id="stockQuantity"
+                  name="stockQuantity"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={form.stockQuantity}
+                  onChange={(e) => update('stockQuantity', e.target.value)}
+                  placeholder="e.g. 20"
+                />
+              </Field>
+            )}
 
             <Field label="Shipping" htmlFor="shippingMethod" error={errors.shippingMethod}>
               <Select
@@ -420,7 +513,7 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
 
         {serverError && <p className="text-sm text-red-700">{serverError}</p>}
 
-        <SubmitButton disabled={submitting || loadingCategories}>
+        <SubmitButton disabled={submitting || loadingCategories || form.hasVariants === undefined}>
           {submitting
             ? 'Saving…'
             : saved

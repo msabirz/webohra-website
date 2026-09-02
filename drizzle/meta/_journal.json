@@ -113,6 +113,20 @@
       "when": 1788267783037,
       "tag": "0015_lean_lilith",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788279016704,
+      "tag": "0016_curvy_centennial",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788285092121,
+      "tag": "0017_striped_skin",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 export type CartItem = {
   listingId: number;
+  // null = a simple, single-price listing (every cart entry before this
+  // field existed) — set when it's one specific type of a variant-based
+  // listing. Line identity is (listingId, variantId): the same listing can
+  // sit in the cart twice, once per type, e.g. 2 Manda + 1 Butter Naan.
+  variantId: number | null;
   quantity: number;
 };
 
@@ -12,9 +17,9 @@ type CartContextValue = {
   isOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
-  addItem: (listingId: number, quantity: number) => void;
-  updateQuantity: (listingId: number, quantity: number) => void;
-  removeItem: (listingId: number) => void;
+  addItem: (listingId: number, quantity: number, variantId?: number | null) => void;
+  updateQuantity: (listingId: number, quantity: number, variantId?: number | null) => void;
+  removeItem: (listingId: number, variantId?: number | null) => void;
   clear: () => void;
   count: number;
 };
@@ -23,11 +28,20 @@ const CART_KEY = 'wb_cart';
 
 const CartContext = createContext<CartContextValue | null>(null);
 
+function sameLine(item: CartItem, listingId: number, variantId: number | null): boolean {
+  return item.listingId === listingId && (item.variantId ?? null) === variantId;
+}
+
 function readCart(): CartItem[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(CART_KEY);
-    return raw ? (JSON.parse(raw) as CartItem[]) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Array<{ listingId: number; variantId?: number | null; quantity: number }>;
+    // Normalizes cart entries saved before variantId existed — they read
+    // back with variantId undefined, treated the same as null (simple
+    // listing) everywhere else in this file.
+    return parsed.map((i) => ({ listingId: i.listingId, variantId: i.variantId ?? null, quantity: i.quantity }));
   } catch {
     return [];
   }
@@ -59,29 +73,32 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem(CART_KEY, JSON.stringify(items));
   }, [items, hydrated]);
 
-  const addItem = useCallback((listingId: number, quantity: number) => {
+  const addItem = useCallback((listingId: number, quantity: number, variantId: number | null = null) => {
     setItems((prev) => {
-      const existing = prev.find((i) => i.listingId === listingId);
+      const existing = prev.find((i) => sameLine(i, listingId, variantId));
       if (existing) {
         return prev.map((i) =>
-          i.listingId === listingId ? { ...i, quantity: i.quantity + quantity } : i,
+          sameLine(i, listingId, variantId) ? { ...i, quantity: i.quantity + quantity } : i,
         );
       }
-      return [...prev, { listingId, quantity }];
+      return [...prev, { listingId, variantId, quantity }];
     });
     setIsOpen(true);
   }, []);
 
-  const updateQuantity = useCallback((listingId: number, quantity: number) => {
-    setItems((prev) =>
-      quantity <= 0
-        ? prev.filter((i) => i.listingId !== listingId)
-        : prev.map((i) => (i.listingId === listingId ? { ...i, quantity } : i)),
-    );
-  }, []);
+  const updateQuantity = useCallback(
+    (listingId: number, quantity: number, variantId: number | null = null) => {
+      setItems((prev) =>
+        quantity <= 0
+          ? prev.filter((i) => !sameLine(i, listingId, variantId))
+          : prev.map((i) => (sameLine(i, listingId, variantId) ? { ...i, quantity } : i)),
+      );
+    },
+    [],
+  );
 
-  const removeItem = useCallback((listingId: number) => {
-    setItems((prev) => prev.filter((i) => i.listingId !== listingId));
+  const removeItem = useCallback((listingId: number, variantId: number | null = null) => {
+    setItems((prev) => prev.filter((i) => !sameLine(i, listingId, variantId)));
   }, []);
 
   const clear = useCallback(() => setItems([]), []);

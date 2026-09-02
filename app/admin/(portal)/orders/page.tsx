@@ -31,6 +31,7 @@ type OrderDetailItem = {
   title: string;
   subcategoryName: string;
   businessName: string | null;
+  variantName: string | null;
   status: OrderItemStatus;
   statusUpdatedAt: string | null;
 };
@@ -227,7 +228,10 @@ function OrderDetailModal({
               <div key={item.id} className="flex flex-col gap-2 rounded-xl bg-ivory-deep/40 p-3">
                 <div className="flex items-center justify-between font-body text-sm">
                   <div>
-                    <p className="text-ink">{item.title} × {item.quantity}</p>
+                    <p className="text-ink">
+                      {item.title}
+                      {item.variantName && ` — ${item.variantName}`} × {item.quantity}
+                    </p>
                     <p className="text-xs text-ink-soft">{item.businessName ?? 'Unknown seller'}</p>
                   </div>
                   <p className="text-ink">₹{(Number(item.unitPrice) * item.quantity).toLocaleString('en-IN')}</p>

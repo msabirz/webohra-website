@@ -34,6 +34,7 @@ export async function GET(request: Request) {
       viewedAt: enquiries.viewedAt,
       respondedAt: enquiries.respondedAt,
       rejectionReason: enquiries.rejectionReason,
+      variantName: enquiries.variantName,
       listingId: listings.id,
       listingTitle: listings.title,
     })

@@ -5,19 +5,24 @@ import { MessageCircle, ShieldCheck, Clock, Send, CheckCircle2 } from 'lucide-re
 import { ConsultationRequestButton } from '@/components/consultation-request-button';
 import { MosaicGallery } from '@/components/mosaic-gallery';
 import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
+import { VariantMenu, type Variant } from '@/components/variant-menu';
 import { categoryColor } from '@/lib/category-color';
 
 type ServiceListing = {
   id: number;
   title: string;
   description: string;
-  price: string;
+  // null = this listing uses different types (see listings.price's own
+  // comment in db/schema.ts) — she picks one from `variants` via
+  // VariantMenu instead of a single hero price/button.
+  price: string | null;
   categoryName: string;
   categorySlug: string;
   subcategoryName: string;
   businessName: string | null;
   images: { id: number; url: string }[];
   fields: ListingFieldValue[];
+  variants: Variant[];
 };
 
 // Icons deliberately mirror the ones used at each matching moment elsewhere
@@ -52,6 +57,7 @@ const HOW_IT_WORKS = [
  */
 export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
   const accent = categoryColor(listing.categorySlug);
+  const hasVariants = listing.price === null;
   const heroButtonRef = useRef<HTMLDivElement>(null);
   // Sticky bar shows once the hero's own button has scrolled out of view —
   // watched via IntersectionObserver rather than a scroll-position
@@ -95,21 +101,38 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
         {listing.businessName && (
           <p className="font-body text-sm text-ink-soft">by {listing.businessName}</p>
         )}
-        <p className="font-heading text-2xl font-semibold text-navy">
-          Starting at ₹{Number(listing.price).toLocaleString('en-IN')}
-        </p>
-        <div ref={heroButtonRef}>
-          <ConsultationRequestButton
-            listingId={listing.id}
-            size="lg"
-            label="Take Consultation"
-            width="auto"
-          />
-        </div>
+        {hasVariants ? (
+          <div ref={heroButtonRef}>
+            <p className="font-body text-sm text-ink-soft">
+              Pick a type below — each is priced and booked separately.
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="font-heading text-2xl font-semibold text-navy">
+              Starting at ₹{Number(listing.price ?? 0).toLocaleString('en-IN')}
+            </p>
+            <div ref={heroButtonRef}>
+              <ConsultationRequestButton
+                listingId={listing.id}
+                size="lg"
+                label="Take Consultation"
+                width="auto"
+              />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="grid gap-8 md:grid-cols-3">
         <div className="flex flex-col gap-6 md:col-span-2">
+          {hasVariants && (
+            <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+              <h2 className="mb-3 font-heading text-lg font-semibold text-ink">Choose a type</h2>
+              <VariantMenu listingId={listing.id} variants={listing.variants} isService />
+            </section>
+          )}
+
           {listing.images.length > 0 && (
             <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
               <h2 className="mb-3 font-heading text-lg font-semibold text-ink">Photos</h2>
@@ -184,10 +207,14 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
           <div className="min-w-0">
             <p className="truncate font-heading text-sm font-semibold text-ink">{listing.title}</p>
             <p className="font-body text-xs text-ink-soft">
-              Starting at ₹{Number(listing.price).toLocaleString('en-IN')}
+              {hasVariants
+                ? 'Several types available'
+                : `Starting at ₹${Number(listing.price ?? 0).toLocaleString('en-IN')}`}
             </p>
           </div>
-          <ConsultationRequestButton listingId={listing.id} size="md" label="Take Consultation" width="auto" />
+          {!hasVariants && (
+            <ConsultationRequestButton listingId={listing.id} size="md" label="Take Consultation" width="auto" />
+          )}
         </div>
       </div>
     </div>
