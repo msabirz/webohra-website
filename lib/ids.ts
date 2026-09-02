@@ -73,3 +73,18 @@ export function generatePickupTrackingNumber(): string {
   const dd = String(now.getDate()).padStart(2, '0');
   return `WP${yy}${mm}${dd}-${randomCode(5)}`;
 }
+
+/**
+ * Same idea again, for a Razorpay wallet top-up order's `receipt` field —
+ * Razorpay's own dashboard shows this back to us, so it's worth it being
+ * recognizable at a glance the same way every other identifier here is.
+ * "WT" (WE Bohra Topup). Not a public-facing tracking number like the
+ * others (no /topup/[...] page reads it) — just a receipt label.
+ */
+export function generateWalletTopupReceipt(): string {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `WT${yy}${mm}${dd}-${randomCode(5)}`;
+}

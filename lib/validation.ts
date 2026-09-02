@@ -656,12 +656,62 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 
-// Fulfillment & Subscriptions redesign, Phase 4 — a seller choosing/
-// switching her own plan. Recharge isn't selectable yet (Phase 5 adds the
-// real wallet top-up this needs — offering it now would leave her stuck
-// at ₹0 balance immediately), so billingMode is always 'plan' here.
-export const sellerSubscriptionChooseSchema = z.object({
-  sellerType: z.enum(['product', 'service']),
-  planId: z.number().int().positive(),
-});
+// Fulfillment & Subscriptions redesign, Phase 4/5 — a seller choosing/
+// switching her own plan, or switching to pay-as-you-go (Phase 5's wallet
+// top-up is what makes the recharge branch a real, usable choice instead of
+// leaving her stuck at ₹0 the moment she picks it).
+export const sellerSubscriptionChooseSchema = z.discriminatedUnion('billingMode', [
+  z.object({
+    sellerType: z.enum(['product', 'service']),
+    billingMode: z.literal('plan'),
+    planId: z.number().int().positive(),
+  }),
+  z.object({
+    sellerType: z.enum(['product', 'service']),
+    billingMode: z.literal('recharge'),
+  }),
+]);
 export type SellerSubscriptionChooseInput = z.infer<typeof sellerSubscriptionChooseSchema>;
+
+// Fulfillment & Subscriptions redesign, Phase 5 — a seller topping up her
+// recharge wallet via Razorpay. Bounds match the planning doc's sandbox
+// strategy (real payments, small real amounts) rather than an arbitrary
+// guess: ₹100 floor keeps a top-up meaningfully above Razorpay's own
+// minimum-order rules, ₹25,000 ceiling is just a sane guard against a
+// fat-fingered amount, not a business rule — Admin can always adjust a
+// wallet manually for anything genuinely larger.
+export const walletTopupOrderSchema = z.object({
+  amountRupees: z
+    .number()
+    .min(100, 'Minimum top-up is ₹100')
+    .max(25000, 'For amounts over ₹25,000, contact WeBohra support directly'),
+});
+export type WalletTopupOrderInput = z.infer<typeof walletTopupOrderSchema>;
+
+export const walletTopupVerifySchema = z.object({
+  razorpayOrderId: z.string().min(1),
+  razorpayPaymentId: z.string().min(1),
+  razorpaySignature: z.string().min(1),
+});
+export type WalletTopupVerifyInput = z.infer<typeof walletTopupVerifySchema>;
+
+// Admin manually correcting a seller's wallet balance — the one non-gateway
+// path into wallet_transactions (see lib/wallet.ts's adjustWalletBalance).
+// `reason` is required at the schema level, not just "nice to have" at the
+// app level, since an unexplained balance change is exactly what the audit
+// trail exists to prevent. `amountRupees` can be negative (a correction can
+// go either way); `refine` blocks a no-op zero adjustment, which would
+// otherwise create a confusing "why does this row exist" audit entry.
+export const adminWalletAdjustmentSchema = z.object({
+  amountRupees: z
+    .number()
+    .min(-100000, 'Adjustment is too large — check the amount')
+    .max(100000, 'Adjustment is too large — check the amount')
+    .refine((v) => v !== 0, 'Adjustment amount can\'t be zero'),
+  reason: z
+    .string()
+    .trim()
+    .min(5, 'Explain the reason for this adjustment')
+    .max(300),
+});
+export type AdminWalletAdjustmentInput = z.infer<typeof adminWalletAdjustmentSchema>;
