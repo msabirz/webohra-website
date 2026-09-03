@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Package, Minus, Plus, Check, ShoppingBag } from 'lucide-react';
 import { useCart } from '@/components/cart-context';
-import { ConsultationRequestButton } from '@/components/consultation-request-button';
+import { ServiceContactAction } from '@/components/service-contact-action';
 import { buttonStyles } from '@/lib/button-styles';
 
 export type Variant = {
@@ -27,16 +27,19 @@ export function VariantMenu({
   listingId,
   variants,
   isService,
+  contactMode,
 }: {
   listingId: number;
   variants: Variant[];
   isService: boolean;
+  /** Only meaningful when isService — see components/service-contact-action.tsx. */
+  contactMode?: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
 }) {
   return (
     <div className="flex flex-col gap-3">
       {variants.map((variant) =>
         isService ? (
-          <ServiceVariantCard key={variant.id} listingId={listingId} variant={variant} />
+          <ServiceVariantCard key={variant.id} listingId={listingId} variant={variant} contactMode={contactMode ?? null} />
         ) : (
           <ProductVariantCard key={variant.id} listingId={listingId} variant={variant} />
         ),
@@ -114,7 +117,15 @@ function ProductVariantCard({ listingId, variant }: { listingId: number; variant
   );
 }
 
-function ServiceVariantCard({ listingId, variant }: { listingId: number; variant: Variant }) {
+function ServiceVariantCard({
+  listingId,
+  variant,
+  contactMode,
+}: {
+  listingId: number;
+  variant: Variant;
+  contactMode: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
+}) {
   return (
     <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-ink-soft/5">
       <VariantPhoto variant={variant} />
@@ -124,12 +135,12 @@ function ServiceVariantCard({ listingId, variant }: { listingId: number; variant
           ₹{Number(variant.price).toLocaleString('en-IN')}
         </p>
       </div>
-      <ConsultationRequestButton
+      <ServiceContactAction
+        contactMode={contactMode}
         listingId={listingId}
         variantId={variant.id}
         variantName={variant.name}
         size="sm"
-        label="Take Consultation"
         width="auto"
       />
     </div>

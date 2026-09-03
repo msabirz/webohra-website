@@ -49,6 +49,15 @@ type ListingDetail = {
   // Fulfillment & Subscriptions redesign, Phase 6 — only ever populated for
   // a service listing (see ServiceDetailView, the only consumer).
   portfolio: PortfolioItem[];
+  // Service contact-tiering (2026-09-03) — how a buyer reaches THIS
+  // seller, resolved server-side from her active service plan; null for a
+  // physical_product (contactMode never means anything there). sellerPhone
+  // /sellerEmail are only ever non-null when contactMode is
+  // 'whatsapp_number' (Basic) — see GET /api/listings/[idOrSlug]'s own
+  // comment for why everyone else gets null here.
+  contactMode: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
+  sellerPhone: string | null;
+  sellerEmail: string | null;
 };
 
 type FulfillmentChoice = 'delivery' | 'pickup';

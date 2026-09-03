@@ -373,6 +373,10 @@ export type PickupRequestInput = z.infer<typeof pickupRequestSchema>;
 
 export const whatsappContactSchema = z.object({
   buyerName: nameField('Your name'),
+  // Only ever sent for a variant-based listing — see the same pairing
+  // on consultationRequestSchema below and listings.price's own comment
+  // in db/schema.ts.
+  variantId: z.number().int().positive().optional(),
 });
 export type WhatsappContactInput = z.infer<typeof whatsappContactSchema>;
 

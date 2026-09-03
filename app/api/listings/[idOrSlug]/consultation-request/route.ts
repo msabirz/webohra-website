@@ -5,6 +5,7 @@ import { listings, enquiries, users, listingVariants } from '@/db/schema';
 import { consultationRequestSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { generateRequestNumber } from '@/lib/ids';
+import { getActivePlan } from '@/lib/subscriptions';
 
 function resolveListingCondition(idOrSlug: string) {
   const asNumber = Number(idOrSlug);
@@ -40,6 +41,23 @@ export async function POST(
   const [listing] = await db.select().from(listings).where(resolveListingCondition(idOrSlug));
   if (!listing || listing.status !== 'active') {
     return NextResponse.json({ error: 'Listing is no longer available' }, { status: 409 });
+  }
+
+  // Service contact-tiering (2026-09-03) — this whole enquiry-relay flow is
+  // Gold-tier's 'masked_relay' mechanism specifically; a Basic
+  // ('whatsapp_number') or Silver ('direct_whatsapp') seller's buyers
+  // reach her some other way (see components/service-contact-action.tsx)
+  // and must never land here even if the client tries to call it
+  // directly. Falls back to allowing it (same safe default as everywhere
+  // else this tiering is checked) only when no active plan is resolved at
+  // all.
+  const plan = await getActivePlan(listing.sellerId, 'service');
+  const contactMode = plan?.contactMode ?? 'masked_relay';
+  if (contactMode !== 'masked_relay') {
+    return NextResponse.json(
+      { error: 'This seller doesn\'t use consultation requests — contact her directly instead.' },
+      { status: 409 },
+    );
   }
 
   // Same either/or as checkout: a variant-based listing needs a real
