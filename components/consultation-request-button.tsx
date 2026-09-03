@@ -4,7 +4,7 @@ import { useEffect, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { MessageCircle, X, CheckCircle2, ArrowRight } from 'lucide-react';
-import { buttonStyles, type ButtonSize } from '@/lib/button-styles';
+import { buttonStyles, BOX_SHAPE_CLASS, type ButtonSize } from '@/lib/button-styles';
 import { PhoneInput } from '@/components/phone-input';
 import { authFetch, getAuthToken } from '@/lib/session-client';
 
@@ -56,7 +56,7 @@ export function ConsultationRequestButton({
         className={buttonStyles(
           'whatsapp',
           size,
-          `${WIDTH_CLASS[width]} ${shape === 'box' ? '!rounded-xl !gap-1 !px-2' : ''}`,
+          `${WIDTH_CLASS[width]} ${shape === 'box' ? BOX_SHAPE_CLASS : ''}`,
         )}
       >
         <MessageCircle className="h-3.5 w-3.5" strokeWidth={2} />

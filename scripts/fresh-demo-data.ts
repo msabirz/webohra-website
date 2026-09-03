@@ -23,7 +23,14 @@
  * redirect a naive filename-based approach would use) — verified to
  * actually resolve before being hardcoded here. The second photo on each
  * listing is still a random Picsum (CC0, no keyword search) image, purely
- * for visual variety.
+ * for visual variety. A handful of listings are variant-based instead of
+ * single-price (see ListingSeed's own comment) — each variant gets its own
+ * real, subject-matched photo too (the "swatch" picker).
+ *
+ * Shipping is deliberately varied across listings (self_managed /
+ * delhivery / Pickup & Pay — see ListingSeed's shippingMethod/pickupEnabled
+ * comments) rather than every listing defaulting the same way, so
+ * stakeholders always have an example of each fulfillment path to test.
  *
  * Usage: npx tsx scripts/fresh-demo-data.ts
  */
@@ -34,6 +41,7 @@ import {
   listings,
   listingImages,
   listingFieldValues,
+  listingVariants,
   sellerProfiles,
   sellerSubscriptions,
   subscriptionPlans,
@@ -131,10 +139,15 @@ async function ensureFreePlans() {
           allowsDelhivery: false,
           prioritySupport: false,
           remindersEnabled: false,
-          // Safest default (no number exposed) for the tier with no paid
-          // feature backing it — same fallback lib/subscriptions.ts's
-          // callers already use when nothing else is resolved.
-          contactMode: 'masked_relay',
+          // Plain number/email, the least-featured contact mode — Free is
+          // the entry tier, so it should sit at the bottom of the ladder
+          // (whatsapp_number < direct_whatsapp < masked_relay), not hand a
+          // non-paying seller the same masked-relay privacy Gold pays for.
+          // The *no-active-plan-at-all* edge case (a seller with no
+          // subscription row whatsoever) still falls back to masked_relay
+          // as the safe default — see app/api/listings/[idOrSlug]/route.ts
+          // — this only changes the named Free plan's own setting.
+          contactMode: 'whatsapp_number',
           bonusOtherCategoryListings: 0,
           active: true,
           sortOrder: -1,
@@ -154,7 +167,10 @@ type ListingSeed = {
   listingType: 'physical_product' | 'local_service' | 'remote_service';
   title: string;
   description: string;
-  price: number;
+  /** Either a plain price (see below) or `variants` — never both, matching
+   *  listings.price's own "simple vs variant-based" comment in
+   *  db/schema.ts. */
+  price?: number;
   /** The real, subject-matched primary photo's direct
    *  upload.wikimedia.org CDN URL — resolved once (via Commons'
    *  imageinfo API) and hardcoded here rather than stored as a filename
@@ -162,10 +178,40 @@ type ListingSeed = {
    *  MediaWiki app endpoint with a real per-IP rate limit (confirmed:
    *  600s cooldown after enough requests), unlike upload.wikimedia.org
    *  itself, which is the dedicated media CDN built for exactly this
-   *  kind of public hotlinking at scale. */
-  commonsImageUrl: string;
-  /** Picsum seed for the second, purely-for-variety photo. */
-  imageSeed: string;
+   *  kind of public hotlinking at scale. Omit when using `variants`
+   *  instead (the listing-level gallery is optional there too).
+   *  Note: the CDN itself also rate-limits a burst of requests from one
+   *  IP (separately from the above, confirmed 2026-09-03 while sourcing
+   *  swatch photos below) — space out re-verification if this script's
+   *  image URLs ever need re-checking. */
+  commonsImageUrl?: string;
+  /** Picsum seed for the second, purely-for-variety photo. Omit when using
+   *  `variants`. */
+  imageSeed?: string;
+  /** Named, individually-priced, individually-photographed options —
+   *  listing_variants + one listingImages row per variant (variantId set,
+   *  the "swatch" the picker shows — see db/schema.ts's own comment on
+   *  listing_images.variantId). Used for at least one listing per physical-
+   *  product category (2026-09-03, user's own ask, "is any seller have
+   *  swatches? if not add the swatches... one such product at least
+   *  against one seller") so stakeholders always have a real swatch-picker
+   *  example to test, not just the single-price common case. */
+  variants?: { name: string; price: number; imageUrl: string }[];
+  /** Defaults to 'self_managed' when omitted. Deliberately varied across
+   *  the seed set (2026-09-03) so self_managed / delhivery / Pickup & Pay
+   *  are all represented somewhere for stakeholder testing — previously
+   *  every listing defaulted to plain self_managed with nothing else. */
+  shippingMethod?: 'self_managed' | 'delhivery';
+  /** Defaults to false. See shippingMethod's comment above. Setting this
+   *  true alone leaves pickupCity unresolvable (lib/pickup.ts returns
+   *  null with no address source picked) — pair it with
+   *  pickupAddressSource, almost always 'seller' here since every seeded
+   *  seller already has a complete address (caught 2026-09-03: the first
+   *  pass set pickupEnabled with no source, so both "Pickup & Pay"
+   *  listings showed "hasn't finished setting up her pickup location
+   *  yet" instead of a real city). */
+  pickupEnabled?: boolean;
+  pickupAddressSource?: 'seller' | 'office';
   fields: { fieldId: number; value: unknown }[];
 };
 
@@ -228,10 +274,16 @@ const SELLERS: SellerSeed[] = [
         subcategoryId: 1, // Baked Goods
         listingType: 'physical_product',
         title: 'Assorted Mithai Box',
-        description: 'A festive box of 12 handmade mithai — kaju katli, motichoor ladoo, and coconut barfi, made fresh to order.',
-        price: 450,
-        commonsImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/0/05/Mithai_1.jpg',
-        imageSeed: 'mithai-box-demo',
+        description: 'Handmade mithai, made fresh to order — choose your favourite: classic kaju katli, motichoor ladoo, or coconut barfi, each boxed 12 pieces.',
+        // Swatch example #1 (Food) — each type is its own photographed
+        // variant rather than one flat price, per the user's ask.
+        variants: [
+          { name: 'Kaju Katli Box (12 pcs)', price: 400, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/ec/Kaju_katli_dessert_-_side_view.jpg' },
+          { name: 'Motichoor Ladoo Box (12 pcs)', price: 350, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/b/b8/Motichoor_ladoo.JPG' },
+          { name: 'Coconut Barfi Box (12 pcs)', price: 380, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/e9/Coconut_Barfi.jpg' },
+        ],
+        pickupEnabled: true, // Pickup & Pay example
+        pickupAddressSource: 'seller',
         fields: [
           { fieldId: 1, value: 'Cashew, sugar, ghee, cardamom, khoya, coconut' },
           { fieldId: 2, value: 'Veg' },
@@ -259,6 +311,7 @@ const SELLERS: SellerSeed[] = [
         price: 1200,
         commonsImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/1c/Pillowcase%2C_set_%28AM_1996.72.35-2%29.jpg',
         imageSeed: 'bedsheet-demo',
+        shippingMethod: 'delhivery', // Delhivery example
         fields: [
           { fieldId: 13, value: '90x108 inches (double bed) + 2x 17x27 inch pillow covers' },
           { fieldId: 14, value: '100% cotton, 180 thread count' },
@@ -267,11 +320,14 @@ const SELLERS: SellerSeed[] = [
       {
         subcategoryId: 3, // Apparel
         listingType: 'physical_product',
-        title: 'Embroidered Silk Dupatta',
-        description: 'Pure silk dupatta with hand zari embroidery along the border, finished with tassels — a versatile piece for festive wear.',
-        price: 1800,
-        commonsImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/37/LWID1P2MP6071106_Grey_Hand_Embroidered_Parsi_Crepe_Multicolor_Thread_Work_Dupatta_400x.jpg',
-        imageSeed: 'dupatta-demo',
+        title: 'Bandhani & Block-Print Dupatta',
+        description: 'A dupatta collection in traditional hand-tied bandhani and hand block-print styles — pick your favourite pattern, each finished with tassels.',
+        // Swatch example #2 (Textile).
+        variants: [
+          { name: 'Bandhani Print — Style 1', price: 1600, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/f/f8/Bandhani_Dupatta_%285788125979%29.jpg' },
+          { name: 'Bandhani Print — Style 2', price: 1600, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/31/Bandhani_Dupatta_%287034542551%29.jpg' },
+          { name: 'Dabu Block-Print', price: 1800, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/b/bb/COTTON_DABU_PRINT-GREEN.png' },
+        ],
         fields: [
           { fieldId: 7, value: 'Free Size' },
           { fieldId: 8, value: 'Pure silk' },
@@ -296,10 +352,15 @@ const SELLERS: SellerSeed[] = [
         subcategoryId: 50, // Handicrafts
         listingType: 'physical_product',
         title: 'Hand-painted Terracotta Diya Set',
-        description: 'Set of 6 terracotta diyas, hand-painted with traditional motifs in gold and red — perfect for festive décor.',
-        price: 450,
-        commonsImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/7/78/Decorative_clay_lamp_during_Diwali_%28November_2018%29.jpg',
-        imageSeed: 'diya-set-demo',
+        description: 'Set of 6 terracotta diyas, hand-painted with traditional motifs — perfect for festive décor. Available in a few styles.',
+        // Swatch example #3 (Art & Craft).
+        variants: [
+          { name: 'Classic Diya Set', price: 400, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/a9/Diya_Lamp.jpg' },
+          { name: 'Hand-painted Diya Set', price: 450, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/1c/DiwaliOilLampCrop.JPG' },
+          { name: 'Village-style Diya Set', price: 380, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/9/95/Diwali_Lamp_village.jpg' },
+        ],
+        pickupEnabled: true, // second Pickup & Pay example
+        pickupAddressSource: 'seller',
         fields: [{ fieldId: 29, value: 'Terracotta clay, acrylic paint' }],
       },
     ],
@@ -319,10 +380,14 @@ const SELLERS: SellerSeed[] = [
         subcategoryId: 47, // Imitation Jewellery
         listingType: 'physical_product',
         title: 'Kundan Bridal Jewellery Set',
-        description: 'A full Kundan bridal set — necklace, earrings, and maang tikka — with a pearl-drop finish, gift-boxed.',
-        price: 3500,
-        commonsImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/5/58/Kundan_jadai_work.jpg',
-        imageSeed: 'kundan-jewellery-demo',
+        description: 'Kundan bridal jewellery, gift-boxed — pick a design below.',
+        // Swatch example #4 (Beauty & Occasion).
+        variants: [
+          { name: 'Design A — Necklace Set', price: 3500, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/1d/British_Museum_The_Islamic_world_Necklace_Kundan_India_21022019_7703.jpg' },
+          { name: 'Design B — Statement Earrings', price: 1200, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/9/9d/Gold_dogri_jhumka%2C_Jammu.jpg' },
+          { name: 'Design C — Heritage Necklace', price: 2800, imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/b/b8/PXL_20231218_152223456_Victoria_and_Albert_Museum_Artefacts_01_ancient_South_Indian_jewelry%2C_possibly_from_Tamil_Nadu%2C_with_one_type_of_necklace_identified_as_a_traditional_marriage_necklace.jpg' },
+        ],
+        shippingMethod: 'delhivery', // second Delhivery example
         fields: [
           { fieldId: 20, value: 'Kundan' },
           { fieldId: 21, value: 'Full set' },
@@ -408,6 +473,7 @@ const SELLERS: SellerSeed[] = [
         price: 1800,
         commonsImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/19/Arabic_Calligraphy_-_Mohammad_Hashem_-_Islamic_Consultative_Assembly_Museum_of_Iran.jpg',
         imageSeed: 'calligraphy-art-demo',
+        shippingMethod: 'delhivery', // third Delhivery example
         fields: [
           { fieldId: 35, value: 'Calligraphy/Ink' },
           { fieldId: 36, value: '18x24 inches, canvas' },
@@ -468,6 +534,7 @@ async function seedSellers(productFreeId: number, serviceFreeId: number) {
 
     for (const l of seller.listings) {
       const slug = slugifyTitle(l.title) + '-' + user.id;
+      const isVariantBased = !!l.variants;
       const [listing] = await db
         .insert(listings)
         .values({
@@ -476,18 +543,43 @@ async function seedSellers(productFreeId: number, serviceFreeId: number) {
           subcategoryId: l.subcategoryId,
           title: l.title,
           description: l.description,
-          price: l.price.toFixed(2),
-          shippingMethod: 'self_managed',
+          // Never both — see listings.price's own comment in db/schema.ts.
+          price: isVariantBased ? null : l.price!.toFixed(2),
+          shippingMethod: l.shippingMethod ?? 'self_managed',
+          pickupEnabled: l.pickupEnabled ?? false,
+          pickupAddressSource: l.pickupAddressSource ?? null,
           selfShipCharge: l.listingType === 'physical_product' ? '60.00' : '0.00',
           status: 'active',
-          stockQuantity: l.listingType === 'physical_product' ? 20 : null,
+          stockQuantity: l.listingType === 'physical_product' && !isVariantBased ? 20 : null,
         })
         .returning();
 
-      await db.insert(listingImages).values([
-        { listingId: listing.id, url: l.commonsImageUrl, sortOrder: 0 },
-        { listingId: listing.id, url: `https://picsum.photos/seed/${l.imageSeed}-2/800/600`, sortOrder: 1 },
-      ]);
+      // Listing-level gallery photos — optional for a variant-based
+      // listing (each variant carries its own "swatch" photo instead, see
+      // below), required for a simple single-price one.
+      if (l.commonsImageUrl) {
+        await db.insert(listingImages).values([
+          { listingId: listing.id, url: l.commonsImageUrl, sortOrder: 0 },
+          ...(l.imageSeed
+            ? [{ listingId: listing.id, url: `https://picsum.photos/seed/${l.imageSeed}-2/800/600`, sortOrder: 1 }]
+            : []),
+        ]);
+      }
+
+      if (l.variants) {
+        for (const v of l.variants) {
+          const [variantRow] = await db
+            .insert(listingVariants)
+            .values({ listingId: listing.id, name: v.name, price: v.price.toFixed(2), stockQuantity: 20 })
+            .returning();
+          await db.insert(listingImages).values({
+            listingId: listing.id,
+            variantId: variantRow.id,
+            url: v.imageUrl,
+            sortOrder: 0,
+          });
+        }
+      }
 
       if (l.fields.length > 0) {
         await db.insert(listingFieldValues).values(l.fields.map((f) => ({ listingId: listing.id, ...f })));
