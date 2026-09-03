@@ -118,13 +118,13 @@ export async function sendPayout(payoutId: number, staffId: number): Promise<Sen
   if (!account) {
     return { ok: false, error: "This seller hasn't set up a payout account yet." };
   }
-  // RazorpayX Payouts only ever moves money against a real fund account —
-  // her 'upi'/'qr_image' methods (the ones actually in use since the
-  // 2026-09-03 redesign away from RazorpayX as the money-mover) have no
-  // fund_account_id at all, since Admin pays those directly through her
-  // own banking/UPI app instead. This branch is effectively unreachable
-  // in normal use now (the UI hides this button entirely), kept only in
-  // case RazorpayX Payouts comes back later.
+  // RazorpayX Payouts only ever moves money against a real fund account.
+  // Both current payout methods ('upi' and 'bank_account') do populate
+  // one as of the 2026-09-03 redesign, so this null check is mostly a
+  // defensive guard now rather than a normal-path branch — this whole
+  // function is effectively unreachable in practice anyway (the UI hides
+  // its button entirely, see RAZORPAYX_UI_ENABLED in the admin payout
+  // pages), kept only in case RazorpayX Payouts comes back later.
   if (!account.razorpayFundAccountId) {
     return { ok: false, error: 'This seller is not set up for RazorpayX transfers — use "Mark as paid manually" instead.' };
   }

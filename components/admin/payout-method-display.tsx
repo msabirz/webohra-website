@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { Copy, Check, Landmark, QrCode as QrCodeIcon, AlertCircle } from 'lucide-react';
+import { Copy, Check, Landmark, AlertCircle } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buildUpiDeepLink } from '@/lib/upi-qr';
 import { Skeleton } from '@/components/skeleton';
@@ -13,20 +13,19 @@ type PayoutMethodData =
       method: 'bank_account';
       payeeName: string;
       bank: { accountHolderName: string; accountNumber: string; ifsc: string; bankName: string | null };
-    }
-  | { method: 'qr_image'; payeeName: string; qrImageUrl: string | null };
+    };
 
 /**
  * Shows Admin exactly how to actually pay a seller — Fulfillment &
- * Subscriptions redesign, Phase 5c payout redesign (2026-09-03). For
+ * Subscriptions redesign, Phase 5c payout redesign (2026-09-03, 'upi'/
+ * 'bank_account' only as of the same-day removal of the 'qr_image'
+ * method — it only duplicated what 'upi' already does for free). For
  * 'upi', builds a fresh QR code from the standard UPI deep-link format
  * with the exact payout amount baked in (see lib/upi-qr.ts) — any UPI app
  * pre-fills both the payee and amount the instant it's scanned, entirely
  * client-side, no gateway, no cost. For 'bank_account', shows what
  * GET /api/admin/sellers/[id]/payout-method fetched live from Razorpay
- * (never stored in our own database). For 'qr_image', her own uploaded
- * QR — no amount pre-fill possible for a static image, so the amount is
- * shown clearly alongside it.
+ * (never stored in our own database).
  */
 export function PayoutMethodDisplay({ sellerId, amountRupees, orderNumber }: { sellerId: number; amountRupees: number; orderNumber: string }) {
   const [data, setData] = useState<PayoutMethodData | null | undefined>(undefined);
@@ -117,54 +116,35 @@ export function PayoutMethodDisplay({ sellerId, amountRupees, orderNumber }: { s
     );
   }
 
-  if (data.method === 'bank_account') {
-    const rows: [string, string][] = [
-      ['Account holder', data.bank.accountHolderName],
-      ['Account number', data.bank.accountNumber],
-      ['IFSC', data.bank.ifsc],
-      ...(data.bank.bankName ? ([['Bank', data.bank.bankName]] as [string, string][]) : []),
-    ];
-    return (
-      <div className="flex flex-col gap-2 rounded-xl bg-ivory-deep/60 p-4">
-        <div className="flex items-center gap-2 font-body text-xs font-semibold text-ink-soft">
-          <Landmark className="h-3.5 w-3.5" strokeWidth={2} />
-          Pay via your own bank transfer (NEFT/IMPS)
-        </div>
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
-            <div>
-              <p className="font-body text-[10px] uppercase tracking-wide text-ink-soft">{label}</p>
-              <p className="font-body text-sm font-medium text-ink">{value}</p>
-            </div>
-            <button
-              onClick={() => copy(value, label)}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-ink-soft hover:bg-ivory-deep hover:text-navy"
-              aria-label={`Copy ${label}`}
-            >
-              {copied === label ? <Check className="h-3.5 w-3.5 text-teal-deep" strokeWidth={2} /> : <Copy className="h-3.5 w-3.5" strokeWidth={2} />}
-            </button>
-          </div>
-        ))}
-        <p className="font-body text-xs text-ink-soft">Amount to send: ₹{amountRupees.toLocaleString('en-IN')}</p>
-      </div>
-    );
-  }
-
-  // qr_image
+  // 'bank_account'
+  const rows: [string, string][] = [
+    ['Account holder', data.bank.accountHolderName],
+    ['Account number', data.bank.accountNumber],
+    ['IFSC', data.bank.ifsc],
+    ...(data.bank.bankName ? ([['Bank', data.bank.bankName]] as [string, string][]) : []),
+  ];
   return (
-    <div className="flex flex-col items-center gap-3 rounded-xl bg-ivory-deep/60 p-4">
-      {data.qrImageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={data.qrImageUrl} alt="Seller's UPI QR code" className="h-48 w-48 rounded-lg bg-white object-contain p-2" />
-      ) : (
-        <div className="flex h-48 w-48 items-center justify-center rounded-lg bg-white">
-          <QrCodeIcon className="h-8 w-8 text-ink-soft/40" strokeWidth={1.5} />
+    <div className="flex flex-col gap-2 rounded-xl bg-ivory-deep/60 p-4">
+      <div className="flex items-center gap-2 font-body text-xs font-semibold text-ink-soft">
+        <Landmark className="h-3.5 w-3.5" strokeWidth={2} />
+        Pay via your own bank transfer (NEFT/IMPS)
+      </div>
+      {rows.map(([label, value]) => (
+        <div key={label} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2">
+          <div>
+            <p className="font-body text-[10px] uppercase tracking-wide text-ink-soft">{label}</p>
+            <p className="font-body text-sm font-medium text-ink">{value}</p>
+          </div>
+          <button
+            onClick={() => copy(value, label)}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-ink-soft hover:bg-ivory-deep hover:text-navy"
+            aria-label={`Copy ${label}`}
+          >
+            {copied === label ? <Check className="h-3.5 w-3.5 text-teal-deep" strokeWidth={2} /> : <Copy className="h-3.5 w-3.5" strokeWidth={2} />}
+          </button>
         </div>
-      )}
-      <p className="font-body text-xs font-semibold text-ink">
-        Scan and enter the amount yourself — ₹{amountRupees.toLocaleString('en-IN')}
-      </p>
-      <p className="font-body text-xs text-ink-soft">This QR code doesn&apos;t include an amount — double-check before sending.</p>
+      ))}
+      <p className="font-body text-xs text-ink-soft">Amount to send: ₹{amountRupees.toLocaleString('en-IN')}</p>
     </div>
   );
 }

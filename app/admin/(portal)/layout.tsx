@@ -11,6 +11,7 @@ import {
   ShoppingBag,
   MessageSquare,
   Truck,
+  Flag,
   Image as ImageIcon,
   MapPin,
   Building2,
@@ -27,24 +28,77 @@ import {
 import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { AdminPortalContext, type AdminMe } from '@/lib/admin-context';
 import { PortalShellSkeleton } from '@/components/skeleton';
+import { PortalNav, type NavEntry, type NavLeaf } from '@/components/portal-nav';
 
-const NAV_ITEMS = [
+type StaffRole = 'customer_support' | 'admin' | 'super_admin';
+type AdminNavLeaf = NavLeaf & { roles: readonly StaffRole[] };
+type AdminNavGroup = { label: string; icon: NavLeaf['icon']; children: AdminNavLeaf[] };
+type AdminNavEntry = AdminNavLeaf | AdminNavGroup;
+
+// Grouped 2026-09-03 (was one flat 15-item list) so the sidebar stays
+// scannable as it grows — a top-level entry is either a direct link or a
+// named group of related ones. Each leaf still carries its own `roles`
+// (unchanged from before); a group is visible only once role-filtering
+// below leaves it with at least one visible child.
+const NAV_ITEMS: AdminNavEntry[] = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['customer_support', 'admin', 'super_admin'] },
   { href: '/admin/sellers', label: 'Sellers', icon: ShieldCheck, roles: ['customer_support', 'admin', 'super_admin'] },
-  { href: '/admin/products', label: 'Products', icon: Package, roles: ['admin', 'super_admin'] },
-  { href: '/admin/categories', label: 'Categories', icon: FolderTree, roles: ['admin', 'super_admin'] },
-  { href: '/admin/orders', label: 'Orders', icon: ShoppingBag, roles: ['customer_support', 'admin', 'super_admin'] },
-  { href: '/admin/enquiries', label: 'Enquiries', icon: MessageSquare, roles: ['customer_support', 'admin', 'super_admin'] },
-  { href: '/admin/pickups', label: 'Pickups', icon: Truck, roles: ['customer_support', 'admin', 'super_admin'] },
-  { href: '/admin/banners', label: 'Banners', icon: ImageIcon, roles: ['admin', 'super_admin'] },
-  { href: '/admin/jamaats', label: 'Jamaats', icon: MapPin, roles: ['admin', 'super_admin'] },
-  { href: '/admin/webohra-offices', label: 'WeBohra Offices', icon: Building2, roles: ['admin', 'super_admin'] },
-  { href: '/admin/subscription-plans', label: 'Subscription Plans', icon: Layers, roles: ['admin', 'super_admin'] },
-  { href: '/admin/wallets', label: 'Wallets', icon: Wallet, roles: ['customer_support', 'admin', 'super_admin'] },
-  { href: '/admin/payouts', label: 'Payouts', icon: Landmark, roles: ['customer_support', 'admin', 'super_admin'] },
+  {
+    label: 'Catalog',
+    icon: Package,
+    children: [
+      { href: '/admin/products', label: 'Products', icon: Package, roles: ['admin', 'super_admin'] },
+      { href: '/admin/categories', label: 'Categories', icon: FolderTree, roles: ['admin', 'super_admin'] },
+    ],
+  },
+  {
+    label: 'Operations',
+    icon: ShoppingBag,
+    children: [
+      { href: '/admin/orders', label: 'Orders', icon: ShoppingBag, roles: ['customer_support', 'admin', 'super_admin'] },
+      { href: '/admin/disputes', label: 'Disputes', icon: Flag, roles: ['customer_support', 'admin', 'super_admin'] },
+      { href: '/admin/enquiries', label: 'Enquiries', icon: MessageSquare, roles: ['customer_support', 'admin', 'super_admin'] },
+      { href: '/admin/pickups', label: 'Pickups', icon: Truck, roles: ['customer_support', 'admin', 'super_admin'] },
+    ],
+  },
+  {
+    label: 'Finance',
+    icon: Landmark,
+    children: [
+      { href: '/admin/wallets', label: 'Wallets', icon: Wallet, roles: ['customer_support', 'admin', 'super_admin'] },
+      { href: '/admin/payouts', label: 'Payouts', icon: Landmark, roles: ['customer_support', 'admin', 'super_admin'] },
+      { href: '/admin/subscription-plans', label: 'Subscription Plans', icon: Layers, roles: ['admin', 'super_admin'] },
+    ],
+  },
+  {
+    label: 'Content & Setup',
+    icon: Building2,
+    children: [
+      { href: '/admin/banners', label: 'Banners', icon: ImageIcon, roles: ['admin', 'super_admin'] },
+      { href: '/admin/jamaats', label: 'Jamaats', icon: MapPin, roles: ['admin', 'super_admin'] },
+      { href: '/admin/webohra-offices', label: 'WeBohra Offices', icon: Building2, roles: ['admin', 'super_admin'] },
+    ],
+  },
   { href: '/admin/staff', label: 'Staff', icon: Users, roles: ['super_admin'] },
   { href: '/admin/settings', label: 'Settings', icon: Settings, roles: ['customer_support', 'admin', 'super_admin'] },
-] as const;
+];
+
+function isAdminGroup(entry: AdminNavEntry): entry is AdminNavGroup {
+  return 'children' in entry;
+}
+
+function visibleNavFor(role: StaffRole): NavEntry[] {
+  const out: NavEntry[] = [];
+  for (const entry of NAV_ITEMS) {
+    if (isAdminGroup(entry)) {
+      const children = entry.children.filter((c) => c.roles.includes(role));
+      if (children.length > 0) out.push({ label: entry.label, icon: entry.icon, children });
+    } else if (entry.roles.includes(role)) {
+      out.push(entry);
+    }
+  }
+  return out;
+}
 
 const ROLE_LABEL: Record<AdminMe['staffRole'], string> = {
   customer_support: 'Customer Support',
@@ -92,12 +146,13 @@ export default function AdminPortalLayout({ children }: { children: React.ReactN
 
   if (loading || !me) {
     // Role isn't known yet at this point (that's what's loading), so this
-    // uses the max nav length (super_admin's) as a reasonable placeholder
-    // shape rather than under- or over-drawing it.
+    // uses the full top-level entry count (groups collapsed, same as a
+    // fresh page load) as a reasonable placeholder shape rather than
+    // under- or over-drawing it.
     return <PortalShellSkeleton navItems={NAV_ITEMS.length} />;
   }
 
-  const visibleNav = NAV_ITEMS.filter((item) => (item.roles as readonly string[]).includes(me.staffRole));
+  const visibleNav = visibleNavFor(me.staffRole);
 
   return (
     <AdminPortalContext.Provider value={{ me }}>
@@ -135,24 +190,8 @@ export default function AdminPortalLayout({ children }: { children: React.ReactN
             </span>
           </div>
 
-          <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-            {visibleNav.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileNavOpen(false)}
-                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 font-body text-sm font-medium transition ${
-                    active ? 'bg-white/10 text-ivory' : 'text-ivory/70 hover:bg-white/5 hover:text-ivory'
-                  }`}
-                >
-                  <Icon className="h-4.5 w-4.5" strokeWidth={2} />
-                  {item.label}
-                </Link>
-              );
-            })}
+          <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+            <PortalNav items={visibleNav} pathname={pathname} onNavigate={() => setMobileNavOpen(false)} />
           </nav>
 
           <div className="flex flex-col gap-1 border-t border-white/10 px-3 py-4">

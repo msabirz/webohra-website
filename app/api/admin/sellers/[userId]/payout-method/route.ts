@@ -11,10 +11,9 @@ import { getBankFundAccountDetails, getUpiFundAccountDetails } from '@/lib/razor
  * only ever returns her own masked summary). This is what Admin actually
  * pays against: her UPI VPA or bank account, both fetched live from
  * Razorpay (never stored in our own database — see
- * seller_payout_accounts' own schema comment), or her uploaded QR image.
- * isAdmin, not isStaff — same "real-money-adjacent action gets the
- * stricter role" reasoning as the rest of the payout endpoints, even
- * though this one only reads.
+ * seller_payout_accounts' own schema comment). isAdmin, not isStaff —
+ * same "real-money-adjacent action gets the stricter role" reasoning as
+ * the rest of the payout endpoints, even though this one only reads.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ userId: string }> }) {
   const session = await getSessionFromRequest(request);
@@ -42,12 +41,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
     .leftJoin(sellerProfiles, eq(sellerProfiles.userId, users.id))
     .where(eq(users.id, sellerId));
   const payeeName = sellerRow?.businessName ?? sellerRow?.name ?? 'WE Bohra seller';
-
-  if (account.method === 'qr_image') {
-    return NextResponse.json({
-      account: { method: 'qr_image', payeeName, qrImageUrl: account.qrImageUrl },
-    });
-  }
 
   // 'upi' and 'bank_account' — both fetched live from Razorpay, never
   // persisted here.

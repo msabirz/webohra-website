@@ -32,17 +32,14 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/sellers/payout-account — register or replace where her
- * online-order earnings go and how Admin actually pays her. Three
- * methods (see payoutMethodEnum's own comment for the full 2026-09-03
- * redesign — Admin pays directly through her own banking/UPI app rather
- * than RazorpayX Payouts moving the money):
- *   - 'upi' and 'bank_account': both sent straight to a real RazorpayX
- *     contact + fund_account (confirmed 'vpa' fund accounts work just as
- *     well as 'bank_account' ones), only the opaque ids come back here —
- *     her raw VPA/account number/IFSC is never persisted in our own
- *     database at all.
- *   - 'qr_image': the already-uploaded (via /api/uploads/presign,
- *     purpose 'payout_qr') image URL is just stored directly.
+ * online-order earnings go and how Admin actually pays her. Two methods
+ * (see payoutMethodEnum's own comment for the full 2026-09-03 redesign —
+ * Admin pays directly through her own banking/UPI app rather than
+ * RazorpayX Payouts moving the money), both sent straight to a real
+ * RazorpayX contact + fund_account (confirmed 'vpa' fund accounts work
+ * just as well as 'bank_account' ones) — only the opaque ids come back
+ * here, her raw VPA/account number/IFSC is never persisted in our own
+ * database at all.
  */
 export async function POST(request: Request) {
   const session = await getSessionFromRequest(request);
@@ -71,66 +68,51 @@ export async function POST(request: Request) {
     .where(eq(sellerPayoutAccounts.sellerId, sellerId));
 
   try {
+    // Reuse her existing RazorpayX contact if she's changing her payout
+    // details later — no reason to create a second contact for the same
+    // seller, whether she's switching bank↔UPI or just updating one.
+    const contactId =
+      existing?.razorpayContactId ??
+      (
+        await createRazorpayContact({
+          name: seller.name ?? 'WE Bohra seller',
+          email: seller.email ?? undefined,
+          phone: seller.phone,
+        })
+      ).id;
+
     let values: {
       sellerId: number;
-      method: 'upi' | 'bank_account' | 'qr_image';
-      razorpayContactId: string | null;
-      razorpayFundAccountId: string | null;
-      qrImageUrl: string | null;
+      method: 'upi' | 'bank_account';
+      razorpayContactId: string;
+      razorpayFundAccountId: string;
       displayLabel: string;
       updatedAt: Date;
     };
 
-    if (parsed.data.method === 'upi' || parsed.data.method === 'bank_account') {
-      // Reuse her existing RazorpayX contact if she's changing her payout
-      // details later — no reason to create a second contact for the same
-      // seller, whether she's switching bank↔UPI or just updating one.
-      const contactId =
-        existing?.razorpayContactId ??
-        (
-          await createRazorpayContact({
-            name: seller.name ?? 'WE Bohra seller',
-            email: seller.email ?? undefined,
-            phone: seller.phone,
-          })
-        ).id;
-
-      if (parsed.data.method === 'upi') {
-        const result = await createUpiFundAccount({ contactId, vpa: parsed.data.vpa });
-        values = {
-          sellerId,
-          method: 'upi',
-          razorpayContactId: contactId,
-          razorpayFundAccountId: result.id,
-          qrImageUrl: null,
-          displayLabel: 'UPI ID on file',
-          updatedAt: new Date(),
-        };
-      } else {
-        const result = await createBankFundAccount({
-          contactId,
-          accountHolderName: parsed.data.accountHolderName,
-          ifsc: parsed.data.ifsc,
-          accountNumber: parsed.data.accountNumber,
-        });
-        values = {
-          sellerId,
-          method: 'bank_account',
-          razorpayContactId: contactId,
-          razorpayFundAccountId: result.id,
-          qrImageUrl: null,
-          displayLabel: `${result.bankName ?? 'Bank account'} •••• ${result.lastFour}`,
-          updatedAt: new Date(),
-        };
-      }
-    } else {
+    if (parsed.data.method === 'upi') {
+      const result = await createUpiFundAccount({ contactId, vpa: parsed.data.vpa });
       values = {
         sellerId,
-        method: 'qr_image',
-        razorpayContactId: null,
-        razorpayFundAccountId: null,
-        qrImageUrl: parsed.data.qrImageUrl,
-        displayLabel: 'QR code uploaded',
+        method: 'upi',
+        razorpayContactId: contactId,
+        razorpayFundAccountId: result.id,
+        displayLabel: 'UPI ID on file',
+        updatedAt: new Date(),
+      };
+    } else {
+      const result = await createBankFundAccount({
+        contactId,
+        accountHolderName: parsed.data.accountHolderName,
+        ifsc: parsed.data.ifsc,
+        accountNumber: parsed.data.accountNumber,
+      });
+      values = {
+        sellerId,
+        method: 'bank_account',
+        razorpayContactId: contactId,
+        razorpayFundAccountId: result.id,
+        displayLabel: `${result.bankName ?? 'Bank account'} •••• ${result.lastFour}`,
         updatedAt: new Date(),
       };
     }

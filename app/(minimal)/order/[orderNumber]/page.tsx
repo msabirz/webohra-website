@@ -36,7 +36,7 @@ type OrderDetail = {
   // orders.paymentStatus' own comment in db/schema.ts). razorpayOrderId/
   // razorpayKeyId/retryAmountRupees are only ever non-null together, and
   // only while there's a real payment left to complete.
-  paymentStatus: 'pending' | 'paid' | 'failed' | null;
+  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded' | null;
   razorpayOrderId: string | null;
   razorpayKeyId: string | null;
   retryAmountRupees: number | null;
@@ -198,8 +198,14 @@ export default function OrderConfirmationPage() {
   // exists the instant checkout submits, but for 'online' that's not the
   // same as money having actually arrived. Nothing below treats one of
   // these as a normal, fulfillable order — matches Admin/seller order
-  // lists hiding it entirely until this flips.
-  const isUnpaidOnline = order.paymentMethod === 'online' && order.paymentStatus !== 'paid';
+  // lists hiding it entirely until this flips. Deliberately an explicit
+  // allow-list (pending/failed), not "!== 'paid'" — 'refunded' (added
+  // 2026-09-03) is also never 'paid', but a refunded order is the
+  // opposite of unpaid and must never show a "complete your payment"
+  // banner or a live retry button against money that's already been
+  // both charged and given back.
+  const isUnpaidOnline =
+    order.paymentMethod === 'online' && (order.paymentStatus === 'pending' || order.paymentStatus === 'failed');
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -302,9 +308,11 @@ export default function OrderConfirmationPage() {
               ? 'Cash on Delivery'
               : order.paymentStatus === 'paid'
                 ? 'Paid online'
-                : order.paymentStatus === 'failed'
-                  ? 'Payment failed'
-                  : 'Payment pending'}
+                : order.paymentStatus === 'refunded'
+                  ? 'Refunded'
+                  : order.paymentStatus === 'failed'
+                    ? 'Payment failed'
+                    : 'Payment pending'}
           </p>
           <p className="mt-2 font-body text-xs text-ink-soft">
             Track this order anytime using order #{order.orderNumber} from the site footer.
@@ -360,7 +368,7 @@ export default function OrderConfirmationPage() {
 
       {cancelError && <p className="text-center font-body text-sm text-red-700">{cancelError}</p>}
 
-      {order.status === 'placed' && order.paymentStatus !== 'paid' && (
+      {order.status === 'placed' && order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded' && (
         <button
           onClick={handleCancel}
           disabled={cancelling}

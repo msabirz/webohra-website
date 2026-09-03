@@ -176,6 +176,20 @@
       "when": 1788427054080,
       "tag": "0024_sharp_senator_kelly",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788429603394,
+      "tag": "0025_minor_millenium_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788430473459,
+      "tag": "0026_grey_nocturne",
+      "breakpoints": true
     }
   ]
 }

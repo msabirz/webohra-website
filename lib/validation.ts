@@ -260,20 +260,21 @@ export type ListingImagesReorderInput = z.infer<typeof listingImagesReorderSchem
 
 // `purpose` defaults to 'listing' so every caller that predates this
 // (product/variant/field photos) keeps working unchanged with just
-// { contentType, listingId } — 'payout_qr' (Fulfillment & Subscriptions
-// redesign, Phase 5c payout redesign, 2026-09-03) doesn't need a
-// listingId at all, since a payout QR code belongs to the seller, not any
-// one listing. NOTE for whoever merges this branch alongside the
-// portfolio-photos branch (also in flight, also extends this same
-// schema with a 'portfolio' purpose): merge both into one
-// z.enum(['listing', 'portfolio', 'payout_qr']), don't let one silently
-// clobber the other.
+// { contentType, listingId }. There used to be a second purpose,
+// 'payout_qr' (Fulfillment & Subscriptions redesign, Phase 5c payout
+// redesign, 2026-09-03) for a seller-uploaded payout QR code — dropped
+// the same day once the 'qr_image' payout method itself was dropped (see
+// payoutMethodEnum's own comment in db/schema.ts). NOTE for whoever
+// merges this branch alongside the portfolio-photos branch (also in
+// flight, also extends this same schema with a 'portfolio' purpose):
+// merge into z.enum(['listing', 'portfolio']), no 'payout_qr' to
+// reconcile anymore.
 export const uploadPresignSchema = z
   .object({
     contentType: z.enum(['image/jpeg', 'image/png', 'image/webp'], {
       message: 'Only JPEG, PNG, or WEBP images are allowed',
     }),
-    purpose: z.enum(['listing', 'payout_qr']).default('listing'),
+    purpose: z.enum(['listing']).default('listing'),
     // Which product this photo is for — the R2 key is organized by seller
     // and product slug (see lib/storage/r2.ts), and the route verifies she
     // actually owns this listing before ever generating a presigned URL.
@@ -769,9 +770,11 @@ export type AdminWalletAdjustmentInput = z.infer<typeof adminWalletAdjustmentSch
 // shared import across a validation-schema/server-lib boundary).
 // Fulfillment & Subscriptions redesign, Phase 5c — redesigned 2026-09-03
 // (see payoutMethodEnum's own comment in db/schema.ts). 'upi' is listed
-// first since it's the preferred method — it's the only one Admin can pay
+// first since it's the preferred method — it's the one Admin can pay
 // against with an amount-pre-filled QR code, rather than typing anything
-// by hand.
+// by hand. A third 'qr_image' method (seller uploads her own QR
+// screenshot) existed briefly and was dropped the same day — it only
+// duplicated what 'upi' already gets her for free.
 export const sellerPayoutAccountSchema = z.discriminatedUnion('method', [
   z.object({
     method: z.literal('upi'),
@@ -793,9 +796,29 @@ export const sellerPayoutAccountSchema = z.discriminatedUnion('method', [
       .trim()
       .regex(/^\d{9,18}$/, 'Enter a valid account number (9-18 digits)'),
   }),
-  z.object({
-    method: z.literal('qr_image'),
-    qrImageUrl: z.string().trim().min(1, 'Upload a QR code image first'),
-  }),
 ]);
 export type SellerPayoutAccountInput = z.infer<typeof sellerPayoutAccountSchema>;
+
+// Admin Panel transaction/dispute/refund tooling, 2026-09-03.
+export const adminRefundSchema = z.object({
+  amountRupees: z.number().positive('Refund amount must be greater than zero'),
+  reason: z.string().trim().min(5, 'Explain why this order is being refunded').max(300),
+});
+export type AdminRefundInput = z.infer<typeof adminRefundSchema>;
+
+export const adminOpenDisputeSchema = z.object({
+  reason: z.string().trim().min(5, 'Describe the issue').max(500),
+});
+export type AdminOpenDisputeInput = z.infer<typeof adminOpenDisputeSchema>;
+
+export const adminUpdateDisputeSchema = z
+  .object({
+    note: z.string().trim().max(1000).optional(),
+    status: z.enum(['open', 'investigating', 'resolved']).optional(),
+    assignedToStaffId: z.number().int().positive().nullable().optional(),
+  })
+  .refine((data) => data.note !== undefined || data.status !== undefined || data.assignedToStaffId !== undefined, {
+    message: 'Provide at least a note, a status change, or an assignment',
+    path: ['note'],
+  });
+export type AdminUpdateDisputeInput = z.infer<typeof adminUpdateDisputeSchema>;

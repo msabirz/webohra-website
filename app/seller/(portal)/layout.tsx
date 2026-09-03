@@ -24,16 +24,33 @@ import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { SellerPortalContext, type SellerMe } from '@/lib/seller-context';
 import { NotificationBell } from '@/components/seller/notification-bell';
 import { PortalShellSkeleton } from '@/components/skeleton';
+import { PortalNav, type NavEntry } from '@/components/portal-nav';
 
-const NAV_ITEMS = [
+// Grouped 2026-09-03 (was one flat 9-item list) — a lone item stays a
+// direct link (Dashboard, Products, Settings); anything with 2+ related
+// items becomes a named group, same "submenus wherever it actually
+// clarifies something" idea as the admin sidebar.
+const NAV_ITEMS: NavEntry[] = [
   { href: '/seller/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/seller/products', label: 'Products', icon: Package },
-  { href: '/seller/orders', label: 'Orders', icon: ShoppingBag },
-  { href: '/seller/enquiries', label: 'Enquiries', icon: MessageSquare },
-  { href: '/seller/pickups', label: 'Pickups', icon: Handshake },
-  { href: '/seller/subscription', label: 'Subscription', icon: Layers },
-  { href: '/seller/wallet', label: 'Wallet', icon: Wallet },
-  { href: '/seller/payouts', label: 'Payouts', icon: Landmark },
+  {
+    label: 'Orders & Enquiries',
+    icon: ShoppingBag,
+    children: [
+      { href: '/seller/orders', label: 'Orders', icon: ShoppingBag },
+      { href: '/seller/enquiries', label: 'Enquiries', icon: MessageSquare },
+      { href: '/seller/pickups', label: 'Pickups', icon: Handshake },
+    ],
+  },
+  {
+    label: 'Money',
+    icon: Wallet,
+    children: [
+      { href: '/seller/subscription', label: 'Subscription', icon: Layers },
+      { href: '/seller/wallet', label: 'Wallet', icon: Wallet },
+      { href: '/seller/payouts', label: 'Payouts', icon: Landmark },
+    ],
+  },
   { href: '/seller/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -109,6 +126,19 @@ export default function SellerPortalLayout({ children }: { children: React.React
     return <PortalShellSkeleton navItems={NAV_ITEMS.length} />;
   }
 
+  // Same unread count NotificationBell already polls — surfaced on the
+  // Enquiries nav item too now that groups exist to put a badge on.
+  const navWithBadges: NavEntry[] = NAV_ITEMS.map((entry) =>
+    'children' in entry
+      ? {
+          ...entry,
+          children: entry.children.map((c) =>
+            c.href === '/seller/enquiries' ? { ...c, badge: unreadEnquiries || undefined } : c,
+          ),
+        }
+      : entry,
+  );
+
   return (
     <SellerPortalContext.Provider value={{ me, refresh: load, unreadEnquiries, refreshUnread }}>
       <div className="flex min-h-screen bg-ivory">
@@ -161,24 +191,12 @@ export default function SellerPortalLayout({ children }: { children: React.React
             )}
           </div>
 
-          <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
-            {NAV_ITEMS.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileNavOpen(false)}
-                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 font-body text-sm font-medium transition ${
-                    active ? 'bg-white/10 text-ivory' : 'text-ivory/70 hover:bg-white/5 hover:text-ivory'
-                  }`}
-                >
-                  <Icon className="h-4.5 w-4.5" strokeWidth={2} />
-                  {item.label}
-                </Link>
-              );
-            })}
+          <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+            <PortalNav
+              items={navWithBadges}
+              pathname={pathname}
+              onNavigate={() => setMobileNavOpen(false)}
+            />
           </nav>
 
           <div className="flex flex-col gap-1 border-t border-white/10 px-3 py-4">

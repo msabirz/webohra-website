@@ -65,10 +65,16 @@ export async function GET(
     .leftJoin(sellerProfiles, eq(sellerProfiles.userId, shipments.sellerId))
     .where(eq(shipments.orderId, order.id));
 
-  // Only needed to reopen Razorpay's checkout for a retry — an already-paid
-  // or COD order has nothing to retry, so this stays null for both, rather
-  // than handing back a live payment amount/key nobody asked for.
-  const retryable = order.paymentMethod === 'online' && order.paymentStatus !== 'paid' && order.razorpayOrderId;
+  // Only needed to reopen Razorpay's checkout for a retry — an already-paid,
+  // refunded, or COD order has nothing to retry, so this stays null for all
+  // three, rather than handing back a live payment amount/key nobody asked
+  // for. Explicit allow-list (pending/failed), not "!== 'paid'" — see
+  // app/(minimal)/order/[orderNumber]/page.tsx's own comment on why
+  // 'refunded' (added 2026-09-03) must never be treated as retryable.
+  const retryable =
+    order.paymentMethod === 'online' &&
+    (order.paymentStatus === 'pending' || order.paymentStatus === 'failed') &&
+    order.razorpayOrderId;
   const retryAmountRupees = retryable
     ? items.reduce((sum, i) => sum + Number(i.unitPrice) * i.quantity, 0) +
       orderShipments.reduce((sum, s) => sum + Number(s.charge ?? 0), 0)

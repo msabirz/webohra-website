@@ -12,13 +12,11 @@ import { slugifyTitle } from '@/lib/ids';
  *
  * Seller-only. Hands back a short-lived presigned R2 PUT URL so the
  * browser uploads the image bytes directly to storage — our server only
- * ever sees the resulting public URL, never the file itself. Two
- * purposes: 'listing' (the original — a product/variant/field photo,
- * scoped to a listing she actually owns, attached via
- * /api/listings/[id]/images) and 'payout_qr' (Fulfillment & Subscriptions
- * redesign, Phase 5c payout redesign — her own UPI QR code image, scoped
- * to her seller account rather than any one listing, attached via
- * /api/sellers/payout-account).
+ * ever sees the resulting public URL, never the file itself. 'listing' is
+ * the only purpose today — a product/variant/field photo, scoped to a
+ * listing she actually owns, attached via /api/listings/[id]/images.
+ * (A 'payout_qr' purpose existed briefly for Phase 5c's payout redesign —
+ * dropped 2026-09-03 alongside the 'qr_image' payout method itself.)
  */
 export async function POST(request: Request) {
   const session = await getSessionFromRequest(request);
@@ -42,19 +40,6 @@ export async function POST(request: Request) {
   }
 
   const sellerSlug = slugifyTitle(profile.businessName);
-
-  if (parsed.data.purpose === 'payout_qr') {
-    try {
-      const { uploadUrl, publicUrl } = await createUploadUrl(sellerId, sellerSlug, 'payout-qr', parsed.data.contentType);
-      return NextResponse.json({ uploadUrl, publicUrl });
-    } catch (err) {
-      console.error('R2 presign failed:', err);
-      return NextResponse.json(
-        { error: 'Photo uploads are not configured yet — contact the Idara team.' },
-        { status: 503 },
-      );
-    }
-  }
 
   const [listing] = await db.select().from(listings).where(eq(listings.id, parsed.data.listingId!));
   if (!listing) {
