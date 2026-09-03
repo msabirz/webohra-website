@@ -10,16 +10,24 @@ import { buttonStyles, type ButtonSize } from '@/lib/button-styles';
  * own number, opened by the buyer herself — no relay. Asks for a name first
  * (no buyer-account system stores one) so the pre-filled message can
  * identify who's asking, and logs the click server-side — see
- * /api/listings/[id]/whatsapp-contact.
+ * /api/listings/[id]/whatsapp-contact. Also the Silver-tier mechanism for a
+ * service listing (service contact-tiering, 2026-09-03 — see
+ * components/service-contact-action.tsx) — variantId/variantName are only
+ * ever passed by that path, a product Add-to-Cart-adjacent listing never
+ * has a reason to.
  */
 export function WhatsAppBuyButton({
   listingId,
+  variantId,
+  variantName,
   size = 'sm',
   label = 'Buy on WhatsApp',
   width = 'full',
   shape = 'pill',
 }: {
   listingId: number;
+  variantId?: number;
+  variantName?: string;
   size?: ButtonSize;
   label?: string;
   /** 'full' fills its container alone; 'share' takes an equal split of a
@@ -53,12 +61,29 @@ export function WhatsAppBuyButton({
         <MessageCircle className="h-3.5 w-3.5" strokeWidth={2} />
         {label}
       </button>
-      {open && <WhatsAppNameModal listingId={listingId} onClose={() => setOpen(false)} />}
+      {open && (
+        <WhatsAppNameModal
+          listingId={listingId}
+          variantId={variantId}
+          variantName={variantName}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </>
   );
 }
 
-function WhatsAppNameModal({ listingId, onClose }: { listingId: number; onClose: () => void }) {
+function WhatsAppNameModal({
+  listingId,
+  variantId,
+  variantName,
+  onClose,
+}: {
+  listingId: number;
+  variantId?: number;
+  variantName?: string;
+  onClose: () => void;
+}) {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -71,7 +96,7 @@ function WhatsAppNameModal({ listingId, onClose }: { listingId: number; onClose:
       const res = await fetch(`/api/listings/${listingId}/whatsapp-contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ buyerName: name }),
+        body: JSON.stringify({ buyerName: name, ...(variantId && { variantId }) }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -124,7 +149,14 @@ function WhatsAppNameModal({ listingId, onClose }: { listingId: number; onClose:
           </button>
         </div>
         <p className="-mt-2 font-body text-sm text-ink-soft">
-          This opens WhatsApp with your message pre-filled — you send it yourself.
+          {variantName ? (
+            <>
+              About <span className="font-semibold text-ink">{variantName}</span> — this opens WhatsApp
+              with your message pre-filled, you send it yourself.
+            </>
+          ) : (
+            'This opens WhatsApp with your message pre-filled — you send it yourself.'
+          )}
         </p>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="wa-name" className="font-body text-sm font-medium text-ink">

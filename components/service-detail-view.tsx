@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { MessageCircle, ShieldCheck, Clock, Send, CheckCircle2, Briefcase, ExternalLink } from 'lucide-react';
-import { ConsultationRequestButton } from '@/components/consultation-request-button';
+import { MessageCircle, Phone, Mail, ShieldCheck, Clock, Send, CheckCircle2, Briefcase, ExternalLink } from 'lucide-react';
+import { ServiceContactAction } from '@/components/service-contact-action';
 import { MosaicGallery } from '@/components/mosaic-gallery';
 import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
 import { VariantMenu, type Variant } from '@/components/variant-menu';
@@ -36,6 +36,11 @@ type ServiceListing = {
   fields: ListingFieldValue[];
   variants: Variant[];
   portfolio: PortfolioItem[];
+  // Service contact-tiering (2026-09-03) — see
+  // components/service-contact-action.tsx for the full story.
+  contactMode: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
+  sellerPhone: string | null;
+  sellerEmail: string | null;
 };
 
 // Icons deliberately mirror the ones used at each matching moment elsewhere
@@ -117,7 +122,9 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
         {hasVariants ? (
           <div ref={heroButtonRef}>
             <p className="font-body text-sm text-ink-soft">
-              Pick a type below — each is priced and booked separately.
+              {listing.contactMode === 'whatsapp_number'
+                ? 'Pick a type below, then reach her directly using the details alongside.'
+                : 'Pick a type below — each is priced and booked separately.'}
             </p>
           </div>
         ) : (
@@ -126,12 +133,7 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
               Starting at ₹{Number(listing.price ?? 0).toLocaleString('en-IN')}
             </p>
             <div ref={heroButtonRef}>
-              <ConsultationRequestButton
-                listingId={listing.id}
-                size="lg"
-                label="Take Consultation"
-                width="auto"
-              />
+              <ServiceContactAction contactMode={listing.contactMode} listingId={listing.id} size="lg" width="auto" />
             </div>
           </>
         )}
@@ -142,7 +144,7 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
           {hasVariants && (
             <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
               <h2 className="mb-3 font-heading text-lg font-semibold text-ink">Choose a type</h2>
-              <VariantMenu listingId={listing.id} variants={listing.variants} isService />
+              <VariantMenu listingId={listing.id} variants={listing.variants} isService contactMode={listing.contactMode} />
             </section>
           )}
 
@@ -211,25 +213,29 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
             </section>
           )}
 
-          <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
-            <h2 className="mb-5 font-heading text-lg font-semibold text-ink">
-              How Take Consultation works
-            </h2>
-            <div className="grid gap-6 sm:grid-cols-3">
-              {HOW_IT_WORKS.map((step, i) => (
-                <div key={step.title} className="flex flex-col items-center gap-3 text-center">
-                  <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-navy/5 ring-1 ring-navy/10">
-                    <step.icon className="h-6.5 w-6.5 text-navy" strokeWidth={1.6} />
-                    <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gold font-body text-[11px] font-bold text-ink shadow-sm">
-                      {i + 1}
+          {/* Only genuinely describes the masked-relay flow — Basic/Silver
+           *  buyers reach her some other way, see the sidebar card instead. */}
+          {(listing.contactMode === 'masked_relay' || listing.contactMode === null) && (
+            <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+              <h2 className="mb-5 font-heading text-lg font-semibold text-ink">
+                How Take Consultation works
+              </h2>
+              <div className="grid gap-6 sm:grid-cols-3">
+                {HOW_IT_WORKS.map((step, i) => (
+                  <div key={step.title} className="flex flex-col items-center gap-3 text-center">
+                    <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-navy/5 ring-1 ring-navy/10">
+                      <step.icon className="h-6.5 w-6.5 text-navy" strokeWidth={1.6} />
+                      <span className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-gold font-body text-[11px] font-bold text-ink shadow-sm">
+                        {i + 1}
+                      </span>
                     </span>
-                  </span>
-                  <p className="font-heading text-sm font-semibold text-ink">{step.title}</p>
-                  <p className="font-body text-xs leading-relaxed text-ink-soft">{step.body}</p>
-                </div>
-              ))}
-            </div>
-          </section>
+                    <p className="font-heading text-sm font-semibold text-ink">{step.title}</p>
+                    <p className="font-body text-xs leading-relaxed text-ink-soft">{step.body}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
 
         <aside className="flex flex-col gap-4">
@@ -242,10 +248,31 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
                 <ShieldCheck className="h-4 w-4 text-teal-deep" strokeWidth={2} />
                 Bohra women-owned business
               </li>
-              <li className="flex items-center gap-2">
-                <MessageCircle className="h-4 w-4 text-teal-deep" strokeWidth={2} />
-                Direct WhatsApp consultation
-              </li>
+              {listing.contactMode === 'whatsapp_number' ? (
+                <>
+                  {listing.sellerPhone && (
+                    <li>
+                      <a href={`tel:${listing.sellerPhone}`} className="flex items-center gap-2 hover:text-ink">
+                        <Phone className="h-4 w-4 text-teal-deep" strokeWidth={2} />
+                        {listing.sellerPhone}
+                      </a>
+                    </li>
+                  )}
+                  {listing.sellerEmail && (
+                    <li>
+                      <a href={`mailto:${listing.sellerEmail}`} className="flex items-center gap-2 hover:text-ink">
+                        <Mail className="h-4 w-4 text-teal-deep" strokeWidth={2} />
+                        {listing.sellerEmail}
+                      </a>
+                    </li>
+                  )}
+                </>
+              ) : (
+                <li className="flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4 text-teal-deep" strokeWidth={2} />
+                  {listing.contactMode === 'direct_whatsapp' ? 'Direct WhatsApp consultation' : 'Masked, request-based consultation'}
+                </li>
+              )}
             </ul>
           </div>
         </aside>
@@ -270,7 +297,7 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
             </p>
           </div>
           {!hasVariants && (
-            <ConsultationRequestButton listingId={listing.id} size="md" label="Take Consultation" width="auto" />
+            <ServiceContactAction contactMode={listing.contactMode} listingId={listing.id} size="md" width="auto" />
           )}
         </div>
       </div>

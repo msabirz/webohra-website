@@ -21,7 +21,7 @@ import {
   checkShippingEstimate,
 } from '@/lib/listing-fields';
 import { resolvePickupLocation } from '@/lib/pickup';
-import { checkPublishGate } from '@/lib/subscriptions';
+import { checkPublishGate, getActivePlan } from '@/lib/subscriptions';
 
 /**
  * Accepts either the internal numeric id (used by the seller dashboard,
@@ -76,6 +76,7 @@ export async function GET(
       categoryName: categories.name,
       categorySlug: categories.slug,
       sellerPhone: users.phone,
+      sellerEmail: users.email,
       womenOwned: users.itsVerified,
       businessName: sellerProfiles.businessName,
       // The listing's "selling location" for Pickup & Pay eligibility — null
@@ -186,13 +187,47 @@ export async function GET(
           .where(eq(portfolioItems.sellerId, row.sellerId))
           .orderBy(asc(portfolioItems.sortOrder));
 
-  // Never expose the seller's raw phone number here — FR-37: it's surfaced
-  // only through the Contact Seller / Take Consultation action itself, not
-  // as browsable listing data.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { sellerPhone: _sellerPhone, ...publicListing } = row;
+  // Fulfillment & Subscriptions redesign, service contact-tiering
+  // (2026-09-03) — a service seller's ACTIVE plan decides how a buyer
+  // reaches her (contactModeEnum in db/schema.ts): 'whatsapp_number'
+  // (Basic — her phone/email shown right here, on the listing itself),
+  // 'direct_whatsapp' (Silver — a button opens WhatsApp straight to her,
+  // same mechanism as a product's Contact Seller), or 'masked_relay'
+  // (Gold — no number exposed at all; buyer's details go to her portal
+  // instead, see /api/listings/[idOrSlug]/consultation-request). Falls
+  // back to the safest option, 'masked_relay', if no active plan is
+  // resolved (never the reverse) or if the plan simply hasn't set one — a
+  // misconfiguration should never accidentally over-expose her contact
+  // info. Never resolved at all for a physical_product (contactMode only
+  // ever means something for a service — see subscription_plans' own
+  // validation).
+  let contactMode: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null = null;
+  if (row.listingType !== 'physical_product') {
+    const plan = await getActivePlan(row.sellerId, 'service');
+    contactMode = plan?.contactMode ?? 'masked_relay';
+  }
+
+  // Never expose the seller's raw phone/email here by default — FR-37:
+  // surfaced only through the Contact Seller / Take Consultation action
+  // itself, not as browsable listing data — EXCEPT for a service listing
+  // whose seller is on the Basic tier (contactMode: 'whatsapp_number'),
+  // where showing them directly on the page IS the whole point of that
+  // tier.
+  const { sellerPhone: rawSellerPhone, sellerEmail: rawSellerEmail, ...publicListing } = row;
+  const exposeContactDirectly = contactMode === 'whatsapp_number';
   return NextResponse.json({
-    listing: { ...publicListing, images, variants, fields, pickupCity, pickupAddress, portfolio },
+    listing: {
+      ...publicListing,
+      images,
+      variants,
+      fields,
+      pickupCity,
+      pickupAddress,
+      portfolio,
+      contactMode,
+      sellerPhone: exposeContactDirectly ? rawSellerPhone : null,
+      sellerEmail: exposeContactDirectly ? rawSellerEmail : null,
+    },
   });
 }
 
