@@ -7,6 +7,12 @@ import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { TableSkeleton, RowListSkeleton } from '@/components/skeleton';
 import { useAdminPortal } from '@/lib/admin-context';
+import { InfoPopover } from '@/components/admin/info-popover';
+
+const RAZORPAYX_INFO =
+  'Attempts to automatically send this seller her money through Razorpay, straight to her registered bank account or UPI ID — no manual transfer on your end. Only works once a super admin has approved RazorpayX in Settings; until then it fails safely with a clear message.';
+const MANUAL_INFO =
+  'Use this only if you already paid the seller yourself, outside this system — your own bank transfer or UPI payment, for example. This never sends any money — it just records that she\'s been paid, with your note as the proof.';
 
 type PayoutStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'reversed';
 type PayoutChannel = 'razorpayx' | 'manual' | null;
@@ -314,24 +320,28 @@ export default function AdminPayoutsPage() {
                   )}
                   {canSend && s.pendingAmount > 0 && (
                     <>
-                      <button
-                        onClick={() => sendAllForSeller(s.sellerId)}
-                        disabled={busyKey !== null}
-                        className={buttonStyles('primary', 'sm')}
-                        title="Attempt a real transfer via RazorpayX"
-                      >
-                        <Wallet2 className="h-3.5 w-3.5" strokeWidth={2} />
-                        {busyKey === `send-seller-${s.sellerId}` ? 'Sending…' : 'Send via RazorpayX'}
-                      </button>
-                      <button
-                        onClick={() => openManual({ kind: 'seller', sellerId: s.sellerId, amount: s.pendingAmount })}
-                        disabled={busyKey !== null}
-                        className={buttonStyles('secondary', 'sm')}
-                        title="Record that you already paid her yourself"
-                      >
-                        <HandCoins className="h-3.5 w-3.5" strokeWidth={2} />
-                        Mark as paid manually
-                      </button>
+                      <span className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => sendAllForSeller(s.sellerId)}
+                          disabled={busyKey !== null}
+                          className={buttonStyles('primary', 'sm')}
+                        >
+                          <Wallet2 className="h-3.5 w-3.5" strokeWidth={2} />
+                          {busyKey === `send-seller-${s.sellerId}` ? 'Sending…' : 'Send via RazorpayX'}
+                        </button>
+                        <InfoPopover text={RAZORPAYX_INFO} />
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <button
+                          onClick={() => openManual({ kind: 'seller', sellerId: s.sellerId, amount: s.pendingAmount })}
+                          disabled={busyKey !== null}
+                          className={buttonStyles('secondary', 'sm')}
+                        >
+                          <HandCoins className="h-3.5 w-3.5" strokeWidth={2} />
+                          Mark as paid manually
+                        </button>
+                        <InfoPopover text={MANUAL_INFO} align="right" />
+                      </span>
                     </>
                   )}
                 </div>
@@ -388,23 +398,23 @@ export default function AdminPayoutsPage() {
                     </td>
                     <td className="px-2 py-3">
                       {canSend && actionable && (
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <button
                             onClick={() => sendOne(p.id)}
                             disabled={busyKey !== null}
                             className={buttonStyles('secondary', 'sm')}
-                            title="Attempt a real transfer via RazorpayX"
                           >
                             {busyKey === `send-${p.id}` ? 'Sending…' : p.status === 'failed' ? 'Retry RazorpayX' : 'Send via RazorpayX'}
                           </button>
+                          <InfoPopover text={RAZORPAYX_INFO} />
                           <button
                             onClick={() => openManual({ kind: 'payout', id: p.id })}
                             disabled={busyKey !== null}
                             className={buttonStyles('secondary', 'sm')}
-                            title="Record that you already paid her yourself"
                           >
                             Mark paid manually
                           </button>
+                          <InfoPopover text={MANUAL_INFO} align="right" />
                         </div>
                       )}
                     </td>

@@ -18,6 +18,12 @@ import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton, RowListSkeleton } from '@/components/skeleton';
 import { useAdminPortal } from '@/lib/admin-context';
+import { InfoPopover } from '@/components/admin/info-popover';
+
+const RAZORPAYX_INFO =
+  'Attempts to automatically send this seller her money through Razorpay, straight to her registered bank account or UPI ID — no manual transfer on your end. Only works once a super admin has approved RazorpayX in Settings; until then it fails safely with a clear message.';
+const MANUAL_INFO =
+  'Use this only if you already paid the seller yourself, outside this system — your own bank transfer or UPI payment, for example. This never sends any money — it just records that she\'s been paid, with your note as the proof.';
 
 type SellerDetail = {
   userId: number;
@@ -274,15 +280,15 @@ export default function AdminSellerDetailPage() {
             </div>
           </div>
           {canPayout && pendingAmount > 0 && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 onClick={payOutPending}
                 disabled={payingOut || markingManual}
                 className={buttonStyles('secondary', 'sm')}
-                title="Attempt a real transfer via RazorpayX"
               >
                 {payingOut ? 'Sending…' : 'Send via RazorpayX'}
               </button>
+              <InfoPopover text={RAZORPAYX_INFO} />
               <button
                 onClick={() => {
                   setMarkingManual(true);
@@ -291,10 +297,10 @@ export default function AdminSellerDetailPage() {
                 }}
                 disabled={payingOut || markingManual}
                 className={buttonStyles('secondary', 'sm')}
-                title="Record that you already paid her yourself"
               >
                 Mark as paid manually
               </button>
+              <InfoPopover text={MANUAL_INFO} align="right" />
             </div>
           )}
         </div>
