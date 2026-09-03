@@ -144,7 +144,7 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
           {hasVariants && (
             <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
               <h2 className="mb-3 font-heading text-lg font-semibold text-ink">Choose a type</h2>
-              <VariantMenu listingId={listing.id} variants={listing.variants} isService contactMode={listing.contactMode} />
+              <VariantMenu listingId={listing.id} variants={listing.variants} contactMode={listing.contactMode} />
             </section>
           )}
 
