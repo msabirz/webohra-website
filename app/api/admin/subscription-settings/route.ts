@@ -47,7 +47,7 @@ export async function PATCH(request: Request) {
   }
 
   const current = await getOrCreateSettingsRow();
-  const { walletMinThreshold, bonusListingCommissionPercent, ...rest } = parsed.data;
+  const { walletMinThreshold, bonusListingCommissionPercent, orderCommissionPercent, ...rest } = parsed.data;
   const [updated] = await db
     .update(subscriptionSettings)
     .set({
@@ -55,6 +55,9 @@ export async function PATCH(request: Request) {
       ...(walletMinThreshold !== undefined && { walletMinThreshold: walletMinThreshold.toFixed(2) }),
       ...(bonusListingCommissionPercent !== undefined && {
         bonusListingCommissionPercent: bonusListingCommissionPercent.toFixed(2),
+      }),
+      ...(orderCommissionPercent !== undefined && {
+        orderCommissionPercent: orderCommissionPercent.toFixed(2),
       }),
       updatedAt: new Date(),
     })

@@ -32,6 +32,8 @@ type Settings = {
   walletMinThreshold: string;
   rechargeDefaultPlanId: number | null;
   bonusListingCommissionPercent: string;
+  // Fulfillment & Subscriptions redesign, Phase 5c.
+  orderCommissionPercent: string;
 };
 
 const CONTACT_MODE_LABEL: Record<ContactMode, string> = {
@@ -235,6 +237,7 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   const [walletMinThreshold, setWalletMinThreshold] = useState(settings.walletMinThreshold);
   const [rechargeDefaultPlanId, setRechargeDefaultPlanId] = useState(settings.rechargeDefaultPlanId ?? '');
   const [bonusListingCommissionPercent, setBonusListingCommissionPercent] = useState(settings.bonusListingCommissionPercent);
+  const [orderCommissionPercent, setOrderCommissionPercent] = useState(settings.orderCommissionPercent);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -249,6 +252,7 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
           walletMinThreshold: Number(walletMinThreshold),
           rechargeDefaultPlanId: rechargeDefaultPlanId ? Number(rechargeDefaultPlanId) : null,
           bonusListingCommissionPercent: Number(bonusListingCommissionPercent),
+          orderCommissionPercent: Number(orderCommissionPercent),
         }),
       });
       setSaved(true);
@@ -261,8 +265,8 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
 
   return (
     <div className="rounded-2xl bg-ivory-deep/60 p-5">
-      <p className="mb-3 font-heading text-sm font-semibold text-ink">Global settings — recharge model</p>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <p className="mb-3 font-heading text-sm font-semibold text-ink">Global settings — recharge model &amp; payouts</p>
+      <div className="grid gap-3 sm:grid-cols-4">
         <label className="flex flex-col gap-1">
           <span className="font-body text-xs font-medium text-ink-soft">Min wallet balance (₹)</span>
           <input
@@ -297,6 +301,18 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
             step="0.5"
             value={bonusListingCommissionPercent}
             onChange={(e) => setBonusListingCommissionPercent(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">Order payout commission (%)</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="0.5"
+            value={orderCommissionPercent}
+            onChange={(e) => setOrderCommissionPercent(e.target.value)}
             className={inputStyles}
           />
         </label>

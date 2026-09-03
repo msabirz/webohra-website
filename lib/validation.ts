@@ -669,6 +669,12 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
     .min(0, 'Commission can’t be negative')
     .max(100, 'Commission can’t exceed 100%')
     .optional(),
+  // Fulfillment & Subscriptions redesign, Phase 5c.
+  orderCommissionPercent: z
+    .number()
+    .min(0, 'Commission can’t be negative')
+    .max(100, 'Commission can’t exceed 100%')
+    .optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 
@@ -731,3 +737,33 @@ export const adminWalletAdjustmentSchema = z.object({
     .max(300),
 });
 export type AdminWalletAdjustmentInput = z.infer<typeof adminWalletAdjustmentSchema>;
+
+// Fulfillment & Subscriptions redesign, Phase 5c — a seller registering
+// where her online-order payouts go. Discriminated on method: a bank
+// account needs the holder name/IFSC/account number, a UPI account needs
+// just the VPA. ifsc/vpa format checks mirror lib/razorpay-payouts.ts's
+// own regexes (kept in sync manually — small, stable formats, not worth a
+// shared import across a validation-schema/server-lib boundary).
+export const sellerPayoutAccountSchema = z.discriminatedUnion('method', [
+  z.object({
+    method: z.literal('bank_account'),
+    accountHolderName: nameField('Account holder name'),
+    ifsc: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Enter a valid 11-character IFSC code'),
+    accountNumber: z
+      .string()
+      .trim()
+      .regex(/^\d{9,18}$/, 'Enter a valid account number (9-18 digits)'),
+  }),
+  z.object({
+    method: z.literal('upi'),
+    vpa: z
+      .string()
+      .trim()
+      .regex(/^[\w.-]{2,256}@[a-zA-Z]{2,64}$/, 'Enter a valid UPI ID (e.g. name@bank)'),
+  }),
+]);
+export type SellerPayoutAccountInput = z.infer<typeof sellerPayoutAccountSchema>;

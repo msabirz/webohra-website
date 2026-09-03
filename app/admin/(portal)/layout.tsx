@@ -16,6 +16,7 @@ import {
   Building2,
   Layers,
   Wallet,
+  Landmark,
   Users,
   Settings,
   LogOut,
@@ -40,6 +41,7 @@ const NAV_ITEMS = [
   { href: '/admin/webohra-offices', label: 'WeBohra Offices', icon: Building2, roles: ['admin', 'super_admin'] },
   { href: '/admin/subscription-plans', label: 'Subscription Plans', icon: Layers, roles: ['admin', 'super_admin'] },
   { href: '/admin/wallets', label: 'Wallets', icon: Wallet, roles: ['customer_support', 'admin', 'super_admin'] },
+  { href: '/admin/payouts', label: 'Payouts', icon: Landmark, roles: ['customer_support', 'admin', 'super_admin'] },
   { href: '/admin/staff', label: 'Staff', icon: Users, roles: ['super_admin'] },
   { href: '/admin/settings', label: 'Settings', icon: Settings, roles: ['customer_support', 'admin', 'super_admin'] },
 ] as const;

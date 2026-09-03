@@ -141,6 +141,22 @@ export const walletTransactionTypeEnum = pgEnum('wallet_transaction_type', [
   'admin_adjustment',
 ]);
 
+/** How a seller receives a payout — a real bank account, or a UPI VPA.
+ *  Fulfillment & Subscriptions redesign, Phase 5c. */
+export const payoutMethodEnum = pgEnum('payout_method', ['bank_account', 'upi']);
+
+/** Forward-only lifecycle of one payout attempt — 'processing' the moment
+ *  the real RazorpayX payout call is made, 'processed'/'failed'/'reversed'
+ *  once RazorpayX resolves it (reversed covers a payout that succeeded and
+ *  was later reversed by the bank, e.g. an invalid account). */
+export const payoutStatusEnum = pgEnum('payout_status', [
+  'pending',
+  'processing',
+  'processed',
+  'failed',
+  'reversed',
+]);
+
 // ---------------------------------------------------------------------------
 // Tables
 // ---------------------------------------------------------------------------
@@ -899,8 +915,89 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   bonusListingCommissionPercent: numeric('bonus_listing_commission_percent', { precision: 5, scale: 2 })
     .notNull()
     .default('10.00'),
+  // Fulfillment & Subscriptions redesign, Phase 5c — WeBohra's cut of a
+  // normal (non-bonus) online order, taken out of a seller's payout (see
+  // payouts.commissionAmount). Applies only to the product/service sale
+  // portion of her share, never to shipping — a self-managed shipping
+  // charge is her own declared cost of actually shipping the order, not
+  // revenue WeBohra takes a percentage of.
+  orderCommissionPercent: numeric('order_commission_percent', { precision: 5, scale: 2 })
+    .notNull()
+    .default('10.00'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One row per seller, at most — where her online-order earnings actually
+ * go. Fulfillment & Subscriptions redesign, Phase 5c. Deliberately never
+ * stores her real bank account number or UPI VPA: the moment she submits
+ * one, it goes straight to RazorpayX (a real contact + fund_account) and
+ * only their opaque ids come back here — same "the specialized third
+ * party owns the sensitive data, we only ever store a pointer to it"
+ * pattern as R2 owning image bytes and this codebase only storing the
+ * resulting URL. `displayLabel` is the one human-readable trace of it
+ * left in our own database, and it's deliberately masked
+ * ("HDFC Bank •••• 1000" / "seller@upi"), built at submission time from
+ * what Razorpay's fund_account response hands back.
+ */
+export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
+  id: serial('id').primaryKey(),
+  sellerId: integer('seller_id')
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  method: payoutMethodEnum('method').notNull(),
+  razorpayContactId: varchar('razorpay_contact_id', { length: 100 }).notNull(),
+  razorpayFundAccountId: varchar('razorpay_fund_account_id', { length: 100 }).notNull().unique(),
+  displayLabel: varchar('display_label', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One row per (order, seller) — her share of one paid online order, and
+ * the record of actually paying it out to her. Fulfillment &
+ * Subscriptions redesign, Phase 5c. Created the moment an order's
+ * paymentStatus becomes 'paid' (see lib/payouts.ts's createPayoutsForOrder)
+ * — one row per seller represented in that order, whether it's one seller
+ * or several; the split logic here has never depended on Route, which is
+ * exactly what makes it work the same regardless of how many sellers are
+ * in the order. `grossAmount`/`commissionAmount`/`netAmount` are computed
+ * and frozen at that moment, same snapshot-at-write-time discipline as
+ * order_items.unitPrice — a later change to the commission rate or her
+ * listings never rewrites a payout that's already been recorded.
+ * Actually sending the money (the real RazorpayX payout call) is a
+ * separate, explicit step — see status.
+ */
+export const payouts = pgTable('payouts', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id')
+    .notNull()
+    .references(() => orders.id, { onDelete: 'restrict' }),
+  sellerId: integer('seller_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  // Her order_items subtotal for this order, plus her own shipment's
+  // charge if self-managed — what the buyer's payment actually covered
+  // for her specific portion.
+  grossAmount: numeric('gross_amount', { precision: 10, scale: 2 }).notNull(),
+  // Computed on the product/service subtotal only, never on shipping —
+  // see subscription_settings.orderCommissionPercent's own comment.
+  commissionAmount: numeric('commission_amount', { precision: 10, scale: 2 }).notNull(),
+  // grossAmount - commissionAmount — what actually gets paid out to her.
+  netAmount: numeric('net_amount', { precision: 10, scale: 2 }).notNull(),
+  status: payoutStatusEnum('status').notNull().default('pending'),
+  // Set once a real payout attempt has been made (status moves past
+  // 'pending') — unique, nulls excepted, same convention as every other
+  // gateway-id column in this codebase.
+  razorpayPayoutId: varchar('razorpay_payout_id', { length: 100 }).unique(),
+  // Set on 'failed' — e.g. "RazorpayX payouts aren't configured yet" or a
+  // real bank-side rejection reason, so Admin isn't just staring at a
+  // status with no explanation.
+  failureReason: varchar('failure_reason', { length: 300 }),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /**
