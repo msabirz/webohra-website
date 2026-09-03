@@ -80,12 +80,19 @@ export type SendPayoutResult =
 /**
  * The actual money-moving step for one payout row — a separate, explicit
  * action from creating the row (see app/api/admin/payouts/[id]/send).
- * Never throws: a failure here (most likely right now — RazorpayX isn't
- * configured yet, see createPayout's own comment) is recorded on the
- * payout row itself as a real 'failed' status with a reason, not an
- * unhandled exception.
+ * Refuses to even attempt a RazorpayX call unless
+ * subscription_settings.razorpayxPayoutsEnabled is true — that flag is the
+ * deliberate stakeholder-approval gate, independent of whether
+ * RAZORPAYX_ACCOUNT_NUMBER happens to be configured (technical readiness
+ * and business sign-off are two different questions; this only checks the
+ * second one before letting the first one matter at all). Never throws: a
+ * failure here is recorded on the payout row itself as a real 'failed'
+ * status with a reason, not an unhandled exception. On success, records
+ * `channel: 'razorpayx'` and who triggered it — see markPayoutPaidManually
+ * below for the other, deliberately distinct path a payout can reach
+ * 'processed' through.
  */
-export async function sendPayout(payoutId: number): Promise<SendPayoutResult> {
+export async function sendPayout(payoutId: number, staffId: number): Promise<SendPayoutResult> {
   const [payout] = await db.select().from(payouts).where(eq(payouts.id, payoutId));
   if (!payout) return { ok: false, error: 'Payout not found' };
   // 'failed' is a genuinely re-sendable state, not a dead end — that's the
@@ -94,6 +101,14 @@ export async function sendPayout(payoutId: number): Promise<SendPayoutResult> {
   // Only 'processing'/'processed'/'reversed' actually block a new attempt.
   if (payout.status !== 'pending' && payout.status !== 'failed') {
     return { ok: false, error: `This payout is already ${payout.status} — it can't be sent again.` };
+  }
+
+  const [settings] = await db.select().from(subscriptionSettings).limit(1);
+  if (!settings?.razorpayxPayoutsEnabled) {
+    const reason =
+      'RazorpayX payouts have not been approved for use yet — ask a super admin to enable them in Settings before sending. Use "Mark as paid manually" if you already transferred this yourself.';
+    await db.update(payouts).set({ status: 'failed', failureReason: reason }).where(eq(payouts.id, payoutId));
+    return { ok: false, error: reason };
   }
 
   const [account] = await db
@@ -129,6 +144,8 @@ export async function sendPayout(payoutId: number): Promise<SendPayoutResult> {
       .set({
         status: result.status === 'processed' || result.status === 'queued' ? 'processed' : 'processing',
         razorpayPayoutId: result.id,
+        channel: 'razorpayx',
+        actionedByStaffId: staffId,
         processedAt: new Date(),
       })
       .where(eq(payouts.id, payoutId));
@@ -141,4 +158,47 @@ export async function sendPayout(payoutId: number): Promise<SendPayoutResult> {
       .where(eq(payouts.id, payoutId));
     return { ok: false, error: message };
   }
+}
+
+export type MarkPaidManuallyResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * The other, deliberately separate way a payout ever reaches 'processed' —
+ * Admin transferred the money herself, outside RazorpayX entirely (her own
+ * net banking, a UPI app, cash), and is just recording that it happened.
+ * No gateway call anywhere in this function. `note` is required, same
+ * "an unexplained real-money event is never acceptable" reasoning as
+ * wallet_transactions' admin_adjustment rows — it's the only record of
+ * what actually happened, since there's no RazorpayX response to check
+ * against. Recorded with `channel: 'manual'`, unambiguously distinct from
+ * a real RazorpayX transfer everywhere this payout's history is shown.
+ */
+export async function markPayoutPaidManually(
+  payoutId: number,
+  staffId: number,
+  note: string,
+): Promise<MarkPaidManuallyResult> {
+  const [payout] = await db.select().from(payouts).where(eq(payouts.id, payoutId));
+  if (!payout) return { ok: false, error: 'Payout not found' };
+  if (payout.status !== 'pending' && payout.status !== 'failed') {
+    return { ok: false, error: `This payout is already ${payout.status} — it can't be marked paid again.` };
+  }
+
+  const [claimed] = await db
+    .update(payouts)
+    .set({
+      status: 'processed',
+      channel: 'manual',
+      actionedByStaffId: staffId,
+      manualNote: note,
+      failureReason: null,
+      processedAt: new Date(),
+    })
+    .where(and(eq(payouts.id, payoutId), inArray(payouts.status, ['pending', 'failed'])))
+    .returning();
+  if (!claimed) {
+    return { ok: false, error: 'This payout is already being sent.' };
+  }
+
+  return { ok: true };
 }

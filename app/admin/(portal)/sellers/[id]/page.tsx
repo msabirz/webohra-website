@@ -15,7 +15,7 @@ import {
   ShoppingBag,
 } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
-import { buttonStyles } from '@/lib/button-styles';
+import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton, RowListSkeleton } from '@/components/skeleton';
 import { useAdminPortal } from '@/lib/admin-context';
 
@@ -80,6 +80,8 @@ export default function AdminSellerDetailPage() {
   const [busy, setBusy] = useState(false);
   const [payingOut, setPayingOut] = useState(false);
   const [payoutError, setPayoutError] = useState<string | null>(null);
+  const [markingManual, setMarkingManual] = useState(false);
+  const [manualNote, setManualNote] = useState('');
   const [notFound, setNotFound] = useState(false);
 
   const load = useCallback(async () => {
@@ -131,6 +133,36 @@ export default function AdminSellerDetailPage() {
       } else if (data.failed > 0) {
         setPayoutError(`${data.sent} sent, ${data.failed} failed — see /admin/payouts for details.`);
       }
+      await load();
+    } finally {
+      setPayingOut(false);
+    }
+  }
+
+  async function confirmManualPayout() {
+    if (!seller) return;
+    if (manualNote.trim().length < 5) {
+      setPayoutError('Explain how you actually paid her (e.g. bank/UPI reference).');
+      return;
+    }
+    setPayingOut(true);
+    setPayoutError(null);
+    try {
+      const res = await authFetch(`/api/admin/payouts/sellers/${seller.userId}/mark-all-paid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: manualNote.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPayoutError(data.error ?? 'Could not record this.');
+        return;
+      }
+      if (data.failed > 0) {
+        setPayoutError(`${data.marked} recorded, ${data.failed} failed — see /admin/payouts for details.`);
+      }
+      setMarkingManual(false);
+      setManualNote('');
       await load();
     } finally {
       setPayingOut(false);
@@ -242,12 +274,58 @@ export default function AdminSellerDetailPage() {
             </div>
           </div>
           {canPayout && pendingAmount > 0 && (
-            <button onClick={payOutPending} disabled={payingOut} className={buttonStyles('secondary', 'sm')}>
-              {payingOut ? 'Sending…' : `Pay ₹${pendingAmount.toLocaleString('en-IN')}`}
-            </button>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={payOutPending}
+                disabled={payingOut || markingManual}
+                className={buttonStyles('secondary', 'sm')}
+                title="Attempt a real transfer via RazorpayX"
+              >
+                {payingOut ? 'Sending…' : 'Send via RazorpayX'}
+              </button>
+              <button
+                onClick={() => {
+                  setMarkingManual(true);
+                  setManualNote('');
+                  setPayoutError(null);
+                }}
+                disabled={payingOut || markingManual}
+                className={buttonStyles('secondary', 'sm')}
+                title="Record that you already paid her yourself"
+              >
+                Mark as paid manually
+              </button>
+            </div>
           )}
         </div>
       </div>
+
+      {markingManual && (
+        <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gold/30">
+          <p className="font-body text-sm font-semibold text-ink">
+            Mark ₹{pendingAmount.toLocaleString('en-IN')} as paid manually
+          </p>
+          <p className="font-body text-xs text-ink-soft">
+            This does not send any money — it only records that you already transferred it yourself. Required: how
+            you paid (bank/UPI reference, date).
+          </p>
+          <input
+            value={manualNote}
+            onChange={(e) => setManualNote(e.target.value)}
+            placeholder="e.g. NEFT, ref #123456, 3 Sept"
+            className={inputStyles}
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <button onClick={confirmManualPayout} disabled={payingOut} className={buttonStyles('primary', 'sm')}>
+              {payingOut ? 'Saving…' : 'Confirm — record as paid'}
+            </button>
+            <button onClick={() => setMarkingManual(false)} className={buttonStyles('secondary', 'sm')}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {payoutError && <p className="font-body text-sm text-red-700">{payoutError}</p>}
 
       {/* Subscriptions */}

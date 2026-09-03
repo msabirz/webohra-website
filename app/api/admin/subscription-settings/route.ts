@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { subscriptionSettings } from '@/db/schema';
 import { adminSubscriptionSettingsUpdateSchema } from '@/lib/validation';
-import { getSessionFromRequest, isStaff, isAdmin } from '@/lib/auth';
+import { getSessionFromRequest, isStaff, isAdmin, isSuperAdmin } from '@/lib/auth';
 
 /**
  * /api/admin/subscription-settings — the platform-wide numbers that aren't
@@ -43,6 +43,18 @@ export async function PATCH(request: Request) {
     return NextResponse.json(
       { error: 'Invalid input', issues: parsed.error.flatten().fieldErrors },
       { status: 400 },
+    );
+  }
+
+  // The RazorpayX approval switch is the one field here a plain admin
+  // can't touch — it's a deliberate stakeholder sign-off, not routine
+  // config. Rejecting the whole request (rather than silently dropping
+  // just this field) so an admin who tries never gets a confusing partial
+  // save.
+  if (parsed.data.razorpayxPayoutsEnabled !== undefined && !isSuperAdmin(session)) {
+    return NextResponse.json(
+      { error: 'Only a super admin can enable or disable RazorpayX payouts.' },
+      { status: 403 },
     );
   }
 

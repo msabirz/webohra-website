@@ -157,6 +157,14 @@ export const payoutStatusEnum = pgEnum('payout_status', [
   'reversed',
 ]);
 
+/** Which of the two genuinely different paths actually moved (or claims to
+ *  have moved) the money for a 'processed' payout — never inferred, always
+ *  recorded explicitly, specifically so a non-technical admin looking at
+ *  payout history can never confuse "RazorpayX really sent this" with "a
+ *  staff member typed that she sent it herself." Null until a payout
+ *  leaves 'pending'/'failed'. */
+export const payoutChannelEnum = pgEnum('payout_channel', ['razorpayx', 'manual']);
+
 // ---------------------------------------------------------------------------
 // Tables
 // ---------------------------------------------------------------------------
@@ -924,6 +932,17 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   orderCommissionPercent: numeric('order_commission_percent', { precision: 5, scale: 2 })
     .notNull()
     .default('10.00'),
+  // The stakeholder-approval switch for real RazorpayX transfers —
+  // deliberately separate from (and independent of) whether
+  // RAZORPAYX_ACCOUNT_NUMBER is technically configured. That env var only
+  // ever says the plumbing is ready; it must never be what turns real
+  // money-movement on by itself. Off by default. Only a super_admin can
+  // flip this (see PATCH /api/admin/subscription-settings' own comment) —
+  // deliberately a narrower gate than the rest of this table, which any
+  // admin can edit. lib/payouts.ts's sendPayout refuses to even attempt a
+  // RazorpayX call while this is false, regardless of anything else being
+  // ready.
+  razorpayxPayoutsEnabled: boolean('razorpayx_payouts_enabled').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -996,6 +1015,18 @@ export const payouts = pgTable('payouts', {
   // real bank-side rejection reason, so Admin isn't just staring at a
   // status with no explanation.
   failureReason: varchar('failure_reason', { length: 300 }),
+  // Which path actually moved the money — see payoutChannelEnum's own
+  // comment. Null until 'processed'.
+  channel: payoutChannelEnum('channel'),
+  // Who took the action that produced the current status — the RazorpayX
+  // sender or the staff member recording a manual payment, either way.
+  actionedByStaffId: integer('actioned_by_staff_id').references(() => users.id, { onDelete: 'set null' }),
+  // Required when channel is 'manual' — her own record of how she actually
+  // paid ("NEFT, ref #123456, 3 Sept"), since there's no gateway response
+  // to fall back on for what happened. Same "an unexplained real-money
+  // event is never acceptable" reasoning as wallet_transactions.reason on
+  // an admin_adjustment row.
+  manualNote: varchar('manual_note', { length: 300 }),
   processedAt: timestamp('processed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

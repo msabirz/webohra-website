@@ -33,6 +33,8 @@ export async function GET(request: Request) {
       netAmount: payouts.netAmount,
       status: payouts.status,
       failureReason: payouts.failureReason,
+      channel: payouts.channel,
+      manualNote: payouts.manualNote,
       processedAt: payouts.processedAt,
       createdAt: payouts.createdAt,
     })

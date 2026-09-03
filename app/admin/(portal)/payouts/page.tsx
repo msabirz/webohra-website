@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Landmark, CheckCircle2, Clock, XCircle, RefreshCw, Store } from 'lucide-react';
+import { Landmark, CheckCircle2, Clock, XCircle, RefreshCw, Store, Wallet2, HandCoins } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
-import { buttonStyles } from '@/lib/button-styles';
+import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { TableSkeleton, RowListSkeleton } from '@/components/skeleton';
 import { useAdminPortal } from '@/lib/admin-context';
 
 type PayoutStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'reversed';
+type PayoutChannel = 'razorpayx' | 'manual' | null;
 type Payout = {
   id: number;
   orderNumber: string;
@@ -20,16 +21,18 @@ type Payout = {
   netAmount: string;
   status: PayoutStatus;
   failureReason: string | null;
+  channel: PayoutChannel;
+  manualNote: string | null;
   processedAt: string | null;
   createdAt: string;
 };
 
-const STATUS_LABEL: Record<PayoutStatus, string> = {
-  pending: 'Pending',
-  processing: 'Processing',
-  processed: 'Paid out',
-  failed: 'Failed',
-  reversed: 'Reversed',
+const STATUS_ICON: Record<PayoutStatus, typeof Clock> = {
+  pending: Clock,
+  processing: RefreshCw,
+  processed: CheckCircle2,
+  failed: XCircle,
+  reversed: XCircle,
 };
 const STATUS_CLASS: Record<PayoutStatus, string> = {
   pending: 'bg-ivory-deep text-ink-soft',
@@ -38,13 +41,17 @@ const STATUS_CLASS: Record<PayoutStatus, string> = {
   failed: 'bg-red-50 text-red-600',
   reversed: 'bg-red-50 text-red-600',
 };
-const STATUS_ICON: Record<PayoutStatus, typeof Clock> = {
-  pending: Clock,
-  processing: RefreshCw,
-  processed: CheckCircle2,
-  failed: XCircle,
-  reversed: XCircle,
-};
+
+/** Label always names the real channel once one exists — "Paid out"
+ *  alone would leave a non-technical admin guessing whether RazorpayX
+ *  genuinely sent it or someone recorded a manual transfer. */
+function statusLabel(p: Payout): string {
+  if (p.status === 'processed') return p.channel === 'manual' ? 'Paid out (manual)' : 'Paid out (RazorpayX)';
+  if (p.status === 'pending') return 'Pending';
+  if (p.status === 'processing') return 'Processing';
+  if (p.status === 'reversed') return 'Reversed';
+  return 'Failed';
+}
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -61,21 +68,27 @@ type SellerGroup = {
   processedAmount: number;
 };
 
+type ManualTarget = { kind: 'payout'; id: number } | { kind: 'seller'; sellerId: number; amount: number };
+
 /**
  * /admin/payouts — Fulfillment & Subscriptions redesign, Phase 5c. Every
  * payout row, computed automatically the moment an online order is paid
- * (see lib/payouts.ts's createPayoutsForOrder). "Send" triggers the real
- * RazorpayX transfer — isAdmin only (see the send endpoint's own comment);
- * Customer Support can view this page but the button is hidden for her,
- * matching the server-side gate.
+ * (see lib/payouts.ts's createPayoutsForOrder).
+ *
+ * Two genuinely different actions exist per pending/failed row, and they
+ * are never merged into one ambiguous button: "Send via RazorpayX" (a
+ * real transfer attempt — only does anything once a super admin has
+ * enabled RazorpayX payouts in Settings) and "Mark as paid manually"
+ * (Admin already paid her herself, outside the system, and is just
+ * recording it — never calls RazorpayX). Both are isAdmin only; Customer
+ * Support sees the same data with neither button.
  *
  * The "By seller" view exists specifically for the multi-seller-cart
  * case: one order can produce several payout rows (one per seller), and a
  * seller who shows up across several such orders can end up with several
- * pending rows scattered through the "By order" list — "Pay all pending"
- * clears every one of them for her in a single click (see
- * POST /api/admin/payouts/sellers/[sellerId]/send-all), rather than
- * requiring Admin to hunt each row down individually.
+ * pending rows scattered through the "By order" list — the batch actions
+ * here clear every one of them for her in one click, whichever channel is
+ * actually being used.
  */
 export default function AdminPayoutsPage() {
   const { me } = useAdminPortal();
@@ -84,8 +97,10 @@ export default function AdminPayoutsPage() {
   const [view, setView] = useState<'orders' | 'sellers'>('orders');
   const [payouts, setPayouts] = useState<Payout[] | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all');
-  const [sendingId, setSendingId] = useState<number | `seller-${number}` | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [manualTarget, setManualTarget] = useState<ManualTarget | null>(null);
+  const [manualNote, setManualNote] = useState('');
 
   const load = useCallback(async () => {
     setPayouts(null);
@@ -100,23 +115,21 @@ export default function AdminPayoutsPage() {
     load();
   }, [load]);
 
-  async function send(id: number) {
-    setSendingId(id);
+  async function sendOne(id: number) {
+    setBusyKey(`send-${id}`);
     setError(null);
     try {
       const res = await authFetch(`/api/admin/payouts/${id}/send`, { method: 'POST' });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? 'Could not send this payout.');
-      }
+      if (!res.ok) setError(data.error ?? 'Could not send this payout.');
       await load();
     } finally {
-      setSendingId(null);
+      setBusyKey(null);
     }
   }
 
   async function sendAllForSeller(sellerId: number) {
-    setSendingId(`seller-${sellerId}`);
+    setBusyKey(`send-seller-${sellerId}`);
     setError(null);
     try {
       const res = await authFetch(`/api/admin/payouts/sellers/${sellerId}/send-all`, { method: 'POST' });
@@ -128,7 +141,47 @@ export default function AdminPayoutsPage() {
       }
       await load();
     } finally {
-      setSendingId(null);
+      setBusyKey(null);
+    }
+  }
+
+  function openManual(target: ManualTarget) {
+    setManualTarget(target);
+    setManualNote('');
+    setError(null);
+  }
+
+  async function confirmManual() {
+    if (!manualTarget) return;
+    if (manualNote.trim().length < 5) {
+      setError('Explain how you actually paid her (e.g. bank/UPI reference).');
+      return;
+    }
+    const key = manualTarget.kind === 'payout' ? `manual-${manualTarget.id}` : `manual-seller-${manualTarget.sellerId}`;
+    setBusyKey(key);
+    setError(null);
+    try {
+      const url =
+        manualTarget.kind === 'payout'
+          ? `/api/admin/payouts/${manualTarget.id}/mark-paid`
+          : `/api/admin/payouts/sellers/${manualTarget.sellerId}/mark-all-paid`;
+      const res = await authFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: manualNote.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Could not record this.');
+        return;
+      }
+      if (manualTarget.kind === 'seller' && data.failed > 0) {
+        setError(`${data.marked} recorded, ${data.failed} failed — check the order-by-order view for details.`);
+      }
+      setManualTarget(null);
+      await load();
+    } finally {
+      setBusyKey(null);
     }
   }
 
@@ -197,6 +250,33 @@ export default function AdminPayoutsPage() {
 
       {error && <p className="font-body text-sm text-red-700">{error}</p>}
 
+      {manualTarget && (
+        <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gold/30">
+          <p className="font-body text-sm font-semibold text-ink">
+            Mark {manualTarget.kind === 'seller' ? `₹${manualTarget.amount.toLocaleString('en-IN')} across all her pending orders` : 'this payout'} as paid manually
+          </p>
+          <p className="font-body text-xs text-ink-soft">
+            This does not send any money — it only records that you already transferred it yourself. Required: how
+            you paid (bank/UPI reference, date).
+          </p>
+          <input
+            value={manualNote}
+            onChange={(e) => setManualNote(e.target.value)}
+            placeholder="e.g. NEFT, ref #123456, 3 Sept"
+            className={inputStyles}
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <button onClick={confirmManual} disabled={busyKey !== null} className={buttonStyles('primary', 'sm')}>
+              {busyKey ? 'Saving…' : 'Confirm — record as paid'}
+            </button>
+            <button onClick={() => setManualTarget(null)} className={buttonStyles('secondary', 'sm')}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {view === 'sellers' ? (
         payouts === null ? (
           <RowListSkeleton count={3} />
@@ -212,10 +292,7 @@ export default function AdminPayoutsPage() {
                 key={s.sellerId}
                 className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5 sm:flex-row sm:items-center sm:justify-between"
               >
-                <Link
-                  href={`/admin/sellers/${s.sellerId}`}
-                  className="flex items-center gap-3 hover:underline"
-                >
+                <Link href={`/admin/sellers/${s.sellerId}`} className="flex items-center gap-3 hover:underline">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy/5">
                     <Store className="h-4.5 w-4.5 text-navy" strokeWidth={1.75} />
                   </span>
@@ -229,22 +306,33 @@ export default function AdminPayoutsPage() {
                     </p>
                   </div>
                 </Link>
-                <div className="flex items-center gap-3 self-end sm:self-auto">
+                <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
                   {s.pendingAmount > 0 && (
                     <span className="font-body text-sm font-semibold text-navy">
                       ₹{s.pendingAmount.toLocaleString('en-IN')} pending
                     </span>
                   )}
                   {canSend && s.pendingAmount > 0 && (
-                    <button
-                      onClick={() => sendAllForSeller(s.sellerId)}
-                      disabled={sendingId !== null}
-                      className={buttonStyles('primary', 'sm')}
-                    >
-                      {sendingId === `seller-${s.sellerId}`
-                        ? 'Sending…'
-                        : `Pay ₹${s.pendingAmount.toLocaleString('en-IN')}`}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => sendAllForSeller(s.sellerId)}
+                        disabled={busyKey !== null}
+                        className={buttonStyles('primary', 'sm')}
+                        title="Attempt a real transfer via RazorpayX"
+                      >
+                        <Wallet2 className="h-3.5 w-3.5" strokeWidth={2} />
+                        {busyKey === `send-seller-${s.sellerId}` ? 'Sending…' : 'Send via RazorpayX'}
+                      </button>
+                      <button
+                        onClick={() => openManual({ kind: 'seller', sellerId: s.sellerId, amount: s.pendingAmount })}
+                        disabled={busyKey !== null}
+                        className={buttonStyles('secondary', 'sm')}
+                        title="Record that you already paid her yourself"
+                      >
+                        <HandCoins className="h-3.5 w-3.5" strokeWidth={2} />
+                        Mark as paid manually
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -260,7 +348,7 @@ export default function AdminPayoutsPage() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl bg-white shadow-sm ring-1 ring-ink-soft/5">
-          <table className="w-full min-w-[720px] border-collapse font-body text-sm">
+          <table className="w-full min-w-[820px] border-collapse font-body text-sm">
             <thead>
               <tr className="border-b border-ink-soft/10 text-left text-xs uppercase tracking-wide text-ink-soft">
                 <th className="px-4 py-3">Order</th>
@@ -275,6 +363,7 @@ export default function AdminPayoutsPage() {
             <tbody>
               {payouts.map((p) => {
                 const Icon = STATUS_ICON[p.status];
+                const actionable = p.status === 'pending' || p.status === 'failed';
                 return (
                   <tr key={p.id} className="border-b border-ink-soft/5 last:border-0">
                     <td className="px-4 py-3 font-medium text-ink">{p.orderNumber}</td>
@@ -285,24 +374,38 @@ export default function AdminPayoutsPage() {
                     <td className="px-2 py-3">
                       <span
                         className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_CLASS[p.status]}`}
-                        title={p.failureReason ?? undefined}
+                        title={p.failureReason ?? p.manualNote ?? undefined}
                       >
                         <Icon className="h-3 w-3" strokeWidth={2} />
-                        {STATUS_LABEL[p.status]}
+                        {statusLabel(p)}
                       </span>
                       {p.status === 'failed' && p.failureReason && (
                         <p className="mt-1 max-w-[220px] font-body text-[11px] text-red-600">{p.failureReason}</p>
                       )}
+                      {p.status === 'processed' && p.channel === 'manual' && p.manualNote && (
+                        <p className="mt-1 max-w-[220px] font-body text-[11px] text-ink-soft">{p.manualNote}</p>
+                      )}
                     </td>
                     <td className="px-2 py-3">
-                      {canSend && (p.status === 'pending' || p.status === 'failed') && (
-                        <button
-                          onClick={() => send(p.id)}
-                          disabled={sendingId === p.id}
-                          className={buttonStyles('secondary', 'sm')}
-                        >
-                          {sendingId === p.id ? 'Sending…' : p.status === 'failed' ? 'Retry' : 'Send'}
-                        </button>
+                      {canSend && actionable && (
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            onClick={() => sendOne(p.id)}
+                            disabled={busyKey !== null}
+                            className={buttonStyles('secondary', 'sm')}
+                            title="Attempt a real transfer via RazorpayX"
+                          >
+                            {busyKey === `send-${p.id}` ? 'Sending…' : p.status === 'failed' ? 'Retry RazorpayX' : 'Send via RazorpayX'}
+                          </button>
+                          <button
+                            onClick={() => openManual({ kind: 'payout', id: p.id })}
+                            disabled={busyKey !== null}
+                            className={buttonStyles('secondary', 'sm')}
+                            title="Record that you already paid her yourself"
+                          >
+                            Mark paid manually
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

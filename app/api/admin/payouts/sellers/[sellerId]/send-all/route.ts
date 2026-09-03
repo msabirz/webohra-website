@@ -42,9 +42,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ sel
   // RazorpayX request; running them one at a time keeps this predictable
   // and easy to reason about if one seller has many rows, and avoids
   // hammering the gateway with a burst of simultaneous payout calls.
+  const staffId = Number(session!.sub);
   const results: Array<{ payoutId: number; ok: boolean; status?: string; error?: string }> = [];
   for (const row of pendingRows) {
-    const result = await sendPayout(row.id);
+    const result = await sendPayout(row.id, staffId);
     results.push(
       result.ok
         ? { payoutId: row.id, ok: true, status: result.status }

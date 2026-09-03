@@ -675,6 +675,12 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
     .min(0, 'Commission can’t be negative')
     .max(100, 'Commission can’t exceed 100%')
     .optional(),
+  // The stakeholder-approval switch for real RazorpayX transfers — see its
+  // own comment on subscription_settings in db/schema.ts. Accepted here at
+  // the schema level, but the route additionally requires super_admin
+  // specifically (not just isAdmin, unlike every other field in this
+  // object) to actually change it.
+  razorpayxPayoutsEnabled: z.boolean().optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 
