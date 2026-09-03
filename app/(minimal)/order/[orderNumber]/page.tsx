@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { CheckCircle2, Package, Truck, Home, MapPinned, Wallet, XCircle, AlertCircle } from 'lucide-react';
 import { buttonStyles } from '@/lib/button-styles';
 import { TrackingPageSkeleton } from '@/components/skeleton';
-import { ORDER_ITEM_STATUS_LABEL, stageIndex, type OrderItemStatus } from '@/lib/order-item-status';
+import { ORDER_ITEM_STATUS_LABEL, stageIndex, isOrderItemStage, type OrderItemStatus } from '@/lib/order-item-status';
 import { loadRazorpayScript } from '@/lib/razorpay-client';
 
 type OrderItem = {
@@ -36,7 +36,7 @@ type OrderDetail = {
   // orders.paymentStatus' own comment in db/schema.ts). razorpayOrderId/
   // razorpayKeyId/retryAmountRupees are only ever non-null together, and
   // only while there's a real payment left to complete.
-  paymentStatus: 'pending' | 'paid' | 'failed' | null;
+  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded' | null;
   razorpayOrderId: string | null;
   razorpayKeyId: string | null;
   retryAmountRupees: number | null;
@@ -185,10 +185,12 @@ export default function OrderConfirmationPage() {
   // An order can span several sellers, each fulfilling on her own timeline —
   // the overall bar only advances once every one of them has reached that
   // stage, same as the item-level pills shown below never getting ahead of
-  // what each seller has actually recorded.
-  const orderStage = items.length
-    ? Math.min(...items.map((item) => stageIndex(item.status)))
-    : 0;
+  // what each seller has actually recorded. A cancelled item (added
+  // 2026-09-03) has no stage of its own and is excluded here entirely —
+  // it should never be the one holding back the progress bar for
+  // everything else still genuinely being fulfilled.
+  const activeStages = items.map((item) => item.status).filter(isOrderItemStage).map(stageIndex);
+  const orderStage = activeStages.length ? Math.min(...activeStages) : 0;
   const orderDate = new Date(order.createdAt).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'long',
@@ -198,8 +200,14 @@ export default function OrderConfirmationPage() {
   // exists the instant checkout submits, but for 'online' that's not the
   // same as money having actually arrived. Nothing below treats one of
   // these as a normal, fulfillable order — matches Admin/seller order
-  // lists hiding it entirely until this flips.
-  const isUnpaidOnline = order.paymentMethod === 'online' && order.paymentStatus !== 'paid';
+  // lists hiding it entirely until this flips. Deliberately an explicit
+  // allow-list (pending/failed), not "!== 'paid'" — 'refunded' (added
+  // 2026-09-03) is also never 'paid', but a refunded order is the
+  // opposite of unpaid and must never show a "complete your payment"
+  // banner or a live retry button against money that's already been
+  // both charged and given back.
+  const isUnpaidOnline =
+    order.paymentMethod === 'online' && (order.paymentStatus === 'pending' || order.paymentStatus === 'failed');
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -302,9 +310,11 @@ export default function OrderConfirmationPage() {
               ? 'Cash on Delivery'
               : order.paymentStatus === 'paid'
                 ? 'Paid online'
-                : order.paymentStatus === 'failed'
-                  ? 'Payment failed'
-                  : 'Payment pending'}
+                : order.paymentStatus === 'refunded'
+                  ? 'Refunded'
+                  : order.paymentStatus === 'failed'
+                    ? 'Payment failed'
+                    : 'Payment pending'}
           </p>
           <p className="mt-2 font-body text-xs text-ink-soft">
             Track this order anytime using order #{order.orderNumber} from the site footer.
@@ -326,7 +336,11 @@ export default function OrderConfirmationPage() {
                   {item.businessName} · {item.subcategoryName}
                 </p>
                 {order.status === 'placed' && !isUnpaidOnline && (
-                  <span className="mt-1 inline-flex rounded-full bg-teal/10 px-2 py-0.5 font-body text-[10px] font-semibold text-teal-deep">
+                  <span
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 font-body text-[10px] font-semibold ${
+                      item.status === 'cancelled' ? 'bg-red-50 text-red-600' : 'bg-teal/10 text-teal-deep'
+                    }`}
+                  >
                     {ORDER_ITEM_STATUS_LABEL[item.status]}
                   </span>
                 )}
@@ -360,7 +374,7 @@ export default function OrderConfirmationPage() {
 
       {cancelError && <p className="text-center font-body text-sm text-red-700">{cancelError}</p>}
 
-      {order.status === 'placed' && order.paymentStatus !== 'paid' && (
+      {order.status === 'placed' && order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded' && (
         <button
           onClick={handleCancel}
           disabled={cancelling}

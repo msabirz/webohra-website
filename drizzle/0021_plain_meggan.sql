@@ -1,1 +1,0 @@
-ALTER TABLE "portfolio_items" ADD COLUMN "description" varchar(300);

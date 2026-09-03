@@ -17,7 +17,10 @@ import { slugifyTitle } from '@/lib/ids';
  * scoped to a listing she actually owns, attached via
  * /api/listings/[id]/images) and 'portfolio' (Phase 6 — a past-work
  * showcase photo, scoped to her seller account rather than any one
- * listing, attached via /api/sellers/portfolio).
+ * listing, attached via /api/sellers/portfolio). A third purpose,
+ * 'payout_qr', existed briefly for Phase 5c's payout redesign — dropped
+ * 2026-09-03 alongside the 'qr_image' payout method itself, nothing to
+ * reconcile from it here.
  */
 export async function POST(request: Request) {
   const session = await getSessionFromRequest(request);

@@ -1,6 +1,7 @@
 import { and, eq, ne } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { orders } from '@/db/schema';
+import { createPayoutsForOrder } from '@/lib/payouts';
 
 /**
  * Confirms a real Razorpay payment against an order — the one place an
@@ -39,6 +40,14 @@ export async function confirmOrderPayment(params: {
     .set({ paymentStatus: 'paid', razorpayPaymentId: params.gatewayPaymentId })
     .where(and(eq(orders.id, order.id), ne(orders.paymentStatus, 'paid')))
     .returning();
+
+  // Fulfillment & Subscriptions redesign, Phase 5c — only on a genuine
+  // first confirmation (`updated` is truthy), never on the idempotent
+  // no-op path above or the "lost the race" branch just below, so a
+  // payout row is never created twice for the same order.
+  if (updated) {
+    await createPayoutsForOrder(updated.id);
+  }
 
   return { ok: true, alreadyConfirmed: !updated };
 }

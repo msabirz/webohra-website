@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { Layers, Plus, Archive, ArchiveRestore, X } from 'lucide-react';
+import { Layers, Plus, Archive, ArchiveRestore, X, ShieldAlert, Lock } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton } from '@/components/skeleton';
+import { useAdminPortal } from '@/lib/admin-context';
 
 type SellerType = 'product' | 'service';
 type ContactMode = 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay';
@@ -32,6 +33,9 @@ type Settings = {
   walletMinThreshold: string;
   rechargeDefaultPlanId: number | null;
   bonusListingCommissionPercent: string;
+  // Fulfillment & Subscriptions redesign, Phase 5c.
+  orderCommissionPercent: string;
+  razorpayxPayoutsEnabled: boolean;
 };
 
 const CONTACT_MODE_LABEL: Record<ContactMode, string> = {
@@ -232,11 +236,18 @@ function PlanSection({
 }
 
 function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans: Plan[]; onSaved: () => void }) {
+  const { me } = useAdminPortal();
+  const canApprovePayouts = me.staffRole === 'super_admin';
+
   const [walletMinThreshold, setWalletMinThreshold] = useState(settings.walletMinThreshold);
   const [rechargeDefaultPlanId, setRechargeDefaultPlanId] = useState(settings.rechargeDefaultPlanId ?? '');
   const [bonusListingCommissionPercent, setBonusListingCommissionPercent] = useState(settings.bonusListingCommissionPercent);
+  const [orderCommissionPercent, setOrderCommissionPercent] = useState(settings.orderCommissionPercent);
+  const [razorpayxPayoutsEnabled, setRazorpayxPayoutsEnabled] = useState(settings.razorpayxPayoutsEnabled);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [approvalSaving, setApprovalSaving] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   async function save() {
     setSaving(true);
@@ -249,6 +260,7 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
           walletMinThreshold: Number(walletMinThreshold),
           rechargeDefaultPlanId: rechargeDefaultPlanId ? Number(rechargeDefaultPlanId) : null,
           bonusListingCommissionPercent: Number(bonusListingCommissionPercent),
+          orderCommissionPercent: Number(orderCommissionPercent),
         }),
       });
       setSaved(true);
@@ -259,10 +271,36 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
     }
   }
 
+  // Deliberately its own action, separate from the regular "Save settings"
+  // button above — flipping whether real money can move via RazorpayX
+  // shouldn't ride along with an unrelated wallet-threshold edit, and only
+  // a super admin can call this at all (see the route's own comment).
+  async function toggleApproval() {
+    setApprovalSaving(true);
+    setApprovalError(null);
+    try {
+      const next = !razorpayxPayoutsEnabled;
+      const res = await authFetch('/api/admin/subscription-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ razorpayxPayoutsEnabled: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setApprovalError(data.error ?? 'Could not change this.');
+        return;
+      }
+      setRazorpayxPayoutsEnabled(next);
+      onSaved();
+    } finally {
+      setApprovalSaving(false);
+    }
+  }
+
   return (
     <div className="rounded-2xl bg-ivory-deep/60 p-5">
-      <p className="mb-3 font-heading text-sm font-semibold text-ink">Global settings — recharge model</p>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <p className="mb-3 font-heading text-sm font-semibold text-ink">Global settings — recharge model &amp; payouts</p>
+      <div className="grid gap-3 sm:grid-cols-4">
         <label className="flex flex-col gap-1">
           <span className="font-body text-xs font-medium text-ink-soft">Min wallet balance (₹)</span>
           <input
@@ -300,12 +338,61 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
             className={inputStyles}
           />
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">Order payout commission (%)</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="0.5"
+            value={orderCommissionPercent}
+            onChange={(e) => setOrderCommissionPercent(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
       </div>
       <div className="mt-3 flex items-center gap-3">
         <button onClick={save} disabled={saving} className={buttonStyles('primary', 'sm')}>
           {saving ? 'Saving…' : 'Save settings'}
         </button>
         {saved && <span className="font-body text-xs text-teal-deep">Saved.</span>}
+      </div>
+
+      {/* Deliberately set apart from the rest of this card — this is a
+       *  stakeholder sign-off, not routine config, and a non-technical
+       *  admin should never mistake it for one of the fields above. */}
+      <div className="mt-5 flex flex-col gap-2 rounded-xl border border-gold/40 bg-gold/10 p-4">
+        <div className="flex items-center gap-2">
+          {razorpayxPayoutsEnabled ? (
+            <ShieldAlert className="h-4 w-4 text-ink" strokeWidth={2} />
+          ) : (
+            <Lock className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+          )}
+          <p className="font-heading text-sm font-semibold text-ink">RazorpayX payouts</p>
+          <span
+            className={`rounded-full px-2.5 py-0.5 font-body text-xs font-semibold ${
+              razorpayxPayoutsEnabled ? 'bg-teal/15 text-teal-deep' : 'bg-ink-soft/10 text-ink-soft'
+            }`}
+          >
+            {razorpayxPayoutsEnabled ? 'LIVE — real transfers can be sent' : 'NOT ENABLED'}
+          </span>
+        </div>
+        <p className="font-body text-xs text-ink-soft">
+          Separate from whether RazorpayX is technically configured — this is the explicit go-ahead a stakeholder
+          gives before any real seller payout can be sent through it. While this is off, &quot;Send via RazorpayX&quot;
+          on every payout fails immediately with a clear message, and &quot;Mark as paid manually&quot; is the only way
+          to record a payout as settled.
+        </p>
+        {canApprovePayouts ? (
+          <div className="flex items-center gap-3">
+            <button onClick={toggleApproval} disabled={approvalSaving} className={buttonStyles('secondary', 'sm', 'w-fit')}>
+              {approvalSaving ? 'Saving…' : razorpayxPayoutsEnabled ? 'Disable RazorpayX payouts' : 'Enable RazorpayX payouts'}
+            </button>
+            {approvalError && <span className="font-body text-xs text-red-700">{approvalError}</span>}
+          </div>
+        ) : (
+          <p className="font-body text-xs italic text-ink-soft">Only a super admin can change this.</p>
+        )}
       </div>
     </div>
   );

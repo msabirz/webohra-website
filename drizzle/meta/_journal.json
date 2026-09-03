@@ -152,8 +152,57 @@
     {
       "idx": 21,
       "version": "7",
-      "when": 1788410892638,
-      "tag": "0021_plain_meggan",
+      "when": 1788414854647,
+      "tag": "0021_sour_iceman",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1788421413280,
+      "tag": "0022_dazzling_hemingway",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1788425113535,
+      "tag": "0023_zippy_wrecker",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788427054080,
+      "tag": "0024_sharp_senator_kelly",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788429603394,
+      "tag": "0025_minor_millenium_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788430473459,
+      "tag": "0026_grey_nocturne",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788434222474,
+      "tag": "0027_lovely_madripoor",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788437585150,
+      "tag": "0028_short_wendigo",
       "breakpoints": true
     }
   ]

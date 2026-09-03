@@ -12,6 +12,9 @@ import {
   enquiries,
   whatsappContacts,
   pickupRequests,
+  payouts,
+  disputes,
+  refunds,
 } from '@/db/schema';
 import { getSessionFromRequest, isStaff } from '@/lib/auth';
 
@@ -88,6 +91,22 @@ export async function GET(request: Request) {
     db.select({ pendingPickups: count() }).from(pickupRequests).where(eq(pickupRequests.status, 'pending')),
   ]);
 
+  // Admin Panel priority-items redesign, 2026-09-03 — the things most
+  // likely to need Admin's attention TODAY, not just standing totals.
+  const [[{ pendingPayoutCount, pendingPayoutAmount }], [{ failedPayoutCount }], [{ openDisputeCount }], [{ failedRefundCount }]] =
+    await Promise.all([
+      db
+        .select({
+          pendingPayoutCount: count(),
+          pendingPayoutAmount: sql<string>`coalesce(sum(${payouts.netAmount}), 0)`,
+        })
+        .from(payouts)
+        .where(eq(payouts.status, 'pending')),
+      db.select({ failedPayoutCount: count() }).from(payouts).where(eq(payouts.status, 'failed')),
+      db.select({ openDisputeCount: count() }).from(disputes).where(inArray(disputes.status, ['open', 'investigating'])),
+      db.select({ failedRefundCount: count() }).from(refunds).where(eq(refunds.status, 'failed')),
+    ]);
+
   // Fulfillment & Subscriptions redesign, Phase 5b — an 'online' order that
   // hasn't actually cleared payment yet must never count toward GMV; a COD
   // order always did (it was never in a payment pipeline to begin with),
@@ -129,5 +148,12 @@ export async function GET(request: Request) {
     },
     whatsappContacts: { total: totalWhatsappContacts },
     pickups: { pending: pendingPickups },
+    payouts: {
+      pendingCount: pendingPayoutCount,
+      pendingAmount: Number(pendingPayoutAmount),
+      failedCount: failedPayoutCount,
+    },
+    disputes: { openCount: openDisputeCount },
+    refunds: { failedCount: failedRefundCount },
   });
 }

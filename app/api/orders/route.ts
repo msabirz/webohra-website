@@ -16,13 +16,21 @@ import { createRazorpayOrder, getRazorpayKeyId } from '@/lib/razorpay';
  * from the cart. 'cod' stays a one-step "UI-only" shell exactly as before —
  * the order is the terminal action, nothing more to confirm. 'online'
  * (Fulfillment & Subscriptions redesign, Phase 5b) is real Razorpay
- * payment, but only when every resolved item belongs to the same seller —
- * a multi-seller cart has no payout-splitting mechanism yet (that's Phase
- * 5c's Route integration), so it stays COD-only until then. An online
- * order is still created here immediately (paymentStatus: 'pending', a
- * real Razorpay order attached) so pricing is locked in at checkout time
- * rather than re-resolved later when payment actually clears — see
- * lib/order-payment.ts for how it then becomes 'paid'.
+ * payment against the FULL cart total, any number of sellers included — a
+ * single combined charge (mirrors how Phase 5b's own single-seller case
+ * always worked, just generalized). This used to be gated to a
+ * single-seller cart while payout-splitting depended on Razorpay Route,
+ * which never got enabled on this account; that dependency is gone as of
+ * the 2026-09-03 payout redesign (lib/payouts.ts's createPayoutsForOrder
+ * has always been seller-count-agnostic, and Admin now settles each
+ * seller's share directly rather than through any Razorpay split), so the
+ * restriction was lifted the same day. An online order is still created
+ * here immediately (paymentStatus: 'pending', a real Razorpay order
+ * attached) so pricing is locked in at checkout time rather than
+ * re-resolved later when payment actually clears — see
+ * lib/order-payment.ts for how it then becomes 'paid', and
+ * lib/payouts.ts's createPayoutsForOrder for how each seller's share gets
+ * computed the moment it does, one payout row per seller in the order.
  *
  * If she's signed in, the order links to her account (userId) so it shows
  * up in her profile's order history — but an Authorization header is never
@@ -105,19 +113,6 @@ export async function POST(request: Request) {
         variantId: null,
         variantName: null,
       });
-    }
-  }
-
-  if (parsed.data.paymentMethod === 'online') {
-    const distinctSellerIds = new Set(resolved.map((item) => item.sellerId));
-    if (distinctSellerIds.size > 1) {
-      return NextResponse.json(
-        {
-          error:
-            'Online payment is only available when every item in your cart is from the same seller — split your order, or choose Cash on Delivery.',
-        },
-        { status: 400 },
-      );
     }
   }
 

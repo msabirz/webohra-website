@@ -1,5 +1,5 @@
 {
-  "id": "95ca8288-e04c-46d1-99b5-be588dcb9194",
+  "id": "c48771eb-b646-4126-ab6b-641d114e70ad",
   "prevId": "39a8c745-f2a7-4843-8457-746dc4447133",
   "version": "7",
   "dialect": "postgresql",
@@ -1187,6 +1187,123 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.payouts": {
+      "name": "payouts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "order_id": {
+          "name": "order_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seller_id": {
+          "name": "seller_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gross_amount": {
+          "name": "gross_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "commission_amount": {
+          "name": "commission_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "net_amount": {
+          "name": "net_amount",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "payout_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "razorpay_payout_id": {
+          "name": "razorpay_payout_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_reason": {
+          "name": "failure_reason",
+          "type": "varchar(300)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "payouts_order_id_orders_id_fk": {
+          "name": "payouts_order_id_orders_id_fk",
+          "tableFrom": "payouts",
+          "tableTo": "orders",
+          "columnsFrom": [
+            "order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "payouts_seller_id_users_id_fk": {
+          "name": "payouts_seller_id_users_id_fk",
+          "tableFrom": "payouts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "seller_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "payouts_razorpay_payout_id_unique": {
+          "name": "payouts_razorpay_payout_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "razorpay_payout_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.pickup_requests": {
       "name": "pickup_requests",
       "schema": "",
@@ -1363,12 +1480,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "description": {
-          "name": "description",
-          "type": "varchar(300)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "link": {
           "name": "link",
           "type": "varchar(500)",
@@ -1414,6 +1525,99 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.seller_payout_accounts": {
+      "name": "seller_payout_accounts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "seller_id": {
+          "name": "seller_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "method": {
+          "name": "method",
+          "type": "payout_method",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "razorpay_contact_id": {
+          "name": "razorpay_contact_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "razorpay_fund_account_id": {
+          "name": "razorpay_fund_account_id",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_label": {
+          "name": "display_label",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "seller_payout_accounts_seller_id_users_id_fk": {
+          "name": "seller_payout_accounts_seller_id_users_id_fk",
+          "tableFrom": "seller_payout_accounts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "seller_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "seller_payout_accounts_seller_id_unique": {
+          "name": "seller_payout_accounts_seller_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "seller_id"
+          ]
+        },
+        "seller_payout_accounts_razorpay_fund_account_id_unique": {
+          "name": "seller_payout_accounts_razorpay_fund_account_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "razorpay_fund_account_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -2218,6 +2422,13 @@
           "notNull": true,
           "default": "'10.00'"
         },
+        "order_commission_percent": {
+          "name": "order_commission_percent",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'10.00'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2721,6 +2932,25 @@
       "values": [
         "cod",
         "online"
+      ]
+    },
+    "public.payout_method": {
+      "name": "payout_method",
+      "schema": "public",
+      "values": [
+        "bank_account",
+        "upi"
+      ]
+    },
+    "public.payout_status": {
+      "name": "payout_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "processing",
+        "processed",
+        "failed",
+        "reversed"
       ]
     },
     "public.pickup_address_source": {

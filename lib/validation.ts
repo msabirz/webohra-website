@@ -260,10 +260,15 @@ export type ListingImagesReorderInput = z.infer<typeof listingImagesReorderSchem
 
 // `purpose` defaults to 'listing' so every caller that predates Phase 6
 // (product photos, variant photos, image-type custom fields) keeps working
-// unchanged with just { contentType, listingId } — 'portfolio' (Fulfillment
-// & Subscriptions redesign, Phase 6) is the one purpose that doesn't need a
-// listingId at all, since a portfolio item belongs to the seller, not any
-// one listing.
+// unchanged with just { contentType, listingId } — 'portfolio'
+// (Fulfillment & Subscriptions redesign, Phase 6) is the one purpose that
+// doesn't need a listingId at all, since a portfolio item belongs to the
+// seller, not any one listing. There was briefly a third purpose,
+// 'payout_qr' (Phase 5c payout redesign, 2026-09-03), for a seller-
+// uploaded payout QR code — dropped the same day once the 'qr_image'
+// payout method itself was dropped (see payoutMethodEnum's own comment in
+// db/schema.ts) in favor of Admin paying via UPI/bank details fetched live
+// from Razorpay. Nothing to reconcile from it here.
 export const uploadPresignSchema = z
   .object({
     contentType: z.enum(['image/jpeg', 'image/png', 'image/webp'], {
@@ -301,10 +306,10 @@ export const orderCreateSchema = z.object({
   state: z.string().trim().min(2, 'State must be at least 2 characters').max(100),
   pincode: pincodeField(),
   // Fulfillment & Subscriptions redesign, Phase 5b — 'online' is real
-  // Razorpay payment now, but only when every item resolves to the same
-  // seller (checked server-side in app/api/orders/route.ts against the
-  // actual resolved listings, never trusted from this payload alone — a
-  // multi-seller cart claiming 'online' here just gets rejected there).
+  // Razorpay payment against the full cart total, any number of sellers
+  // included (see app/api/orders/route.ts's own comment — this used to be
+  // single-seller-only while payout-splitting depended on Razorpay Route,
+  // lifted once that dependency turned out not to exist).
   paymentMethod: z.enum(['cod', 'online']),
   items: z
     .array(
@@ -682,6 +687,18 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
     .min(0, 'Commission can’t be negative')
     .max(100, 'Commission can’t exceed 100%')
     .optional(),
+  // Fulfillment & Subscriptions redesign, Phase 5c.
+  orderCommissionPercent: z
+    .number()
+    .min(0, 'Commission can’t be negative')
+    .max(100, 'Commission can’t exceed 100%')
+    .optional(),
+  // The stakeholder-approval switch for real RazorpayX transfers — see its
+  // own comment on subscription_settings in db/schema.ts. Accepted here at
+  // the schema level, but the route additionally requires super_admin
+  // specifically (not just isAdmin, unlike every other field in this
+  // object) to actually change it.
+  razorpayxPayoutsEnabled: z.boolean().optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 
@@ -762,3 +779,72 @@ export const portfolioReorderSchema = z.object({
   order: z.array(z.number().int().positive()).min(1),
 });
 export type PortfolioReorderInput = z.infer<typeof portfolioReorderSchema>;
+
+// Fulfillment & Subscriptions redesign, Phase 5c — a seller registering
+// where her online-order payouts go. Discriminated on method: a bank
+// account needs the holder name/IFSC/account number, a UPI account needs
+// just the VPA. ifsc/vpa format checks mirror lib/razorpay-payouts.ts's
+// own regexes (kept in sync manually — small, stable formats, not worth a
+// shared import across a validation-schema/server-lib boundary).
+// Fulfillment & Subscriptions redesign, Phase 5c — redesigned 2026-09-03
+// (see payoutMethodEnum's own comment in db/schema.ts). 'upi' is listed
+// first since it's the preferred method — it's the one Admin can pay
+// against with an amount-pre-filled QR code, rather than typing anything
+// by hand. A third 'qr_image' method (seller uploads her own QR
+// screenshot) existed briefly and was dropped the same day — it only
+// duplicated what 'upi' already gets her for free.
+export const sellerPayoutAccountSchema = z.discriminatedUnion('method', [
+  z.object({
+    method: z.literal('upi'),
+    vpa: z
+      .string()
+      .trim()
+      .regex(/^[\w.-]{2,256}@[a-zA-Z]{2,64}$/, 'Enter a valid UPI ID (e.g. name@bank)'),
+  }),
+  z.object({
+    method: z.literal('bank_account'),
+    accountHolderName: nameField('Account holder name'),
+    ifsc: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Enter a valid 11-character IFSC code'),
+    accountNumber: z
+      .string()
+      .trim()
+      .regex(/^\d{9,18}$/, 'Enter a valid account number (9-18 digits)'),
+  }),
+]);
+export type SellerPayoutAccountInput = z.infer<typeof sellerPayoutAccountSchema>;
+
+// Admin Panel transaction/dispute/refund tooling, 2026-09-03.
+export const adminRefundSchema = z.object({
+  amountRupees: z.number().positive('Refund amount must be greater than zero'),
+  reason: z.string().trim().min(5, 'Explain why this order is being refunded').max(300),
+});
+export type AdminRefundInput = z.infer<typeof adminRefundSchema>;
+
+// "Cancel whole order" is just this called with every item id on the
+// order — no separate schema needed for that case.
+export const adminCancelItemsSchema = z.object({
+  itemIds: z.array(z.number().int().positive()).min(1, 'Select at least one item to cancel'),
+  reason: z.string().trim().min(5, 'Explain why these items are being cancelled').max(300),
+});
+export type AdminCancelItemsInput = z.infer<typeof adminCancelItemsSchema>;
+
+export const adminOpenDisputeSchema = z.object({
+  reason: z.string().trim().min(5, 'Describe the issue').max(500),
+});
+export type AdminOpenDisputeInput = z.infer<typeof adminOpenDisputeSchema>;
+
+export const adminUpdateDisputeSchema = z
+  .object({
+    note: z.string().trim().max(1000).optional(),
+    status: z.enum(['open', 'investigating', 'resolved']).optional(),
+    assignedToStaffId: z.number().int().positive().nullable().optional(),
+  })
+  .refine((data) => data.note !== undefined || data.status !== undefined || data.assignedToStaffId !== undefined, {
+    message: 'Provide at least a note, a status change, or an assignment',
+    path: ['note'],
+  });
+export type AdminUpdateDisputeInput = z.infer<typeof adminUpdateDisputeSchema>;

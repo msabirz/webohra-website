@@ -146,6 +146,7 @@ const ITEM_STATUS_CLASS: Record<OrderItemStatus, string> = {
   packed: 'bg-gold/15 text-gold-soft',
   shipped: 'bg-navy/10 text-navy',
   delivered: 'bg-teal/15 text-teal-deep',
+  cancelled: 'bg-red-50 text-red-600',
 };
 
 function OrderDetailModal({
