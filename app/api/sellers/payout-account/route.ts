@@ -4,7 +4,7 @@ import { db } from '@/db/index';
 import { sellerPayoutAccounts, users } from '@/db/schema';
 import { sellerPayoutAccountSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
-import { createRazorpayContact, createBankFundAccount } from '@/lib/razorpay-payouts';
+import { createRazorpayContact, createBankFundAccount, createUpiFundAccount } from '@/lib/razorpay-payouts';
 
 /**
  * GET /api/sellers/payout-account — her current payout setup, masked
@@ -36,12 +36,11 @@ export async function GET(request: Request) {
  * methods (see payoutMethodEnum's own comment for the full 2026-09-03
  * redesign — Admin pays directly through her own banking/UPI app rather
  * than RazorpayX Payouts moving the money):
- *   - 'upi': her VPA is stored directly (plain text — not comparably
- *     sensitive to a bank account number, and has to be real, readable
- *     text to build her payout QR code later).
- *   - 'bank_account': same as before — sent straight to a real RazorpayX
- *     contact + fund_account, only the opaque ids come back here, the
- *     raw account number/IFSC is never persisted in our own database.
+ *   - 'upi' and 'bank_account': both sent straight to a real RazorpayX
+ *     contact + fund_account (confirmed 'vpa' fund accounts work just as
+ *     well as 'bank_account' ones), only the opaque ids come back here —
+ *     her raw VPA/account number/IFSC is never persisted in our own
+ *     database at all.
  *   - 'qr_image': the already-uploaded (via /api/uploads/presign,
  *     purpose 'payout_qr') image URL is just stored directly.
  */
@@ -75,7 +74,6 @@ export async function POST(request: Request) {
     let values: {
       sellerId: number;
       method: 'upi' | 'bank_account' | 'qr_image';
-      upiVpa: string | null;
       razorpayContactId: string | null;
       razorpayFundAccountId: string | null;
       qrImageUrl: string | null;
@@ -83,21 +81,10 @@ export async function POST(request: Request) {
       updatedAt: Date;
     };
 
-    if (parsed.data.method === 'upi') {
-      values = {
-        sellerId,
-        method: 'upi',
-        upiVpa: parsed.data.vpa,
-        razorpayContactId: null,
-        razorpayFundAccountId: null,
-        qrImageUrl: null,
-        displayLabel: parsed.data.vpa,
-        updatedAt: new Date(),
-      };
-    } else if (parsed.data.method === 'bank_account') {
-      // Reuse her existing RazorpayX contact if she's changing her bank
-      // details later — no reason to create a second contact for the
-      // same seller.
+    if (parsed.data.method === 'upi' || parsed.data.method === 'bank_account') {
+      // Reuse her existing RazorpayX contact if she's changing her payout
+      // details later — no reason to create a second contact for the same
+      // seller, whether she's switching bank↔UPI or just updating one.
       const contactId =
         existing?.razorpayContactId ??
         (
@@ -107,27 +94,39 @@ export async function POST(request: Request) {
             phone: seller.phone,
           })
         ).id;
-      const result = await createBankFundAccount({
-        contactId,
-        accountHolderName: parsed.data.accountHolderName,
-        ifsc: parsed.data.ifsc,
-        accountNumber: parsed.data.accountNumber,
-      });
-      values = {
-        sellerId,
-        method: 'bank_account',
-        upiVpa: null,
-        razorpayContactId: contactId,
-        razorpayFundAccountId: result.id,
-        qrImageUrl: null,
-        displayLabel: `${result.bankName ?? 'Bank account'} •••• ${result.lastFour}`,
-        updatedAt: new Date(),
-      };
+
+      if (parsed.data.method === 'upi') {
+        const result = await createUpiFundAccount({ contactId, vpa: parsed.data.vpa });
+        values = {
+          sellerId,
+          method: 'upi',
+          razorpayContactId: contactId,
+          razorpayFundAccountId: result.id,
+          qrImageUrl: null,
+          displayLabel: 'UPI ID on file',
+          updatedAt: new Date(),
+        };
+      } else {
+        const result = await createBankFundAccount({
+          contactId,
+          accountHolderName: parsed.data.accountHolderName,
+          ifsc: parsed.data.ifsc,
+          accountNumber: parsed.data.accountNumber,
+        });
+        values = {
+          sellerId,
+          method: 'bank_account',
+          razorpayContactId: contactId,
+          razorpayFundAccountId: result.id,
+          qrImageUrl: null,
+          displayLabel: `${result.bankName ?? 'Bank account'} •••• ${result.lastFour}`,
+          updatedAt: new Date(),
+        };
+      }
     } else {
       values = {
         sellerId,
         method: 'qr_image',
-        upiVpa: null,
         razorpayContactId: null,
         razorpayFundAccountId: null,
         qrImageUrl: parsed.data.qrImageUrl,

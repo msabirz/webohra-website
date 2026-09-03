@@ -1,10 +1,12 @@
 /**
  * RazorpayX — Fulfillment & Subscriptions redesign, Phase 5c. Contacts and
  * Fund Accounts (confirmed working directly against the real API, same
- * key_id/key_secret as the payment gateway) are still used for the
- * 'bank_account' payout method, specifically so a seller's raw account
- * number/IFSC never has to be stored in our own database — see
- * payoutMethodEnum's own comment in db/schema.ts for the full 2026-09-03
+ * key_id/key_secret as the payment gateway) are used for BOTH the
+ * 'bank_account' AND 'upi' payout methods (confirmed 2026-09-03 that
+ * account_type: 'vpa' fund accounts also work on this merchant) —
+ * specifically so a seller's raw account number/IFSC/VPA never has to be
+ * stored in our own database at all; only the opaque contact/fund-account
+ * ids do. See payoutMethodEnum's own comment in db/schema.ts for the full
  * redesign. `createPayout` (the actual money-moving call) is kept here but
  * no longer used by default — RazorpayX Payouts turned out to need a real
  * current account this business isn't set up for, so Admin pays sellers
@@ -128,6 +130,24 @@ export async function getBankFundAccountDetails(fundAccountId: string): Promise<
     ifsc: data.bank_account.ifsc,
     bankName: data.bank_account.bank_name ?? null,
   };
+}
+
+/**
+ * Same idea as getBankFundAccountDetails, for the 'upi' method — fetches
+ * her real VPA fresh from Razorpay only at the moment Admin needs to build
+ * her payout QR code (see lib/upi-qr.ts), never persisted in our own
+ * database.
+ */
+export async function getUpiFundAccountDetails(fundAccountId: string): Promise<{ vpa: string }> {
+  const res = await fetch(`${RAZORPAY_API_BASE}/fund_accounts/${fundAccountId}`, {
+    headers: { Authorization: authHeader() },
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data?.error?.description || `Could not fetch payout account details (${res.status})`;
+    throw new Error(message);
+  }
+  return { vpa: data.vpa.address };
 }
 
 /**

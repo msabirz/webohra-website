@@ -169,6 +169,13 @@
       "when": 1788425113535,
       "tag": "0023_zippy_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788427054080,
+      "tag": "0024_sharp_senator_kelly",
+      "breakpoints": true
     }
   ]
 }

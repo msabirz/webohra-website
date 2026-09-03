@@ -1,0 +1,1 @@
+ALTER TABLE "seller_payout_accounts" DROP COLUMN IF EXISTS "upi_vpa";

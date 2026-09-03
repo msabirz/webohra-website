@@ -80,16 +80,15 @@ export default function CheckoutPage() {
   const shippingTotal = shipmentGroups.reduce((sum, g) => sum + g.charge, 0);
   const total = subtotal + shippingTotal;
 
-  // Online payment only makes sense against one seller's money — a
-  // multi-seller cart has no payout-splitting mechanism yet (Phase 5c's
-  // Route integration is what adds that). Requires every line's listing to
-  // have actually loaded first — while any is still loading, this stays
-  // false rather than guessing.
+  // Online payment charges the full cart total in one combined Razorpay
+  // payment, any number of sellers included — see app/api/orders/route.ts's
+  // own comment on why this no longer needs a single-seller cart (that
+  // restriction depended on Razorpay Route, never enabled on this account,
+  // and payout-splitting has never actually needed it). Still requires
+  // every line's listing to have actually loaded first — while any is
+  // still loading, this stays false rather than guessing.
   const allListingsLoaded = items.every((item) => listings[item.listingId] !== undefined);
-  const distinctSellerIds = new Set(
-    items.map((item) => listings[item.listingId]?.sellerId).filter((id): id is number => id !== undefined),
-  );
-  const onlinePaymentEligible = items.length > 0 && allListingsLoaded && distinctSellerIds.size === 1;
+  const onlinePaymentEligible = items.length > 0 && allListingsLoaded;
 
   useEffect(() => {
     if (!onlinePaymentEligible && paymentMethod === 'online') setPaymentMethod('cod');
@@ -284,13 +283,6 @@ export default function CheckoutPage() {
             </span>
             Pay Online (Razorpay)
           </label>
-          {!onlinePaymentEligible && items.length > 0 && (
-            <p className="font-body text-xs text-ink-soft">
-              {allListingsLoaded
-                ? 'Pay Online is only available when every item in your cart is from the same seller — split your order, or choose Cash on Delivery.'
-                : ''}
-            </p>
-          )}
         </FormSection>
 
         {error && <p className="font-body text-sm text-red-700">{error}</p>}

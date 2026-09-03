@@ -305,10 +305,10 @@ export const orderCreateSchema = z.object({
   state: z.string().trim().min(2, 'State must be at least 2 characters').max(100),
   pincode: pincodeField(),
   // Fulfillment & Subscriptions redesign, Phase 5b — 'online' is real
-  // Razorpay payment now, but only when every item resolves to the same
-  // seller (checked server-side in app/api/orders/route.ts against the
-  // actual resolved listings, never trusted from this payload alone — a
-  // multi-seller cart claiming 'online' here just gets rejected there).
+  // Razorpay payment against the full cart total, any number of sellers
+  // included (see app/api/orders/route.ts's own comment — this used to be
+  // single-seller-only while payout-splitting depended on Razorpay Route,
+  // lifted once that dependency turned out not to exist).
   paymentMethod: z.enum(['cod', 'online']),
   items: z
     .array(

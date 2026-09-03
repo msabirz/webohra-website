@@ -3,18 +3,18 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { sellerPayoutAccounts, users, sellerProfiles } from '@/db/schema';
 import { getSessionFromRequest, isAdmin } from '@/lib/auth';
-import { getBankFundAccountDetails } from '@/lib/razorpay-payouts';
+import { getBankFundAccountDetails, getUpiFundAccountDetails } from '@/lib/razorpay-payouts';
 
 /**
  * GET /api/admin/sellers/[userId]/payout-method — the REAL, usable payout
  * details for one seller, unlike GET /api/sellers/payout-account (which
  * only ever returns her own masked summary). This is what Admin actually
- * pays against: her UPI VPA (to build a payout QR code — see
- * lib/upi-qr.ts), her bank account fetched live from Razorpay (never
- * stored in our own database — see seller_payout_accounts' own schema
- * comment), or her uploaded QR image. isAdmin, not isStaff — same
- * "real-money-adjacent action gets the stricter role" reasoning as the
- * rest of the payout endpoints, even though this one only reads.
+ * pays against: her UPI VPA or bank account, both fetched live from
+ * Razorpay (never stored in our own database — see
+ * seller_payout_accounts' own schema comment), or her uploaded QR image.
+ * isAdmin, not isStaff — same "real-money-adjacent action gets the
+ * stricter role" reasoning as the rest of the payout endpoints, even
+ * though this one only reads.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ userId: string }> }) {
   const session = await getSessionFromRequest(request);
@@ -43,23 +43,25 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
     .where(eq(users.id, sellerId));
   const payeeName = sellerRow?.businessName ?? sellerRow?.name ?? 'WE Bohra seller';
 
-  if (account.method === 'upi') {
-    return NextResponse.json({
-      account: { method: 'upi', payeeName, upi: { vpa: account.upiVpa } },
-    });
-  }
-
   if (account.method === 'qr_image') {
     return NextResponse.json({
       account: { method: 'qr_image', payeeName, qrImageUrl: account.qrImageUrl },
     });
   }
 
-  // 'bank_account' — fetched live, never persisted here.
+  // 'upi' and 'bank_account' — both fetched live from Razorpay, never
+  // persisted here.
   if (!account.razorpayFundAccountId) {
-    return NextResponse.json({ error: 'This seller\'s bank details are missing — ask her to re-register them.' }, { status: 500 });
+    return NextResponse.json(
+      { error: "This seller's payout details are missing — ask her to re-register them." },
+      { status: 500 },
+    );
   }
   try {
+    if (account.method === 'upi') {
+      const upi = await getUpiFundAccountDetails(account.razorpayFundAccountId);
+      return NextResponse.json({ account: { method: 'upi', payeeName, upi: { vpa: upi.vpa } } });
+    }
     const bank = await getBankFundAccountDetails(account.razorpayFundAccountId);
     return NextResponse.json({
       account: {
@@ -74,7 +76,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Could not fetch this seller\'s bank details.';
+    const message = err instanceof Error ? err.message : "Could not fetch this seller's payout details.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

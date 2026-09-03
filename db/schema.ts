@@ -145,14 +145,16 @@ export const walletTransactionTypeEnum = pgEnum('wallet_transaction_type', [
  *  Phase 5c — redesigned 2026-09-03 away from RazorpayX Payouts as the
  *  actual money-mover (not affordable/usable at this stage — the user's
  *  own call) toward Admin paying her directly through her own banking/UPI
- *  app, using whichever of these three she registered. 'upi' generates a
- *  fresh, amount-pre-filled QR code at payout time from the standard UPI
- *  deep-link format every UPI app already understands — no gateway
- *  involved, no cost, works today. 'bank_account' still routes through
- *  Razorpay's Contact/Fund Account APIs (confirmed working, unlike the
- *  Payouts-send API) purely so the raw account number/IFSC never has to
- *  sit in our own database — fetched live from Razorpay only when Admin
- *  actually needs to see it. 'qr_image' is the fallback for a seller who
+ *  app, using whichever of these three she registered. 'upi' and
+ *  'bank_account' both route through Razorpay's Contact/Fund Account APIs
+ *  (confirmed working, unlike the Payouts-send API, and confirmed the
+ *  'vpa' fund-account type works just as well as 'bank_account') purely
+ *  so the raw VPA/account number/IFSC never has to sit in our own database
+ *  even briefly — fetched live from Razorpay only when Admin actually
+ *  needs to see it. At payout time, 'upi' additionally generates a fresh,
+ *  amount-pre-filled QR code from the standard UPI deep-link format every
+ *  UPI app already understands (lib/upi-qr.ts) — no gateway involved for
+ *  that step, no extra cost. 'qr_image' is the fallback for a seller who
  *  only has a saved QR screenshot and doesn't know her own VPA as text —
  *  stored as a plain uploaded image, same as a portfolio photo; no
  *  amount pre-fill is possible for a static image. */
@@ -966,24 +968,23 @@ export const subscriptionSettings = pgTable('subscription_settings', {
  * 2026-09-03 redesign away from RazorpayX Payouts as the mover of money).
  * Exactly one of the method-specific field groups below is populated,
  * matching `method`:
- *   - 'upi': upiVpa — stored directly, plain text. A UPI VPA is meant to
- *     be shared to be paid (the same way a Venmo handle is), not
- *     comparably sensitive to a bank account number, and it has to be
- *     retrievable as real text to build the payout QR code's deep link —
- *     there'd be nothing to gain from routing it through Razorpay first.
- *   - 'bank_account': razorpayContactId/razorpayFundAccountId — the raw
- *     account number/IFSC is never stored here at all. The moment she
- *     submits one, it goes straight to Razorpay (a real contact +
- *     fund_account, confirmed working independent of RazorpayX Payouts
- *     being enabled) and only these opaque ids come back — same "the
- *     specialized party owns the sensitive data, we only store a
- *     pointer" pattern as R2 owning image bytes. Fetched live from
- *     Razorpay only at the moment Admin actually needs to see it.
+ *   - 'upi' AND 'bank_account' both: razorpayContactId/razorpayFundAccountId
+ *     only — her raw VPA/account number/IFSC is never stored here at all
+ *     (confirmed 2026-09-03 that Razorpay Fund Accounts support
+ *     account_type: 'vpa' just as well as 'bank_account' on this
+ *     merchant). The moment she submits either one, it goes straight to
+ *     Razorpay (a real contact + fund_account) and only these opaque ids
+ *     come back — same "the specialized party owns the sensitive data, we
+ *     only store a pointer" pattern as R2 owning image bytes. Fetched live
+ *     from Razorpay only at the moment Admin actually needs to see it
+ *     (lib/razorpay-payouts.ts's getUpiFundAccountDetails /
+ *     getBankFundAccountDetails) — nothing sensitive sits in our database
+ *     even briefly.
  *   - 'qr_image': qrImageUrl — a plain uploaded image (R2), same pattern
  *     as a portfolio photo.
- * `displayLabel` is a masked summary ("HDFC Bank •••• 1000" /
- * "seller@upi" / "QR code uploaded") for HER OWN confirmation screen —
- * never what Admin uses to actually pay her.
+ * `displayLabel` is a masked summary ("HDFC Bank •••• 1000" / "UPI ID on
+ * file" / "QR code uploaded") for HER OWN confirmation screen — never what
+ * Admin uses to actually pay her.
  */
 export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
   id: serial('id').primaryKey(),
@@ -992,7 +993,6 @@ export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
     .unique()
     .references(() => users.id, { onDelete: 'cascade' }),
   method: payoutMethodEnum('method').notNull(),
-  upiVpa: varchar('upi_vpa', { length: 100 }),
   razorpayContactId: varchar('razorpay_contact_id', { length: 100 }),
   razorpayFundAccountId: varchar('razorpay_fund_account_id', { length: 100 }).unique(),
   qrImageUrl: varchar('qr_image_url', { length: 500 }),
