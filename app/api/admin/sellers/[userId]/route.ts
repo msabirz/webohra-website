@@ -86,6 +86,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
     [orderStats],
     payoutTotals,
     topProducts,
+    recentOrders,
+    payoutRows,
   ] = await Promise.all([
     db.select({ balance: sellerWallets.balance }).from(sellerWallets).where(eq(sellerWallets.sellerId, id)),
     db.select().from(sellerSubscriptions).where(eq(sellerSubscriptions.sellerId, id)),
@@ -117,6 +119,48 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
       .groupBy(orderItems.listingId, listings.title, listings.status)
       .orderBy(desc(sql`sum(${orderItems.unitPrice} * ${orderItems.quantity})`))
       .limit(5),
+    // Every order she has at least one item in — her own items/subtotal
+    // only, same scoping as GET /api/sellers/orders (never another
+    // seller's share on the same multi-seller order). Every "click to see
+    // her orders" list on the admin side redirects into the SAME
+    // /admin/orders/[orderNumber] page everything else here already links
+    // to, never a separate seller-scoped order view.
+    db
+      .select({
+        orderNumber: orders.orderNumber,
+        paymentMethod: orders.paymentMethod,
+        paymentStatus: orders.paymentStatus,
+        status: orders.status,
+        createdAt: orders.createdAt,
+        itemCount: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int`,
+        herSubtotal: sql<string>`coalesce(sum(${orderItems.unitPrice} * ${orderItems.quantity}), 0)`,
+      })
+      .from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(eq(orderItems.sellerId, id))
+      .groupBy(orders.id)
+      .orderBy(desc(orders.createdAt)),
+    // Every payout row, not just the pending/processed totals below — "all
+    // details" per the admin transaction-visibility redesign, 2026-09-03.
+    db
+      .select({
+        id: payouts.id,
+        orderId: payouts.orderId,
+        orderNumber: orders.orderNumber,
+        grossAmount: payouts.grossAmount,
+        commissionAmount: payouts.commissionAmount,
+        netAmount: payouts.netAmount,
+        status: payouts.status,
+        channel: payouts.channel,
+        failureReason: payouts.failureReason,
+        manualNote: payouts.manualNote,
+        processedAt: payouts.processedAt,
+        createdAt: payouts.createdAt,
+      })
+      .from(payouts)
+      .innerJoin(orders, eq(payouts.orderId, orders.id))
+      .where(eq(payouts.sellerId, id))
+      .orderBy(desc(payouts.createdAt)),
   ]);
 
   // One row per seller_type she actually has, with the real, resolved plan
@@ -154,5 +198,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
       ...p,
       listingType: sellerListings.find((l) => l.id === p.listingId)?.listingType ?? null,
     })),
+    recentOrders,
+    payoutRows,
   });
 }

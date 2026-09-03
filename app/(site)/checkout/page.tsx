@@ -9,6 +9,7 @@ import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { PhoneInput } from '@/components/phone-input';
 import { authFetch } from '@/lib/session-client';
 import { resolveCartLine, computeShipmentGroups, type CartListingSnapshot } from '@/lib/cart-line';
+import { loadRazorpayScript } from '@/lib/razorpay-client';
 
 type ListingSnapshot = CartListingSnapshot;
 
@@ -134,14 +135,88 @@ export default function CheckoutPage() {
         } else {
           setError(data.error ?? 'Something went wrong. Please try again.');
         }
+        setSubmitting(false);
         return;
       }
+
+      // The cart's job is done the instant a real order exists server-side —
+      // same for COD and online, exactly as before this change. An online
+      // order still needing payment is tracked on the order record itself
+      // (paymentStatus: 'pending'), not the cart.
       clear();
+
+      if (paymentMethod === 'online' && data.razorpay) {
+        // Opens the SAME widget the order page used to require a second
+        // click to reach — every path out of this (success, she closes it,
+        // the script fails to load) ends in a redirect, so `submitting`
+        // never needs resetting here; the page is on its way out either way.
+        await openRazorpayCheckout(data.order.orderNumber, data.razorpay);
+        return;
+      }
+
       router.push(`/order/${data.order.orderNumber}`);
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
-    } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function openRazorpayCheckout(
+    orderNumber: string,
+    razorpay: { razorpayOrderId: string; amount: number; currency: string; keyId: string },
+  ) {
+    try {
+      await loadRazorpayScript();
+      if (!window.Razorpay) {
+        // The order already exists — her own order page can still retry
+        // from here, same fallback as every other path out of this widget.
+        router.push(`/order/${orderNumber}`);
+        return;
+      }
+      const rzp = new window.Razorpay({
+        key: razorpay.keyId,
+        amount: razorpay.amount,
+        currency: razorpay.currency,
+        order_id: razorpay.razorpayOrderId,
+        name: 'WE Bohra',
+        description: `Order ${orderNumber}`,
+        prefill: { name: form.buyerName, contact: form.buyerPhone, email: form.buyerEmail || undefined },
+        theme: { color: '#1B3A6B' },
+        handler: async (response: {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }) => {
+          // Verify, then let the order page itself be the single source of
+          // truth for what actually happened (it re-fetches fresh) — a
+          // failed verify call here still lands her somewhere real and
+          // retryable, never a dead end on the checkout page itself.
+          await fetch(`/api/orders/${orderNumber}/verify-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+            }),
+          }).catch(() => {});
+          router.push(`/order/${orderNumber}`);
+        },
+        modal: {
+          // She closed the widget without completing payment. Nothing is
+          // lost — the order already exists in 'pending', so her own order
+          // page picks up right where this left off: the amber "complete
+          // your payment" banner with the exact same retry button. If
+          // Razorpay's webhook later marks a genuine failed attempt, that
+          // same page shows the dedicated "Payment failed" state instead.
+          ondismiss: () => {
+            router.push(`/order/${orderNumber}`);
+          },
+        },
+      });
+      rzp.open();
+    } catch {
+      router.push(`/order/${orderNumber}`);
     }
   }
 
@@ -289,9 +364,11 @@ export default function CheckoutPage() {
 
         <button type="submit" disabled={submitting} className={buttonStyles('primary', 'lg')}>
           {submitting
-            ? 'Placing order…'
+            ? paymentMethod === 'online'
+              ? 'Opening payment…'
+              : 'Placing order…'
             : paymentMethod === 'online'
-              ? `Continue to payment · ₹${total.toLocaleString('en-IN')}`
+              ? `Pay ₹${total.toLocaleString('en-IN')} now`
               : `Place order · ₹${total.toLocaleString('en-IN')}`}
         </button>
       </form>

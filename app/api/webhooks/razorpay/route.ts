@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { verifyRazorpayWebhookSignature } from '@/lib/razorpay';
 import { creditWalletTopup } from '@/lib/wallet';
 import { confirmOrderPayment, markOrderPaymentFailed } from '@/lib/order-payment';
+import { markRefundProcessed, markRefundFailed } from '@/lib/refunds';
 
 /**
  * POST /api/webhooks/razorpay — Razorpay's own server calling us directly,
@@ -18,10 +19,15 @@ import { confirmOrderPayment, markOrderPaymentFailed } from '@/lib/order-payment
  * a given event is about — see createRazorpayOrder's callers.
  *
  * Configured in the Razorpay dashboard for `order.paid` and
- * `payment.failed` only (the two events this session's setup selected) —
- * anything else Razorpay sends here is acknowledged and ignored rather
- * than erroring, since webhook config in the dashboard can outpace what
- * this handler currently knows how to do.
+ * `payment.failed` (this session's original setup) — `refund.processed`
+ * and `refund.failed` (Admin Panel transaction/dispute/refund tooling,
+ * 2026-09-03, see lib/refunds.ts's markRefundProcessed/markRefundFailed)
+ * are handled here too but need the SAME dashboard enabling before they'll
+ * actually arrive — check Settings → Webhooks in the Razorpay dashboard
+ * and add those two event types alongside the original two if they aren't
+ * already selected. Anything else Razorpay sends here is acknowledged and
+ * ignored rather than erroring, since webhook config in the dashboard can
+ * outpace what this handler currently knows how to do.
  *
  * Must read the raw body text before any JSON parsing — the signature is
  * computed over the exact bytes Razorpay sent, and re-serializing parsed
@@ -71,6 +77,16 @@ export async function POST(request: Request) {
     console.log(
       `[razorpay-webhook] payment.failed: ${paymentEntity?.id ?? 'unknown'} — ${paymentEntity?.error_description ?? 'no reason given'}`,
     );
+  } else if (event.event === 'refund.processed') {
+    const refundEntity = event.payload?.refund?.entity;
+    if (refundEntity?.id) {
+      await markRefundProcessed(refundEntity.id);
+    }
+  } else if (event.event === 'refund.failed') {
+    const refundEntity = event.payload?.refund?.entity;
+    if (refundEntity?.id) {
+      await markRefundFailed(refundEntity.id, 'Refund failed on Razorpay\'s side after being created — check the Razorpay dashboard for the exact reason.');
+    }
   }
 
   return NextResponse.json({ ok: true });

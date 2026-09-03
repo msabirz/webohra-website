@@ -20,7 +20,7 @@ import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton } from '@/components/skeleton';
 import { useAdminPortal } from '@/lib/admin-context';
-import { ORDER_ITEM_STATUS_LABEL, nextStage, type OrderItemStatus } from '@/lib/order-item-status';
+import { ORDER_ITEM_STATUS_LABEL, nextStage, canCancelItem, type OrderItemStatus } from '@/lib/order-item-status';
 
 type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded' | null;
 type PayoutStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'reversed';
@@ -38,6 +38,7 @@ type OrderItem = {
   variantName: string | null;
   status: OrderItemStatus;
   statusUpdatedAt: string | null;
+  cancelledReason: string | null;
 };
 
 type Shipment = { sellerId: number; method: 'self_managed' | 'delhivery'; charge: string | null; businessName: string | null };
@@ -169,6 +170,10 @@ export default function AdminOrderDetailPage() {
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeNoteDrafts, setDisputeNoteDrafts] = useState<Record<number, string>>({});
 
+  const [selectedForCancel, setSelectedForCancel] = useState<Set<number>>(new Set());
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+
   const load = useCallback(async () => {
     const res = await authFetch(`/api/admin/orders/${params.orderNumber}`);
     if (!res.ok) {
@@ -200,6 +205,50 @@ export default function AdminOrderDetailPage() {
       await load();
     } finally {
       setBusy(false);
+    }
+  }
+
+  function toggleCancelSelection(itemId: number) {
+    setSelectedForCancel((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }
+
+  async function submitCancelItems() {
+    setError(null);
+    if (selectedForCancel.size === 0) {
+      setError('Select at least one item to cancel.');
+      return;
+    }
+    if (cancelReason.trim().length < 5) {
+      setError('Explain why these items are being cancelled.');
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await authFetch(`/api/admin/orders/${params.orderNumber}/cancel-items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemIds: Array.from(selectedForCancel), reason: cancelReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Could not cancel these items.');
+        return;
+      }
+      if (data.refund && !data.refund.ok) {
+        setError(
+          `Item(s) cancelled, but the ₹${data.refundAmount.toLocaleString('en-IN')} refund failed: ${data.refund.error} — retry it below via "Refund buyer".`,
+        );
+      }
+      setSelectedForCancel(new Set());
+      setCancelReason('');
+      await load();
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -423,10 +472,22 @@ export default function AdminOrderDetailPage() {
 
       {/* Items by seller */}
       <div className="flex flex-col gap-3">
-        <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-ink">
-          <Package className="h-4 w-4 text-ink-soft" strokeWidth={2} />
-          Items
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-ink">
+            <Package className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+            Items
+          </h2>
+          {canRefund && order.status !== 'cancelled' && items.some((i) => canCancelItem(i.status)) && (
+            <button
+              onClick={() =>
+                setSelectedForCancel(new Set(items.filter((i) => canCancelItem(i.status)).map((i) => i.id)))
+              }
+              className="font-body text-xs font-medium text-ink-soft underline hover:text-navy"
+            >
+              Select all (cancel whole order)
+            </button>
+          )}
+        </div>
         {Array.from(itemsBySeller.entries()).map(([sellerId, group]) => (
           <div key={sellerId} className="flex flex-col gap-2 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5">
             <Link href={`/admin/sellers/${sellerId}`} className="font-body text-xs font-semibold text-navy hover:underline">
@@ -434,16 +495,35 @@ export default function AdminOrderDetailPage() {
             </Link>
             {group.items.map((item) => {
               const next = nextStage(item.status);
+              const cancellable = canRefund && order.status !== 'cancelled' && canCancelItem(item.status);
               return (
                 <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-ivory-deep/40 p-3">
-                  <div className="font-body text-sm">
-                    <p className="text-ink">
-                      {item.title}{item.variantName && ` — ${item.variantName}`} × {item.quantity}
-                    </p>
-                    <p className="text-xs text-ink-soft">₹{(Number(item.unitPrice) * item.quantity).toLocaleString('en-IN')}</p>
+                  <div className="flex items-start gap-2.5 font-body text-sm">
+                    {cancellable && (
+                      <input
+                        type="checkbox"
+                        checked={selectedForCancel.has(item.id)}
+                        onChange={() => toggleCancelSelection(item.id)}
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-ink-soft/30 text-navy focus:ring-navy/40"
+                        aria-label={`Select ${item.title} to cancel`}
+                      />
+                    )}
+                    <div>
+                      <p className="text-ink">
+                        {item.title}{item.variantName && ` — ${item.variantName}`} × {item.quantity}
+                      </p>
+                      <p className="text-xs text-ink-soft">₹{(Number(item.unitPrice) * item.quantity).toLocaleString('en-IN')}</p>
+                      {item.status === 'cancelled' && item.cancelledReason && (
+                        <p className="mt-0.5 text-xs text-red-600">Cancelled: {item.cancelledReason}</p>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-white px-2.5 py-1 font-body text-xs font-semibold text-ink-soft ring-1 ring-ink-soft/10">
+                    <span
+                      className={`rounded-full px-2.5 py-1 font-body text-xs font-semibold ${
+                        item.status === 'cancelled' ? 'bg-red-50 text-red-600' : 'bg-white text-ink-soft ring-1 ring-ink-soft/10'
+                      }`}
+                    >
                       {ORDER_ITEM_STATUS_LABEL[item.status]}
                     </span>
                     {order.status !== 'cancelled' && next && (
@@ -461,6 +541,35 @@ export default function AdminOrderDetailPage() {
             })}
           </div>
         ))}
+
+        {canRefund && selectedForCancel.size > 0 && (
+          <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gold/30">
+            <p className="font-body text-sm font-semibold text-ink">
+              Cancel {selectedForCancel.size} item{selectedForCancel.size === 1 ? '' : 's'}
+              {order.paymentMethod === 'online' && ' and refund their amount'}
+            </p>
+            <p className="font-body text-xs text-ink-soft">
+              {order.paymentMethod === 'online'
+                ? 'The items\' combined price (plus a seller\'s shipping charge too, if this cancels her whole share) is refunded automatically to the buyer\'s original payment method — no separate confirm step.'
+                : 'This is Cash on Delivery — nothing was charged online, so cancelling just marks these items as cancelled.'}
+            </p>
+            <input
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Why are these being cancelled? (e.g. Out of stock, buyer requested)"
+              className={inputStyles}
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button onClick={submitCancelItems} disabled={cancelling} className={buttonStyles('primary', 'sm')}>
+                {cancelling ? 'Cancelling…' : order.paymentMethod === 'online' ? 'Cancel & refund' : 'Cancel item(s)'}
+              </button>
+              <button onClick={() => setSelectedForCancel(new Set())} className={buttonStyles('secondary', 'sm')}>
+                Clear selection
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Shipments */}

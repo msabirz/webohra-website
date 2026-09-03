@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { orders, payouts, refunds } from '@/db/schema';
 import { createRazorpayRefund } from '@/lib/razorpay';
@@ -25,12 +25,18 @@ export async function getRefundedAmount(orderId: number): Promise<number> {
  * automatic clawback, just make sure Admin sees it before she confirms.
  * Null when nothing's been paid out yet, a real state (not every order has
  * reached that point), not an absence of a warning worth showing.
+ *
+ * `sellerIds`, when given, scopes the check to just those sellers — used by
+ * lib/order-cancellation.ts's cancelOrderItems, which only ever refunds the
+ * specific seller(s) whose items got cancelled, never the whole order.
+ * Without it (the plain "Refund buyer" button, which refunds against the
+ * order as a whole with no particular seller in mind), every seller with a
+ * processed payout on this order counts.
  */
-export async function getOrderPayoutWarning(orderId: number): Promise<string | null> {
-  const rows = await db
-    .select()
-    .from(payouts)
-    .where(and(eq(payouts.orderId, orderId), eq(payouts.status, 'processed')));
+export async function getOrderPayoutWarning(orderId: number, sellerIds?: number[]): Promise<string | null> {
+  const conditions = [eq(payouts.orderId, orderId), eq(payouts.status, 'processed')];
+  if (sellerIds) conditions.push(inArray(payouts.sellerId, sellerIds));
+  const rows = await db.select().from(payouts).where(and(...conditions));
   if (rows.length === 0) return null;
   const total = rows.reduce((sum, p) => sum + Number(p.netAmount), 0);
   const who = rows.length === 1 ? 'the seller' : `${rows.length} sellers`;
@@ -47,12 +53,20 @@ export type RefundOrderResult = { ok: true; refund: typeof refunds.$inferSelect 
  * throws: a Razorpay-side failure is recorded as a real 'failed' refund
  * row with a reason, not an unhandled exception — same shape as
  * lib/payouts.ts's sendPayout.
+ *
+ * `sellerIdsForWarning`, when given, scopes the payout-already-sent check
+ * (and the auto-dispute it can flag) to just those sellers — see
+ * getOrderPayoutWarning's own comment. Omitted by the plain "Refund buyer"
+ * action (order-wide); passed by lib/order-cancellation.ts's
+ * cancelOrderItems (specific seller(s) whose items were actually
+ * cancelled).
  */
 export async function refundOrder(
   orderId: number,
   staffId: number,
   amountRupees: number,
   reason: string,
+  sellerIdsForWarning?: number[],
 ): Promise<RefundOrderResult> {
   if (amountRupees <= 0) return { ok: false, error: 'Refund amount must be greater than zero.' };
 
@@ -101,19 +115,32 @@ export async function refundOrder(
       amountRupees,
       reason,
     });
+    // Razorpay sometimes settles a refund synchronously (status comes back
+    // 'processed' immediately) and sometimes asynchronously (comes back
+    // 'processing', genuinely completes moments to hours later) — the
+    // latter is only ever confirmed by the refund.processed webhook (see
+    // app/api/webhooks/razorpay/route.ts's markRefundProcessed), same
+    // "webhook is the authoritative fallback" shape as order payments.
+    // orders.paymentStatus only ever flips to 'refunded' once a refund is
+    // GENUINELY 'processed' — never while still 'processing' — so it can
+    // never claim more than getRefundedAmount (which only counts
+    // 'processed' rows) can actually back up.
+    const genuinelyProcessed = result.status === 'processed';
     const [updated] = await db
       .update(refunds)
       .set({
-        status: result.status === 'processed' ? 'processed' : 'processing',
+        status: genuinelyProcessed ? 'processed' : 'processing',
         razorpayRefundId: result.id,
-        processedAt: new Date(),
+        processedAt: genuinelyProcessed ? new Date() : null,
       })
       .where(eq(refunds.id, pending.id))
       .returning();
 
-    const newTotalRefunded = alreadyRefunded + amountRupees;
-    if (newTotalRefunded >= total - 0.01) {
-      await db.update(orders).set({ paymentStatus: 'refunded' }).where(eq(orders.id, orderId));
+    if (genuinelyProcessed) {
+      const newTotalRefunded = alreadyRefunded + amountRupees;
+      if (newTotalRefunded >= total - 0.01) {
+        await db.update(orders).set({ paymentStatus: 'refunded' }).where(eq(orders.id, orderId));
+      }
     }
 
     // User's own follow-up call (2026-09-03): no automatic money movement
@@ -121,7 +148,7 @@ export async function refundOrder(
     // been paid out for must never just quietly happen — auto-flag it as
     // a trackable dispute so recovering it from her doesn't depend on
     // anyone remembering a one-time warning banner.
-    const payoutWarning = await getOrderPayoutWarning(orderId);
+    const payoutWarning = await getOrderPayoutWarning(orderId, sellerIdsForWarning);
     if (payoutWarning) {
       await flagSellerRecoveryDispute(
         orderId,
@@ -139,4 +166,44 @@ export async function refundOrder(
       .where(eq(refunds.id, pending.id));
     return { ok: false, error: message };
   }
+}
+
+/**
+ * Confirms a refund that started 'processing' has genuinely completed —
+ * called from the `refund.processed` webhook event
+ * (app/api/webhooks/razorpay/route.ts), the only authoritative source for
+ * an async refund's real outcome. Idempotent (a re-delivered webhook is a
+ * safe no-op) — only ever moves a still-'processing' row forward, never
+ * touches one already 'processed' or 'failed'. Flips orders.paymentStatus
+ * to 'refunded' here too if this is what finally completes the order's
+ * full refunded amount — the one other place besides refundOrder's own
+ * synchronous-completion path that can make that transition.
+ */
+export async function markRefundProcessed(razorpayRefundId: string): Promise<void> {
+  const [claimed] = await db
+    .update(refunds)
+    .set({ status: 'processed', processedAt: new Date() })
+    .where(and(eq(refunds.razorpayRefundId, razorpayRefundId), eq(refunds.status, 'processing')))
+    .returning();
+  if (!claimed) return;
+
+  const [total, refundedAmount] = await Promise.all([
+    computeOrderTotalRupees(claimed.orderId),
+    getRefundedAmount(claimed.orderId),
+  ]);
+  if (refundedAmount >= total - 0.01) {
+    await db.update(orders).set({ paymentStatus: 'refunded' }).where(eq(orders.id, claimed.orderId));
+  }
+}
+
+/**
+ * The rare case where an async refund genuinely fails after being created
+ * — called from the `refund.failed` webhook event. Same idempotent
+ * "only ever moves a still-'processing' row" shape as markRefundProcessed.
+ */
+export async function markRefundFailed(razorpayRefundId: string, reason: string): Promise<void> {
+  await db
+    .update(refunds)
+    .set({ status: 'failed', failureReason: reason.slice(0, 300) })
+    .where(and(eq(refunds.razorpayRefundId, razorpayRefundId), eq(refunds.status, 'processing')));
 }

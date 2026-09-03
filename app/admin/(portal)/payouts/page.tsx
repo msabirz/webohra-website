@@ -41,6 +41,9 @@ type Payout = {
   manualNote: string | null;
   processedAt: string | null;
   createdAt: string;
+  // True when this order also had other sellers in it — 2026-09-03,
+  // messaging-only tracking (matches her own /seller/payouts page's note).
+  isMultiSeller: boolean;
 };
 
 const STATUS_ICON: Record<PayoutStatus, typeof Clock> = {
@@ -398,7 +401,17 @@ export default function AdminPayoutsPage() {
                 const actionable = p.status === 'pending' || p.status === 'failed';
                 return (
                   <tr key={p.id} className="border-b border-ink-soft/5 last:border-0">
-                    <td className="px-4 py-3 font-medium text-ink">{p.orderNumber}</td>
+                    <td className="px-4 py-3 font-medium text-ink">
+                      {p.orderNumber}
+                      {p.isMultiSeller && (
+                        <span
+                          className="ml-1.5 inline-block rounded-full bg-gold/15 px-1.5 py-0.5 align-middle font-body text-[10px] font-semibold text-gold-soft"
+                          title="This order also has other sellers in it — she's told to expect settlement ~7-8 working days after delivery."
+                        >
+                          Mixed
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-3 text-ink-soft">{p.businessName ?? p.sellerName ?? `#${p.sellerId}`}</td>
                     <td className="px-2 py-3 tabular-nums text-ink-soft">₹{Number(p.grossAmount).toLocaleString('en-IN')}</td>
                     <td className="px-2 py-3 tabular-nums text-ink-soft">−₹{Number(p.commissionAmount).toLocaleString('en-IN')}</td>

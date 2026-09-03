@@ -19,6 +19,11 @@ type Payout = {
   failureReason: string | null;
   processedAt: string | null;
   createdAt: string;
+  // True when this order also had other sellers in it — 2026-09-03,
+  // messaging only (no real settlement gate, Admin still pays whenever she
+  // chooses): lets this page show the "settles ~7-8 working days after
+  // delivery" expectation-setting note only where it's actually relevant.
+  isMultiSeller: boolean;
 };
 
 const METHOD_LABEL: Record<PayoutMethod, string> = {
@@ -282,7 +287,14 @@ export default function SellerPayoutsPage() {
                   const Icon = STATUS_ICON[p.status];
                   return (
                     <tr key={p.id} className="border-b border-ink-soft/5 last:border-0">
-                      <td className="px-4 py-3 font-medium text-ink">{p.orderNumber}</td>
+                      <td className="px-4 py-3 font-medium text-ink">
+                        {p.orderNumber}
+                        {p.isMultiSeller && (p.status === 'pending' || p.status === 'processing') && (
+                          <p className="mt-0.5 font-body text-[11px] font-normal text-ink-soft">
+                            Mixed-seller order — settles ~7-8 working days after delivery
+                          </p>
+                        )}
+                      </td>
                       <td className="px-2 py-3 tabular-nums text-ink-soft">₹{Number(p.grossAmount).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-3 tabular-nums text-ink-soft">−₹{Number(p.commissionAmount).toLocaleString('en-IN')}</td>
                       <td className="px-2 py-3 font-medium tabular-nums text-ink">₹{Number(p.netAmount).toLocaleString('en-IN')}</td>

@@ -564,14 +564,23 @@ export const orderStatusEnum = pgEnum('order_status', ['placed', 'cancelled']);
 
 /** Per-item fulfillment progress — deliberately separate from orders.status
  *  because a single order can span several sellers (see order_items.seller_id),
- *  each fulfilling on her own timeline. Forward-only: the API never lets a
- *  seller or admin move an item backward once recorded, same "never
- *  fabricate progress it can't back up" rule as enquiry_status. */
+ *  each fulfilling on her own timeline. Forward-only among
+ *  placed/packed/shipped/delivered: the API never lets a seller or admin
+ *  move an item backward once recorded, same "never fabricate progress it
+ *  can't back up" rule as enquiry_status. 'cancelled' (added 2026-09-03,
+ *  Admin Panel cancel-items tooling) is a side-branch, not part of that
+ *  linear sequence — reachable from any of the other four EXCEPT
+ *  'delivered' (a return after delivery is a refund without un-delivering
+ *  it, via the plain refund action, not this), never advanced further once
+ *  reached. See lib/order-item-status.ts's own comment for the full type
+ *  story (ORDER_ITEM_STAGES stays the 4-value linear list; OrderItemStatus
+ *  is that plus 'cancelled'). */
 export const orderItemStatusEnum = pgEnum('order_item_status', [
   'placed',
   'packed',
   'shipped',
   'delivered',
+  'cancelled',
 ]);
 
 /**
@@ -656,6 +665,14 @@ export const orderItems = pgTable('order_items', {
   status: orderItemStatusEnum('status').notNull().default('placed'),
   // Set whenever status changes — null until the first update past 'placed'.
   statusUpdatedAt: timestamp('status_updated_at', { withTimezone: true }),
+  // Admin's required note explaining why — set only alongside status:
+  // 'cancelled' (2026-09-03, Admin Panel cancel-items tooling), same "an
+  // unexplained real-money-adjacent event is never acceptable" reasoning
+  // as payouts.manualNote and refunds.reason. Kept here even when the same
+  // cancellation also produced a real refund row (whose own `reason` is
+  // this exact text) — a COD order has no refund row to fall back on for
+  // "why," so the audit trail needs to live on the item itself either way.
+  cancelledReason: varchar('cancelled_reason', { length: 300 }),
   // Null for an order against a simple listing (today's whole history) —
   // set when it was a specific type of a variant-based listing. onDelete:
   // 'set null' (not 'restrict' or 'cascade') deliberately: a seller

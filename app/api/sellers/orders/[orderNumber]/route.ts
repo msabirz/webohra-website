@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { orders, orderItems, listings, subcategories, shipments } from '@/db/schema';
 import { getSessionFromRequest } from '@/lib/auth';
-import { isForwardMove, isOrderItemStatus } from '@/lib/order-item-status';
+import { isForwardMove, isOrderItemStage } from '@/lib/order-item-status';
 
 /**
  * GET /api/sellers/orders/[orderNumber] — order detail, scoped to only the
@@ -110,7 +110,11 @@ export async function PATCH(
   const itemId = Number(body?.itemId);
   const status = body?.status;
 
-  if (!itemId || !isOrderItemStatus(status)) {
+  // Only a real fulfillment stage is a valid target — cancelling an item
+  // (added 2026-09-03) is Admin-only, via a separate action that also
+  // handles the refund; she can never reach it through her own advance-
+  // status route.
+  if (!itemId || !isOrderItemStage(status)) {
     return NextResponse.json({ error: 'itemId and a valid status are required' }, { status: 400 });
   }
 

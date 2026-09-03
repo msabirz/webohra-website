@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { CheckCircle2, Package, Truck, Home, MapPinned, Wallet, XCircle, AlertCircle } from 'lucide-react';
 import { buttonStyles } from '@/lib/button-styles';
 import { TrackingPageSkeleton } from '@/components/skeleton';
-import { ORDER_ITEM_STATUS_LABEL, stageIndex, type OrderItemStatus } from '@/lib/order-item-status';
+import { ORDER_ITEM_STATUS_LABEL, stageIndex, isOrderItemStage, type OrderItemStatus } from '@/lib/order-item-status';
 import { loadRazorpayScript } from '@/lib/razorpay-client';
 
 type OrderItem = {
@@ -185,10 +185,12 @@ export default function OrderConfirmationPage() {
   // An order can span several sellers, each fulfilling on her own timeline —
   // the overall bar only advances once every one of them has reached that
   // stage, same as the item-level pills shown below never getting ahead of
-  // what each seller has actually recorded.
-  const orderStage = items.length
-    ? Math.min(...items.map((item) => stageIndex(item.status)))
-    : 0;
+  // what each seller has actually recorded. A cancelled item (added
+  // 2026-09-03) has no stage of its own and is excluded here entirely —
+  // it should never be the one holding back the progress bar for
+  // everything else still genuinely being fulfilled.
+  const activeStages = items.map((item) => item.status).filter(isOrderItemStage).map(stageIndex);
+  const orderStage = activeStages.length ? Math.min(...activeStages) : 0;
   const orderDate = new Date(order.createdAt).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'long',
@@ -334,7 +336,11 @@ export default function OrderConfirmationPage() {
                   {item.businessName} · {item.subcategoryName}
                 </p>
                 {order.status === 'placed' && !isUnpaidOnline && (
-                  <span className="mt-1 inline-flex rounded-full bg-teal/10 px-2 py-0.5 font-body text-[10px] font-semibold text-teal-deep">
+                  <span
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 font-body text-[10px] font-semibold ${
+                      item.status === 'cancelled' ? 'bg-red-50 text-red-600' : 'bg-teal/10 text-teal-deep'
+                    }`}
+                  >
                     {ORDER_ITEM_STATUS_LABEL[item.status]}
                   </span>
                 )}

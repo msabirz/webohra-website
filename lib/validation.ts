@@ -806,6 +806,14 @@ export const adminRefundSchema = z.object({
 });
 export type AdminRefundInput = z.infer<typeof adminRefundSchema>;
 
+// "Cancel whole order" is just this called with every item id on the
+// order — no separate schema needed for that case.
+export const adminCancelItemsSchema = z.object({
+  itemIds: z.array(z.number().int().positive()).min(1, 'Select at least one item to cancel'),
+  reason: z.string().trim().min(5, 'Explain why these items are being cancelled').max(300),
+});
+export type AdminCancelItemsInput = z.infer<typeof adminCancelItemsSchema>;
+
 export const adminOpenDisputeSchema = z.object({
   reason: z.string().trim().min(5, 'Describe the issue').max(500),
 });

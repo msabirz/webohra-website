@@ -15,7 +15,7 @@ import {
   users,
 } from '@/db/schema';
 import { getSessionFromRequest, isStaff } from '@/lib/auth';
-import { isForwardMove, isOrderItemStatus } from '@/lib/order-item-status';
+import { isForwardMove, isOrderItemStage } from '@/lib/order-item-status';
 import { getRefundedAmount, getOrderPayoutWarning } from '@/lib/refunds';
 import { computeOrderTotalRupees } from '@/lib/order-total';
 
@@ -63,6 +63,7 @@ export async function GET(
         variantName: orderItems.variantName,
         status: orderItems.status,
         statusUpdatedAt: orderItems.statusUpdatedAt,
+        cancelledReason: orderItems.cancelledReason,
       })
       .from(orderItems)
       .innerJoin(listings, eq(orderItems.listingId, listings.id))
@@ -179,7 +180,11 @@ export async function PATCH(
   const itemId = Number(body?.itemId);
   const status = body?.status;
 
-  if (!itemId || !isOrderItemStatus(status)) {
+  // Only a real fulfillment stage is a valid target here — 'cancelled'
+  // (added 2026-09-03) has its own dedicated action
+  // (POST .../cancel-items, which also handles the refund), never this
+  // generic advance-status route.
+  if (!itemId || !isOrderItemStage(status)) {
     return NextResponse.json({ error: 'itemId and a valid status are required' }, { status: 400 });
   }
 
