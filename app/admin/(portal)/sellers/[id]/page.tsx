@@ -19,11 +19,16 @@ import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton, RowListSkeleton } from '@/components/skeleton';
 import { useAdminPortal } from '@/lib/admin-context';
 import { InfoPopover } from '@/components/admin/info-popover';
+import { PayoutMethodDisplay } from '@/components/admin/payout-method-display';
 
 const RAZORPAYX_INFO =
   'Attempts to automatically send this seller her money through Razorpay, straight to her registered bank account or UPI ID — no manual transfer on your end. Only works once a super admin has approved RazorpayX in Settings; until then it fails safely with a clear message.';
 const MANUAL_INFO =
-  'Use this only if you already paid the seller yourself, outside this system — your own bank transfer or UPI payment, for example. This never sends any money — it just records that she\'s been paid, with your note as the proof.';
+  'Send her the amount yourself using whichever method she registered — scan her UPI QR, transfer to her bank details, or scan her uploaded QR image (shown below) — then confirm here. This records that she\'s been paid; it never moves money on its own.';
+
+// See app/admin/(portal)/payouts/page.tsx's matching constant — same
+// 2026-09-03 decision, kept in sync across both places this button shows.
+const RAZORPAYX_UI_ENABLED = false;
 
 type SellerDetail = {
   userId: number;
@@ -281,14 +286,18 @@ export default function AdminSellerDetailPage() {
           </div>
           {canPayout && pendingAmount > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                onClick={payOutPending}
-                disabled={payingOut || markingManual}
-                className={buttonStyles('secondary', 'sm')}
-              >
-                {payingOut ? 'Sending…' : 'Send via RazorpayX'}
-              </button>
-              <InfoPopover text={RAZORPAYX_INFO} />
+              {RAZORPAYX_UI_ENABLED && (
+                <>
+                  <button
+                    onClick={payOutPending}
+                    disabled={payingOut || markingManual}
+                    className={buttonStyles('secondary', 'sm')}
+                  >
+                    {payingOut ? 'Sending…' : 'Send via RazorpayX'}
+                  </button>
+                  <InfoPopover text={RAZORPAYX_INFO} />
+                </>
+              )}
               <button
                 onClick={() => {
                   setMarkingManual(true);
@@ -309,11 +318,12 @@ export default function AdminSellerDetailPage() {
       {markingManual && (
         <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gold/30">
           <p className="font-body text-sm font-semibold text-ink">
-            Mark ₹{pendingAmount.toLocaleString('en-IN')} as paid manually
+            Pay ₹{pendingAmount.toLocaleString('en-IN')} — then record it here
           </p>
+          <PayoutMethodDisplay sellerId={seller.userId} amountRupees={pendingAmount} orderNumber="batch payout" />
           <p className="font-body text-xs text-ink-soft">
-            This does not send any money — it only records that you already transferred it yourself. Required: how
-            you paid (bank/UPI reference, date).
+            Once you&apos;ve actually sent it, record how below (bank/UPI reference, date) — this only saves the
+            record, it never moves money itself.
           </p>
           <input
             value={manualNote}

@@ -8,11 +8,21 @@ import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { TableSkeleton, RowListSkeleton } from '@/components/skeleton';
 import { useAdminPortal } from '@/lib/admin-context';
 import { InfoPopover } from '@/components/admin/info-popover';
+import { PayoutMethodDisplay } from '@/components/admin/payout-method-display';
 
 const RAZORPAYX_INFO =
   'Attempts to automatically send this seller her money through Razorpay, straight to her registered bank account or UPI ID — no manual transfer on your end. Only works once a super admin has approved RazorpayX in Settings; until then it fails safely with a clear message.';
 const MANUAL_INFO =
-  'Use this only if you already paid the seller yourself, outside this system — your own bank transfer or UPI payment, for example. This never sends any money — it just records that she\'s been paid, with your note as the proof.';
+  'Send her the amount yourself using whichever method she registered — scan her UPI QR, transfer to her bank details, or scan her uploaded QR image (shown below) — then confirm here. This records that she\'s been paid; it never moves money on its own.';
+
+// RazorpayX Payouts is de-prioritized as of the 2026-09-03 payout redesign
+// (blocked/unaffordable for this account — see lib/payouts.ts's sendPayout
+// doc comment) in favor of Admin paying each seller directly against her
+// own registered UPI/bank/QR details, shown via PayoutMethodDisplay below.
+// The button and its send functions stay fully wired, just hidden, in case
+// RazorpayX payouts is revisited later — flip this back to true to restore
+// them everywhere at once.
+const RAZORPAYX_UI_ENABLED = false;
 
 type PayoutStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'reversed';
 type PayoutChannel = 'razorpayx' | 'manual' | null;
@@ -74,20 +84,24 @@ type SellerGroup = {
   processedAmount: number;
 };
 
-type ManualTarget = { kind: 'payout'; id: number } | { kind: 'seller'; sellerId: number; amount: number };
+type ManualTarget =
+  | { kind: 'payout'; id: number; sellerId: number; amount: number; orderNumber: string }
+  | { kind: 'seller'; sellerId: number; amount: number };
 
 /**
  * /admin/payouts — Fulfillment & Subscriptions redesign, Phase 5c. Every
  * payout row, computed automatically the moment an online order is paid
  * (see lib/payouts.ts's createPayoutsForOrder).
  *
- * Two genuinely different actions exist per pending/failed row, and they
- * are never merged into one ambiguous button: "Send via RazorpayX" (a
- * real transfer attempt — only does anything once a super admin has
- * enabled RazorpayX payouts in Settings) and "Mark as paid manually"
- * (Admin already paid her herself, outside the system, and is just
- * recording it — never calls RazorpayX). Both are isAdmin only; Customer
- * Support sees the same data with neither button.
+ * As of the 2026-09-03 payout redesign, Admin pays each seller directly
+ * against whichever method she registered (UPI, bank details, or an
+ * uploaded QR image — see components/admin/payout-method-display.tsx),
+ * then hits "Mark as paid manually" to record it — that's the one real
+ * path now. "Send via RazorpayX" (a real transfer attempt, gated on a
+ * super admin's approval in Settings) still exists in code but is hidden
+ * behind RAZORPAYX_UI_ENABLED above, kept only in case RazorpayX payouts
+ * is revisited later. Both actions are isAdmin only; Customer Support sees
+ * the same data with neither button.
  *
  * The "By seller" view exists specifically for the multi-seller-cart
  * case: one order can produce several payout rows (one per seller), and a
@@ -259,11 +273,17 @@ export default function AdminPayoutsPage() {
       {manualTarget && (
         <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gold/30">
           <p className="font-body text-sm font-semibold text-ink">
-            Mark {manualTarget.kind === 'seller' ? `₹${manualTarget.amount.toLocaleString('en-IN')} across all her pending orders` : 'this payout'} as paid manually
+            Pay ₹{manualTarget.amount.toLocaleString('en-IN')}
+            {manualTarget.kind === 'seller' ? ' across all her pending orders' : ''} — then record it here
           </p>
+          <PayoutMethodDisplay
+            sellerId={manualTarget.sellerId}
+            amountRupees={manualTarget.amount}
+            orderNumber={manualTarget.kind === 'payout' ? manualTarget.orderNumber : 'batch payout'}
+          />
           <p className="font-body text-xs text-ink-soft">
-            This does not send any money — it only records that you already transferred it yourself. Required: how
-            you paid (bank/UPI reference, date).
+            Once you&apos;ve actually sent it, record how below (bank/UPI reference, date) — this only saves the
+            record, it never moves money itself.
           </p>
           <input
             value={manualNote}
@@ -320,17 +340,19 @@ export default function AdminPayoutsPage() {
                   )}
                   {canSend && s.pendingAmount > 0 && (
                     <>
-                      <span className="inline-flex items-center gap-1">
-                        <button
-                          onClick={() => sendAllForSeller(s.sellerId)}
-                          disabled={busyKey !== null}
-                          className={buttonStyles('primary', 'sm')}
-                        >
-                          <Wallet2 className="h-3.5 w-3.5" strokeWidth={2} />
-                          {busyKey === `send-seller-${s.sellerId}` ? 'Sending…' : 'Send via RazorpayX'}
-                        </button>
-                        <InfoPopover text={RAZORPAYX_INFO} />
-                      </span>
+                      {RAZORPAYX_UI_ENABLED && (
+                        <span className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => sendAllForSeller(s.sellerId)}
+                            disabled={busyKey !== null}
+                            className={buttonStyles('primary', 'sm')}
+                          >
+                            <Wallet2 className="h-3.5 w-3.5" strokeWidth={2} />
+                            {busyKey === `send-seller-${s.sellerId}` ? 'Sending…' : 'Send via RazorpayX'}
+                          </button>
+                          <InfoPopover text={RAZORPAYX_INFO} />
+                        </span>
+                      )}
                       <span className="inline-flex items-center gap-1">
                         <button
                           onClick={() => openManual({ kind: 'seller', sellerId: s.sellerId, amount: s.pendingAmount })}
@@ -399,16 +421,22 @@ export default function AdminPayoutsPage() {
                     <td className="px-2 py-3">
                       {canSend && actionable && (
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {RAZORPAYX_UI_ENABLED && (
+                            <>
+                              <button
+                                onClick={() => sendOne(p.id)}
+                                disabled={busyKey !== null}
+                                className={buttonStyles('secondary', 'sm')}
+                              >
+                                {busyKey === `send-${p.id}` ? 'Sending…' : p.status === 'failed' ? 'Retry RazorpayX' : 'Send via RazorpayX'}
+                              </button>
+                              <InfoPopover text={RAZORPAYX_INFO} />
+                            </>
+                          )}
                           <button
-                            onClick={() => sendOne(p.id)}
-                            disabled={busyKey !== null}
-                            className={buttonStyles('secondary', 'sm')}
-                          >
-                            {busyKey === `send-${p.id}` ? 'Sending…' : p.status === 'failed' ? 'Retry RazorpayX' : 'Send via RazorpayX'}
-                          </button>
-                          <InfoPopover text={RAZORPAYX_INFO} />
-                          <button
-                            onClick={() => openManual({ kind: 'payout', id: p.id })}
+                            onClick={() =>
+                              openManual({ kind: 'payout', id: p.id, sellerId: p.sellerId, amount: Number(p.netAmount), orderNumber: p.orderNumber })
+                            }
                             disabled={busyKey !== null}
                             className={buttonStyles('secondary', 'sm')}
                           >

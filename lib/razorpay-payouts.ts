@@ -1,16 +1,16 @@
 /**
- * RazorpayX Payouts — Fulfillment & Subscriptions redesign, Phase 5c (seller
- * payout mechanism). A deliberately different approach from Route (which
- * turned out not to be enabled on this account, and requires each seller to
- * be a fully KYC'd "linked account"): buyers pay the full order amount into
- * WeBohra's own Razorpay account exactly as Phase 5b already does — for any
- * number of sellers in the order, not just one — and separately, WeBohra
- * pushes each seller her share as a real bank/UPI transfer via RazorpayX.
- * Contacts and fund accounts use the same key_id/key_secret as the payment
- * gateway (confirmed working directly against the real API); the actual
- * money-moving payouts call additionally needs a real RazorpayX current
- * account number, which isn't configured yet — see createPayout's own
- * comment for exactly what happens until it is.
+ * RazorpayX — Fulfillment & Subscriptions redesign, Phase 5c. Contacts and
+ * Fund Accounts (confirmed working directly against the real API, same
+ * key_id/key_secret as the payment gateway) are still used for the
+ * 'bank_account' payout method, specifically so a seller's raw account
+ * number/IFSC never has to be stored in our own database — see
+ * payoutMethodEnum's own comment in db/schema.ts for the full 2026-09-03
+ * redesign. `createPayout` (the actual money-moving call) is kept here but
+ * no longer used by default — RazorpayX Payouts turned out to need a real
+ * current account this business isn't set up for, so Admin pays sellers
+ * directly through her own banking/UPI app instead (see lib/payouts.ts's
+ * markPayoutPaidManually and lib/upi-qr.ts). The code stays intact in case
+ * that changes later; nothing currently calls it from the UI.
  */
 
 const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';
@@ -97,6 +97,37 @@ export async function createUpiFundAccount(params: {
     vpa: { address: params.vpa },
   });
   return { id: result.id, vpa: result.vpa.address };
+}
+
+export type BankFundAccountFullDetails = {
+  accountHolderName: string;
+  accountNumber: string;
+  ifsc: string;
+  bankName: string | null;
+};
+
+/**
+ * Fetches the REAL, unmasked bank account details back from Razorpay —
+ * confirmed directly that this returns the full account number and IFSC,
+ * not a masked version. This is the payoff of never storing them
+ * ourselves: Admin sees them only at the moment she actually needs to pay
+ * someone, fetched fresh, never persisted here.
+ */
+export async function getBankFundAccountDetails(fundAccountId: string): Promise<BankFundAccountFullDetails> {
+  const res = await fetch(`${RAZORPAY_API_BASE}/fund_accounts/${fundAccountId}`, {
+    headers: { Authorization: authHeader() },
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data?.error?.description || `Could not fetch payout account details (${res.status})`;
+    throw new Error(message);
+  }
+  return {
+    accountHolderName: data.bank_account.name,
+    accountNumber: data.bank_account.account_number,
+    ifsc: data.bank_account.ifsc,
+    bankName: data.bank_account.bank_name ?? null,
+  };
 }
 
 /**

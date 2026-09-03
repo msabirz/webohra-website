@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Landmark, CheckCircle2, Clock, XCircle, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Landmark, CheckCircle2, Clock, XCircle, RefreshCw, ImagePlus, Loader2, X } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { RowListSkeleton, Skeleton } from '@/components/skeleton';
 
-type PayoutAccount = { method: 'bank_account' | 'upi'; displayLabel: string; updatedAt: string };
+type PayoutMethod = 'upi' | 'bank_account' | 'qr_image';
+type PayoutAccount = { method: PayoutMethod; displayLabel: string; updatedAt: string };
 type PayoutStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'reversed';
 type Payout = {
   id: number;
@@ -18,6 +19,12 @@ type Payout = {
   failureReason: string | null;
   processedAt: string | null;
   createdAt: string;
+};
+
+const METHOD_LABEL: Record<PayoutMethod, string> = {
+  upi: 'UPI',
+  bank_account: 'Bank account',
+  qr_image: 'QR code',
 };
 
 const STATUS_LABEL: Record<PayoutStatus, string> = {
@@ -43,27 +50,31 @@ const STATUS_ICON: Record<PayoutStatus, typeof Clock> = {
 };
 
 const EMPTY_BANK_FORM = { accountHolderName: '', ifsc: '', accountNumber: '' };
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 /**
- * /seller/payouts — Fulfillment & Subscriptions redesign, Phase 5c. Where
- * she registers where her online-order earnings go (real RazorpayX contact
- * + fund account, created the moment she saves this — see
- * POST /api/sellers/payout-account), and sees the history of what's been
- * computed/sent for her paid online orders. Actually receiving money
- * depends on RAZORPAYX_ACCOUNT_NUMBER being configured platform-wide — if
- * it isn't yet, her payouts sit at "Pending" (never silently claimed as
- * paid) until it is.
+ * /seller/payouts — Fulfillment & Subscriptions redesign, Phase 5c,
+ * redesigned 2026-09-03 (see payoutMethodEnum's own comment in
+ * db/schema.ts): Admin pays her directly through her own banking/UPI app
+ * rather than RazorpayX Payouts moving the money, so this is where she
+ * tells Admin how — a UPI ID (best: lets Admin pay via an amount-pre-
+ * filled QR code every time), her bank details (sent straight to a real
+ * RazorpayX contact/fund_account so the raw number is never stored here),
+ * or a QR code image she already has saved.
  */
 export default function SellerPayoutsPage() {
   const [account, setAccount] = useState<PayoutAccount | null | undefined>(undefined);
   const [payouts, setPayouts] = useState<Payout[] | null>(null);
   const [editing, setEditing] = useState(false);
-  const [method, setMethod] = useState<'bank_account' | 'upi'>('bank_account');
+  const [method, setMethod] = useState<PayoutMethod>('upi');
   const [bankForm, setBankForm] = useState(EMPTY_BANK_FORM);
   const [vpa, setVpa] = useState('');
+  const [qrImageUrl, setQrImageUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const [accountRes, payoutsRes] = await Promise.all([
@@ -80,13 +91,55 @@ export default function SellerPayoutsPage() {
     load();
   }, [load]);
 
+  async function handleQrFile(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      setError('Only JPEG, PNG, or WEBP images are allowed.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const presignRes = await authFetch('/api/uploads/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType: file.type, purpose: 'payout_qr' }),
+      });
+      const presignData = await presignRes.json();
+      if (!presignRes.ok) {
+        setError(presignData.error ?? 'Could not start the upload.');
+        return;
+      }
+      const putRes = await fetch(presignData.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      if (!putRes.ok) {
+        setError('Upload to storage failed. Try again.');
+        return;
+      }
+      setQrImageUrl(presignData.publicUrl);
+    } catch (err) {
+      console.error('R2 upload PUT failed:', err);
+      setError('Could not reach storage to upload this photo — check the browser console/Network tab for details.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
   async function submit() {
     setSubmitting(true);
     setError(null);
     setFieldErrors({});
     try {
       const body =
-        method === 'bank_account' ? { method, ...bankForm } : { method, vpa };
+        method === 'bank_account'
+          ? { method, ...bankForm }
+          : method === 'upi'
+            ? { method, vpa }
+            : { method, qrImageUrl };
       const res = await authFetch('/api/sellers/payout-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,6 +159,7 @@ export default function SellerPayoutsPage() {
       setEditing(false);
       setBankForm(EMPTY_BANK_FORM);
       setVpa('');
+      setQrImageUrl('');
       load();
     } finally {
       setSubmitting(false);
@@ -117,12 +171,12 @@ export default function SellerPayoutsPage() {
       <div>
         <h1 className="font-heading text-2xl font-semibold text-ink">Payouts</h1>
         <p className="mt-1 font-body text-sm text-ink-soft">
-          Where your online-order earnings go, and the record of what&apos;s been sent.
+          How WE Bohra pays you your online-order earnings, and the record of what&apos;s been sent.
         </p>
       </div>
 
       <section className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
-        <h2 className="font-heading text-lg font-semibold text-ink">Payout account</h2>
+        <h2 className="font-heading text-lg font-semibold text-ink">How you get paid</h2>
 
         {account === undefined ? (
           <Skeleton className="h-16" />
@@ -133,10 +187,10 @@ export default function SellerPayoutsPage() {
                 <Landmark className="h-4.5 w-4.5 text-navy" strokeWidth={1.75} />
               </span>
               <div>
-                <p className="font-body text-sm font-medium text-ink">{account.displayLabel}</p>
-                <p className="font-body text-xs text-ink-soft">
-                  {account.method === 'bank_account' ? 'Bank account' : 'UPI'}
+                <p className="font-body text-sm font-medium text-ink">
+                  {account.method === 'qr_image' ? 'QR code on file' : account.displayLabel}
                 </p>
+                <p className="font-body text-xs text-ink-soft">{METHOD_LABEL[account.method]}</p>
               </div>
             </div>
             <button onClick={() => setEditing(true)} className={buttonStyles('secondary', 'sm')}>
@@ -145,8 +199,8 @@ export default function SellerPayoutsPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="flex gap-1.5 rounded-full bg-ivory-deep p-1.5 w-fit">
-              {(['bank_account', 'upi'] as const).map((m) => (
+            <div className="flex flex-wrap gap-1.5 rounded-full bg-ivory-deep p-1.5 w-fit">
+              {(['upi', 'bank_account', 'qr_image'] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setMethod(m)}
@@ -154,12 +208,32 @@ export default function SellerPayoutsPage() {
                     method === m ? 'bg-navy text-ivory' : 'text-ink-soft hover:text-ink'
                   }`}
                 >
-                  {m === 'bank_account' ? 'Bank account' : 'UPI'}
+                  {METHOD_LABEL[m]}
                 </button>
               ))}
             </div>
 
-            {method === 'bank_account' ? (
+            {method === 'upi' && (
+              <div className="flex flex-col gap-1.5 sm:w-64">
+                <label htmlFor="payout-vpa" className="font-body text-xs font-medium text-ink-soft">
+                  UPI ID
+                </label>
+                <input
+                  id="payout-vpa"
+                  value={vpa}
+                  onChange={(e) => setVpa(e.target.value)}
+                  placeholder="name@bank"
+                  className={inputStyles}
+                />
+                {fieldErrors.vpa && <p className="font-body text-xs text-red-700">{fieldErrors.vpa}</p>}
+                <p className="font-body text-xs text-ink-soft">
+                  Recommended — lets WE Bohra show a ready-to-scan QR code with the exact amount already filled in
+                  every time you&apos;re paid.
+                </p>
+              </div>
+            )}
+
+            {method === 'bank_account' && (
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="payout-holder" className="font-body text-xs font-medium text-ink-soft">
@@ -205,26 +279,55 @@ export default function SellerPayoutsPage() {
                   )}
                 </div>
               </div>
-            ) : (
-              <div className="flex flex-col gap-1.5 sm:w-64">
-                <label htmlFor="payout-vpa" className="font-body text-xs font-medium text-ink-soft">
-                  UPI ID
-                </label>
+            )}
+
+            {method === 'qr_image' && (
+              <div className="flex flex-col gap-1.5">
+                <p className="font-body text-xs font-medium text-ink-soft">
+                  A saved screenshot of your UPI QR code — no amount will be pre-filled when Admin scans it, so
+                  UPI ID above is usually more convenient.
+                </p>
+                {qrImageUrl ? (
+                  <div className="relative w-fit">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={qrImageUrl} alt="" className="h-32 w-32 rounded-xl object-cover ring-1 ring-ink-soft/10" />
+                    <button
+                      onClick={() => setQrImageUrl('')}
+                      className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-ink text-ivory shadow-sm"
+                      aria-label="Remove"
+                    >
+                      <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex h-32 w-32 flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-ink-soft/20 text-ink-soft transition hover:border-navy/40 hover:text-navy"
+                  >
+                    {uploading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
+                    ) : (
+                      <ImagePlus className="h-5 w-5" strokeWidth={1.75} />
+                    )}
+                    <span className="font-body text-xs">{uploading ? 'Uploading…' : 'Upload QR code'}</span>
+                  </button>
+                )}
                 <input
-                  id="payout-vpa"
-                  value={vpa}
-                  onChange={(e) => setVpa(e.target.value)}
-                  placeholder="name@bank"
-                  className={inputStyles}
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ALLOWED_TYPES.join(',')}
+                  className="hidden"
+                  onChange={(e) => handleQrFile(e.target.files?.[0])}
                 />
-                {fieldErrors.vpa && <p className="font-body text-xs text-red-700">{fieldErrors.vpa}</p>}
+                {fieldErrors.qrImageUrl && <p className="font-body text-xs text-red-700">{fieldErrors.qrImageUrl}</p>}
               </div>
             )}
 
             {error && <p className="font-body text-sm text-red-700">{error}</p>}
 
             <div className="flex gap-2">
-              <button onClick={submit} disabled={submitting} className={buttonStyles('primary', 'sm')}>
+              <button onClick={submit} disabled={submitting || uploading} className={buttonStyles('primary', 'sm')}>
                 {submitting ? 'Saving…' : 'Save'}
               </button>
               {account && (
@@ -238,7 +341,7 @@ export default function SellerPayoutsPage() {
 
         {!account && account !== undefined && !editing && (
           <p className="font-body text-xs text-ink-soft">
-            Add your bank account or UPI ID above so a paid online order can actually pay you.
+            Add a UPI ID, bank account, or QR code above so a paid online order can actually pay you.
           </p>
         )}
       </section>

@@ -141,9 +141,22 @@ export const walletTransactionTypeEnum = pgEnum('wallet_transaction_type', [
   'admin_adjustment',
 ]);
 
-/** How a seller receives a payout — a real bank account, or a UPI VPA.
- *  Fulfillment & Subscriptions redesign, Phase 5c. */
-export const payoutMethodEnum = pgEnum('payout_method', ['bank_account', 'upi']);
+/** How a seller receives a payout. Fulfillment & Subscriptions redesign,
+ *  Phase 5c — redesigned 2026-09-03 away from RazorpayX Payouts as the
+ *  actual money-mover (not affordable/usable at this stage — the user's
+ *  own call) toward Admin paying her directly through her own banking/UPI
+ *  app, using whichever of these three she registered. 'upi' generates a
+ *  fresh, amount-pre-filled QR code at payout time from the standard UPI
+ *  deep-link format every UPI app already understands — no gateway
+ *  involved, no cost, works today. 'bank_account' still routes through
+ *  Razorpay's Contact/Fund Account APIs (confirmed working, unlike the
+ *  Payouts-send API) purely so the raw account number/IFSC never has to
+ *  sit in our own database — fetched live from Razorpay only when Admin
+ *  actually needs to see it. 'qr_image' is the fallback for a seller who
+ *  only has a saved QR screenshot and doesn't know her own VPA as text —
+ *  stored as a plain uploaded image, same as a portfolio photo; no
+ *  amount pre-fill is possible for a static image. */
+export const payoutMethodEnum = pgEnum('payout_method', ['upi', 'bank_account', 'qr_image']);
 
 /** Forward-only lifecycle of one payout attempt — 'processing' the moment
  *  the real RazorpayX payout call is made, 'processed'/'failed'/'reversed'
@@ -949,16 +962,28 @@ export const subscriptionSettings = pgTable('subscription_settings', {
 
 /**
  * One row per seller, at most — where her online-order earnings actually
- * go. Fulfillment & Subscriptions redesign, Phase 5c. Deliberately never
- * stores her real bank account number or UPI VPA: the moment she submits
- * one, it goes straight to RazorpayX (a real contact + fund_account) and
- * only their opaque ids come back here — same "the specialized third
- * party owns the sensitive data, we only ever store a pointer to it"
- * pattern as R2 owning image bytes and this codebase only storing the
- * resulting URL. `displayLabel` is the one human-readable trace of it
- * left in our own database, and it's deliberately masked
- * ("HDFC Bank •••• 1000" / "seller@upi"), built at submission time from
- * what Razorpay's fund_account response hands back.
+ * go, and how Admin pays her (see payoutMethodEnum's own comment for the
+ * 2026-09-03 redesign away from RazorpayX Payouts as the mover of money).
+ * Exactly one of the method-specific field groups below is populated,
+ * matching `method`:
+ *   - 'upi': upiVpa — stored directly, plain text. A UPI VPA is meant to
+ *     be shared to be paid (the same way a Venmo handle is), not
+ *     comparably sensitive to a bank account number, and it has to be
+ *     retrievable as real text to build the payout QR code's deep link —
+ *     there'd be nothing to gain from routing it through Razorpay first.
+ *   - 'bank_account': razorpayContactId/razorpayFundAccountId — the raw
+ *     account number/IFSC is never stored here at all. The moment she
+ *     submits one, it goes straight to Razorpay (a real contact +
+ *     fund_account, confirmed working independent of RazorpayX Payouts
+ *     being enabled) and only these opaque ids come back — same "the
+ *     specialized party owns the sensitive data, we only store a
+ *     pointer" pattern as R2 owning image bytes. Fetched live from
+ *     Razorpay only at the moment Admin actually needs to see it.
+ *   - 'qr_image': qrImageUrl — a plain uploaded image (R2), same pattern
+ *     as a portfolio photo.
+ * `displayLabel` is a masked summary ("HDFC Bank •••• 1000" /
+ * "seller@upi" / "QR code uploaded") for HER OWN confirmation screen —
+ * never what Admin uses to actually pay her.
  */
 export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
   id: serial('id').primaryKey(),
@@ -967,8 +992,10 @@ export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
     .unique()
     .references(() => users.id, { onDelete: 'cascade' }),
   method: payoutMethodEnum('method').notNull(),
-  razorpayContactId: varchar('razorpay_contact_id', { length: 100 }).notNull(),
-  razorpayFundAccountId: varchar('razorpay_fund_account_id', { length: 100 }).notNull().unique(),
+  upiVpa: varchar('upi_vpa', { length: 100 }),
+  razorpayContactId: varchar('razorpay_contact_id', { length: 100 }),
+  razorpayFundAccountId: varchar('razorpay_fund_account_id', { length: 100 }).unique(),
+  qrImageUrl: varchar('qr_image_url', { length: 500 }),
   displayLabel: varchar('display_label', { length: 100 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

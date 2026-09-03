@@ -258,15 +258,32 @@ export const listingImagesReorderSchema = z.object({
 });
 export type ListingImagesReorderInput = z.infer<typeof listingImagesReorderSchema>;
 
-export const uploadPresignSchema = z.object({
-  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp'], {
-    message: 'Only JPEG, PNG, or WEBP images are allowed',
-  }),
-  // Which product this photo is for — the R2 key is organized by seller and
-  // product slug (see lib/storage/r2.ts), and the route verifies she
-  // actually owns this listing before ever generating a presigned URL.
-  listingId: z.number().int().positive(),
-});
+// `purpose` defaults to 'listing' so every caller that predates this
+// (product/variant/field photos) keeps working unchanged with just
+// { contentType, listingId } — 'payout_qr' (Fulfillment & Subscriptions
+// redesign, Phase 5c payout redesign, 2026-09-03) doesn't need a
+// listingId at all, since a payout QR code belongs to the seller, not any
+// one listing. NOTE for whoever merges this branch alongside the
+// portfolio-photos branch (also in flight, also extends this same
+// schema with a 'portfolio' purpose): merge both into one
+// z.enum(['listing', 'portfolio', 'payout_qr']), don't let one silently
+// clobber the other.
+export const uploadPresignSchema = z
+  .object({
+    contentType: z.enum(['image/jpeg', 'image/png', 'image/webp'], {
+      message: 'Only JPEG, PNG, or WEBP images are allowed',
+    }),
+    purpose: z.enum(['listing', 'payout_qr']).default('listing'),
+    // Which product this photo is for — the R2 key is organized by seller
+    // and product slug (see lib/storage/r2.ts), and the route verifies she
+    // actually owns this listing before ever generating a presigned URL.
+    // Required only when purpose is 'listing' (the refine below).
+    listingId: z.number().int().positive().optional(),
+  })
+  .refine((data) => data.purpose !== 'listing' || data.listingId !== undefined, {
+    message: 'listingId is required for a product photo',
+    path: ['listingId'],
+  });
 export type UploadPresignInput = z.infer<typeof uploadPresignSchema>;
 
 export const orderCreateSchema = z.object({
@@ -750,7 +767,19 @@ export type AdminWalletAdjustmentInput = z.infer<typeof adminWalletAdjustmentSch
 // just the VPA. ifsc/vpa format checks mirror lib/razorpay-payouts.ts's
 // own regexes (kept in sync manually — small, stable formats, not worth a
 // shared import across a validation-schema/server-lib boundary).
+// Fulfillment & Subscriptions redesign, Phase 5c — redesigned 2026-09-03
+// (see payoutMethodEnum's own comment in db/schema.ts). 'upi' is listed
+// first since it's the preferred method — it's the only one Admin can pay
+// against with an amount-pre-filled QR code, rather than typing anything
+// by hand.
 export const sellerPayoutAccountSchema = z.discriminatedUnion('method', [
+  z.object({
+    method: z.literal('upi'),
+    vpa: z
+      .string()
+      .trim()
+      .regex(/^[\w.-]{2,256}@[a-zA-Z]{2,64}$/, 'Enter a valid UPI ID (e.g. name@bank)'),
+  }),
   z.object({
     method: z.literal('bank_account'),
     accountHolderName: nameField('Account holder name'),
@@ -765,11 +794,8 @@ export const sellerPayoutAccountSchema = z.discriminatedUnion('method', [
       .regex(/^\d{9,18}$/, 'Enter a valid account number (9-18 digits)'),
   }),
   z.object({
-    method: z.literal('upi'),
-    vpa: z
-      .string()
-      .trim()
-      .regex(/^[\w.-]{2,256}@[a-zA-Z]{2,64}$/, 'Enter a valid UPI ID (e.g. name@bank)'),
+    method: z.literal('qr_image'),
+    qrImageUrl: z.string().trim().min(1, 'Upload a QR code image first'),
   }),
 ]);
 export type SellerPayoutAccountInput = z.infer<typeof sellerPayoutAccountSchema>;
