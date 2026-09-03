@@ -11,6 +11,9 @@ import {
   MessageCircle,
   Truck,
   Users2,
+  Landmark,
+  Flag,
+  XCircle,
 } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { StatGridSkeleton } from '@/components/skeleton';
@@ -30,6 +33,9 @@ type Dashboard = {
   enquiries: { total: number; pending: number; slow: number };
   whatsappContacts: { total: number };
   pickups: { pending: number };
+  payouts: { pendingCount: number; pendingAmount: number; failedCount: number };
+  disputes: { openCount: number };
+  refunds: { failedCount: number };
 };
 
 export default function AdminDashboardPage() {
@@ -55,6 +61,56 @@ export default function AdminDashboardPage() {
         <StatGridSkeleton count={8} />
       ) : (
         <>
+          {/* Priority items — 2026-09-03 redesign, the things most likely
+           *  to need Admin's attention TODAY (settlements, disputes, failed
+           *  money-movement) always shown first, ahead of the standing
+           *  totals below. */}
+          {data.payouts.pendingCount > 0 && (
+            <Link
+              href="/admin/payouts"
+              className="flex items-center gap-3 rounded-2xl border border-navy/15 bg-navy/5 p-4 transition hover:bg-navy/10"
+            >
+              <Landmark className="h-5 w-5 shrink-0 text-navy" strokeWidth={2} />
+              <p className="font-body text-sm text-ink">
+                <strong>₹{data.payouts.pendingAmount.toLocaleString('en-IN')}</strong> pending settlement
+                across <strong>{data.payouts.pendingCount}</strong> payout{data.payouts.pendingCount === 1 ? '' : 's'}.
+              </p>
+            </Link>
+          )}
+          {data.disputes.openCount > 0 && (
+            <Link
+              href="/admin/disputes"
+              className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 transition hover:bg-red-100"
+            >
+              <Flag className="h-5 w-5 shrink-0 text-red-600" strokeWidth={2} />
+              <p className="font-body text-sm text-ink">
+                <strong>{data.disputes.openCount}</strong> dispute{data.disputes.openCount === 1 ? '' : 's'} open
+                or under investigation.
+              </p>
+            </Link>
+          )}
+          {(data.payouts.failedCount > 0 || data.refunds.failedCount > 0) && (
+            <Link
+              href="/admin/payouts?status=failed"
+              className="flex items-center gap-3 rounded-2xl border border-gold/30 bg-gold-soft/15 p-4 transition hover:bg-gold-soft/25"
+            >
+              <XCircle className="h-5 w-5 shrink-0 text-gold" strokeWidth={2} />
+              <p className="font-body text-sm text-ink">
+                {data.payouts.failedCount > 0 && (
+                  <>
+                    <strong>{data.payouts.failedCount}</strong> payout{data.payouts.failedCount === 1 ? '' : 's'} failed
+                  </>
+                )}
+                {data.payouts.failedCount > 0 && data.refunds.failedCount > 0 && ' · '}
+                {data.refunds.failedCount > 0 && (
+                  <>
+                    <strong>{data.refunds.failedCount}</strong> refund{data.refunds.failedCount === 1 ? '' : 's'} failed
+                  </>
+                )}
+                {' '}— needs a retry.
+              </p>
+            </Link>
+          )}
           {data.sellers.pendingVerification > 0 && (
             <Link
               href="/admin/sellers?verified=pending"
@@ -97,6 +153,8 @@ export default function AdminDashboardPage() {
             <StatCard icon={Users2} label="Registered buyers" value={data.buyers.total} />
             <StatCard icon={Package} label="Live products" value={data.listings.active} sub={`${data.listings.total} total`} />
             <StatCard icon={ShoppingBag} label="Orders (30d)" value={data.orders.last30d} sub={`${data.orders.total} total`} />
+            <StatCard icon={Landmark} label="Payouts pending" value={data.payouts.pendingCount} sub={`₹${data.payouts.pendingAmount.toLocaleString('en-IN')}`} />
+            <StatCard icon={Flag} label="Open disputes" value={data.disputes.openCount} />
             <StatCard icon={MessageSquare} label="Enquiries" value={data.enquiries.total} sub={`${data.enquiries.pending} pending`} />
             <StatCard icon={MessageCircle} label="WhatsApp handoffs" value={data.whatsappContacts.total} />
             <StatCard icon={Package} label="Draft products" value={data.listings.draft} />
@@ -130,8 +188,9 @@ export default function AdminDashboardPage() {
               ₹{data.orders.grossValue.toLocaleString('en-IN')}
             </p>
             <p className="mt-1 font-body text-xs text-ink-soft">
-              Reflects placed orders only — no payment gateway is live yet, so this is order-intent
-              value, not collected revenue.
+              Reflects placed orders only — a COD order counts as order-intent value (nothing&apos;s
+              actually collected until delivery), an online order only counts once it&apos;s genuinely
+              paid.
             </p>
           </div>
         </>

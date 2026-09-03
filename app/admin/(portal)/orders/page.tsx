@@ -1,15 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Search, ShoppingBag, X } from 'lucide-react';
+import Link from 'next/link';
+import { Search, ShoppingBag } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { inputStyles } from '@/lib/button-styles';
 import { TableSkeleton } from '@/components/skeleton';
-import {
-  ORDER_ITEM_STATUS_LABEL,
-  nextStage,
-  type OrderItemStatus,
-} from '@/lib/order-item-status';
 
 type Order = {
   orderNumber: string;
@@ -17,52 +13,24 @@ type Order = {
   buyerPhone: string;
   city: string;
   paymentMethod: 'cod' | 'online';
-  paymentStatus: 'pending' | 'paid' | 'failed' | null;
+  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded' | null;
   status: 'placed' | 'cancelled';
   createdAt: string;
   itemCount: number;
   total: number;
 };
 
-type OrderDetailItem = {
-  id: number;
-  listingId: number;
-  quantity: number;
-  unitPrice: string;
-  title: string;
-  subcategoryName: string;
-  businessName: string | null;
-  variantName: string | null;
-  status: OrderItemStatus;
-  statusUpdatedAt: string | null;
-};
-
-type OrderDetail = {
-  order: {
-    orderNumber: string;
-    buyerName: string;
-    addressLine1: string;
-    addressLine2: string | null;
-    city: string;
-    state: string;
-    pincode: string;
-    paymentMethod: string;
-    paymentStatus: 'pending' | 'paid' | 'failed' | null;
-    status: string;
-    createdAt: string;
-  };
-  items: OrderDetailItem[];
-};
-
-const PAYMENT_STATUS_CLASS: Record<'pending' | 'paid' | 'failed', string> = {
+const PAYMENT_STATUS_CLASS: Record<'pending' | 'paid' | 'failed' | 'refunded', string> = {
   pending: 'bg-gold/15 text-gold-soft',
   paid: 'bg-teal/10 text-teal-deep',
   failed: 'bg-red-50 text-red-600',
+  refunded: 'bg-navy/10 text-navy',
 };
-const PAYMENT_STATUS_LABEL: Record<'pending' | 'paid' | 'failed', string> = {
+const PAYMENT_STATUS_LABEL: Record<'pending' | 'paid' | 'failed' | 'refunded', string> = {
   pending: 'Payment pending',
   paid: 'Paid',
   failed: 'Payment failed',
+  refunded: 'Refunded',
 };
 
 const STATUS_CLASS: Record<Order['status'], string> = {
@@ -70,11 +38,17 @@ const STATUS_CLASS: Record<Order['status'], string> = {
   cancelled: 'bg-red-50 text-red-600',
 };
 
+/**
+ * /admin/orders — every order, deliberately INCLUDING an 'online' order
+ * that hasn't been paid for yet (see the list API's own comment). Rows
+ * link through to /admin/orders/[orderNumber] — the "whole transaction"
+ * view (item status, real payment record, seller payouts, refunds,
+ * disputes) — this page itself is deliberately just the filterable list.
+ */
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [status, setStatus] = useState<'all' | Order['status']>('all');
   const [q, setQ] = useState('');
-  const [selected, setSelected] = useState<OrderDetail | null>(null);
 
   async function load() {
     setOrders(null);
@@ -90,22 +64,6 @@ export default function AdminOrdersPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
-
-  async function openOrder(orderNumber: string) {
-    const res = await fetch(`/api/orders/${orderNumber}`);
-    const data = await res.json();
-    setSelected(data);
-  }
-
-  async function advanceStatus(itemId: number, status: OrderItemStatus) {
-    if (!selected) return;
-    const res = await authFetch(`/api/admin/orders/${selected.order.orderNumber}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ itemId, status }),
-    });
-    if (res.ok) openOrder(selected.order.orderNumber);
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -169,12 +127,12 @@ export default function AdminOrdersPage() {
             </thead>
             <tbody>
               {orders.map((o) => (
-                <tr
-                  key={o.orderNumber}
-                  onClick={() => openOrder(o.orderNumber)}
-                  className="cursor-pointer border-b border-ink-soft/5 last:border-0 hover:bg-ivory-deep/40"
-                >
-                  <td className="px-4 py-3 font-medium text-ink">{o.orderNumber}</td>
+                <tr key={o.orderNumber} className="border-b border-ink-soft/5 last:border-0 hover:bg-ivory-deep/40">
+                  <td className="p-0">
+                    <Link href={`/admin/orders/${o.orderNumber}`} className="block px-4 py-3 font-medium text-ink">
+                      {o.orderNumber}
+                    </Link>
+                  </td>
                   <td className="px-2 py-3 text-ink-soft">{o.buyerName}</td>
                   <td className="px-2 py-3 text-ink-soft">{o.city}</td>
                   <td className="px-2 py-3 text-ink-soft">{o.itemCount}</td>
@@ -202,93 +160,6 @@ export default function AdminOrdersPage() {
           </table>
         </div>
       )}
-
-      {selected && (
-        <OrderDetailModal detail={selected} onClose={() => setSelected(null)} onAdvance={advanceStatus} />
-      )}
-    </div>
-  );
-}
-
-const ITEM_STATUS_CLASS: Record<OrderItemStatus, string> = {
-  placed: 'bg-ivory-deep text-ink-soft',
-  packed: 'bg-gold/15 text-gold-soft',
-  shipped: 'bg-navy/10 text-navy',
-  delivered: 'bg-teal/15 text-teal-deep',
-};
-
-function OrderDetailModal({
-  detail,
-  onClose,
-  onAdvance,
-}: {
-  detail: OrderDetail;
-  onClose: () => void;
-  onAdvance: (itemId: number, status: OrderItemStatus) => void;
-}) {
-  const total = detail.items.reduce((sum, item) => sum + Number(item.unitPrice) * item.quantity, 0);
-  const cancelled = detail.order.status === 'cancelled';
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4 backdrop-blur-sm">
-      <button aria-hidden="true" tabIndex={-1} onClick={onClose} className="absolute inset-0" />
-      <div className="relative flex max-h-[85vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-black/5">
-        <div className="flex items-start justify-between">
-          <h2 className="font-heading text-lg font-semibold text-ink">Order {detail.order.orderNumber}</h2>
-          <button onClick={onClose} className="rounded-full p-1.5 text-ink-soft hover:bg-ivory-deep hover:text-ink" aria-label="Close">
-            <X className="h-4 w-4" strokeWidth={2} />
-          </button>
-        </div>
-
-        <div className="rounded-xl bg-ivory-deep/60 p-4 font-body text-sm text-ink-soft">
-          <p className="font-medium text-ink">{detail.order.buyerName}</p>
-          <p>{detail.order.addressLine1}{detail.order.addressLine2 ? `, ${detail.order.addressLine2}` : ''}</p>
-          <p>{detail.order.city}, {detail.order.state} {detail.order.pincode}</p>
-          <p className="mt-1">
-            Payment: {detail.order.paymentMethod.toUpperCase()}
-            {detail.order.paymentMethod === 'online' &&
-              ` (${PAYMENT_STATUS_LABEL[detail.order.paymentStatus ?? 'pending']})`}{' '}
-            · Status: {detail.order.status}
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-3">
-          {detail.items.map((item) => {
-            const next = nextStage(item.status);
-            return (
-              <div key={item.id} className="flex flex-col gap-2 rounded-xl bg-ivory-deep/40 p-3">
-                <div className="flex items-center justify-between font-body text-sm">
-                  <div>
-                    <p className="text-ink">
-                      {item.title}
-                      {item.variantName && ` — ${item.variantName}`} × {item.quantity}
-                    </p>
-                    <p className="text-xs text-ink-soft">{item.businessName ?? 'Unknown seller'}</p>
-                  </div>
-                  <p className="text-ink">₹{(Number(item.unitPrice) * item.quantity).toLocaleString('en-IN')}</p>
-                </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`rounded-full px-2.5 py-1 font-body text-xs font-semibold ${ITEM_STATUS_CLASS[item.status]}`}>
-                    {ORDER_ITEM_STATUS_LABEL[item.status]}
-                  </span>
-                  {!cancelled && next && (
-                    <button
-                      onClick={() => onAdvance(item.id, next)}
-                      className="rounded-full bg-navy px-3 py-1.5 font-body text-xs font-semibold text-ivory transition hover:bg-navy-deep"
-                    >
-                      Mark as {ORDER_ITEM_STATUS_LABEL[next]}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center justify-between border-t border-ink-soft/10 pt-3 font-body text-sm font-semibold text-ink">
-          <span>Total</span>
-          <span>₹{total.toLocaleString('en-IN')}</span>
-        </div>
-      </div>
     </div>
   );
 }

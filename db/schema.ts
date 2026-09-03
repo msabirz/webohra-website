@@ -141,6 +141,48 @@ export const walletTransactionTypeEnum = pgEnum('wallet_transaction_type', [
   'admin_adjustment',
 ]);
 
+/** How a seller receives a payout. Fulfillment & Subscriptions redesign,
+ *  Phase 5c — redesigned 2026-09-03 away from RazorpayX Payouts as the
+ *  actual money-mover (not affordable/usable at this stage — the user's
+ *  own call) toward Admin paying her directly through her own banking/UPI
+ *  app, using whichever of these two she registered. Both route through
+ *  Razorpay's Contact/Fund Account APIs (confirmed working, unlike the
+ *  Payouts-send API, and confirmed the 'vpa' fund-account type works just
+ *  as well as 'bank_account') purely so the raw VPA/account number/IFSC
+ *  never has to sit in our own database even briefly — fetched live from
+ *  Razorpay only when Admin actually needs to see it. At payout time,
+ *  'upi' additionally generates a fresh, amount-pre-filled QR code from
+ *  the standard UPI deep-link format every UPI app already understands
+ *  (lib/upi-qr.ts) — no gateway involved for that step, no extra cost.
+ *  There used to be a third method, 'qr_image' (a seller-uploaded QR
+ *  screenshot) — dropped 2026-09-03, user's own call, since it only
+ *  duplicated what 'upi' already gets her for free, minus the correct
+ *  amount being pre-filled. Do not resurrect it via Razorpay's QR Code API
+ *  — that product generates a QR that credits WE Bohra's OWN account when
+ *  scanned (it's a collection tool), the opposite of what a seller payout
+ *  needs; confirmed it's also not enabled on this merchant anyway. */
+export const payoutMethodEnum = pgEnum('payout_method', ['upi', 'bank_account']);
+
+/** Forward-only lifecycle of one payout attempt — 'processing' the moment
+ *  the real RazorpayX payout call is made, 'processed'/'failed'/'reversed'
+ *  once RazorpayX resolves it (reversed covers a payout that succeeded and
+ *  was later reversed by the bank, e.g. an invalid account). */
+export const payoutStatusEnum = pgEnum('payout_status', [
+  'pending',
+  'processing',
+  'processed',
+  'failed',
+  'reversed',
+]);
+
+/** Which of the two genuinely different paths actually moved (or claims to
+ *  have moved) the money for a 'processed' payout — never inferred, always
+ *  recorded explicitly, specifically so a non-technical admin looking at
+ *  payout history can never confuse "RazorpayX really sent this" with "a
+ *  staff member typed that she sent it herself." Null until a payout
+ *  leaves 'pending'/'failed'. */
+export const payoutChannelEnum = pgEnum('payout_channel', ['razorpayx', 'manual']);
+
 // ---------------------------------------------------------------------------
 // Tables
 // ---------------------------------------------------------------------------
@@ -505,8 +547,14 @@ export const paymentMethodEnum = pgEnum('payment_method', ['cod', 'online']);
 
 /** Only ever meaningful for paymentMethod: 'online' — null for every COD
  *  order (see orders.paymentStatus' own comment for why null, not
- *  'pending', is the honest value there). */
-export const orderPaymentStatusEnum = pgEnum('order_payment_status', ['pending', 'paid', 'failed']);
+ *  'pending', is the honest value there). 'refunded' (added 2026-09-03,
+ *  admin refunds — see the refunds table below) is set only once the FULL
+ *  paid amount has been refunded across one or more refund rows; a
+ *  partial refund leaves this at 'paid' — the refunds table's own sum is
+ *  the source of truth for exactly how much has actually gone back, and
+ *  the admin order-detail UI always shows both figures together rather
+ *  than collapsing partial refunds into a single misleading status. */
+export const orderPaymentStatusEnum = pgEnum('order_payment_status', ['pending', 'paid', 'failed', 'refunded']);
 
 /** Cancellation is only offered while an order is still 'placed' — the
  *  finer-grained fulfillment progress (packed/shipped/delivered) lives per
@@ -516,14 +564,23 @@ export const orderStatusEnum = pgEnum('order_status', ['placed', 'cancelled']);
 
 /** Per-item fulfillment progress — deliberately separate from orders.status
  *  because a single order can span several sellers (see order_items.seller_id),
- *  each fulfilling on her own timeline. Forward-only: the API never lets a
- *  seller or admin move an item backward once recorded, same "never
- *  fabricate progress it can't back up" rule as enquiry_status. */
+ *  each fulfilling on her own timeline. Forward-only among
+ *  placed/packed/shipped/delivered: the API never lets a seller or admin
+ *  move an item backward once recorded, same "never fabricate progress it
+ *  can't back up" rule as enquiry_status. 'cancelled' (added 2026-09-03,
+ *  Admin Panel cancel-items tooling) is a side-branch, not part of that
+ *  linear sequence — reachable from any of the other four EXCEPT
+ *  'delivered' (a return after delivery is a refund without un-delivering
+ *  it, via the plain refund action, not this), never advanced further once
+ *  reached. See lib/order-item-status.ts's own comment for the full type
+ *  story (ORDER_ITEM_STAGES stays the 4-value linear list; OrderItemStatus
+ *  is that plus 'cancelled'). */
 export const orderItemStatusEnum = pgEnum('order_item_status', [
   'placed',
   'packed',
   'shipped',
   'delivered',
+  'cancelled',
 ]);
 
 /**
@@ -531,11 +588,11 @@ export const orderItemStatusEnum = pgEnum('order_item_status', [
  * Buy Now/Add to Cart + Checkout — named there specifically so it wouldn't
  * be discovered mid-build. Records genuine buyer intent and a real shipping
  * address regardless of paymentMethod. `online` (Fulfillment &
- * Subscriptions redesign, Phase 5b) is real Razorpay payment, but only ever
- * offered when every item in the cart is from the same seller — Phase 5c's
- * Route integration is what will let a multi-seller cart pay online too, by
- * splitting the payout at the gateway; until then a multi-seller cart stays
- * COD-only, same as before this phase.
+ * Subscriptions redesign, Phase 5b) is real Razorpay payment against the
+ * full cart total, any number of sellers included — see
+ * app/api/orders/route.ts's own comment for why this no longer needs a
+ * single-seller cart (lifted 2026-09-03 once Phase 5c's payout design
+ * stopped depending on Razorpay Route, which never got enabled anyway).
  */
 export const orders = pgTable('orders', {
   id: serial('id').primaryKey(),
@@ -608,6 +665,14 @@ export const orderItems = pgTable('order_items', {
   status: orderItemStatusEnum('status').notNull().default('placed'),
   // Set whenever status changes — null until the first update past 'placed'.
   statusUpdatedAt: timestamp('status_updated_at', { withTimezone: true }),
+  // Admin's required note explaining why — set only alongside status:
+  // 'cancelled' (2026-09-03, Admin Panel cancel-items tooling), same "an
+  // unexplained real-money-adjacent event is never acceptable" reasoning
+  // as payouts.manualNote and refunds.reason. Kept here even when the same
+  // cancellation also produced a real refund row (whose own `reason` is
+  // this exact text) — a COD order has no refund row to fall back on for
+  // "why," so the audit trail needs to live on the item itself either way.
+  cancelledReason: varchar('cancelled_reason', { length: 300 }),
   // Null for an order against a simple listing (today's whole history) —
   // set when it was a specific type of a variant-based listing. onDelete:
   // 'set null' (not 'restrict' or 'cascade') deliberately: a seller
@@ -617,6 +682,102 @@ export const orderItems = pgTable('order_items', {
   // variant is renamed or gone.
   variantId: integer('variant_id').references(() => listingVariants.id, { onDelete: 'set null' }),
   variantName: varchar('variant_name', { length: 100 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** A refund attempt's own lifecycle — separate from orders.paymentStatus
+ *  (which only ever reflects the CUMULATIVE effect across every refund row
+ *  for that order). Razorpay returns 'processed' immediately for most
+ *  instant refunds but can also return a real 'processing'/'failed', so
+ *  this isn't collapsed down to a boolean. */
+export const refundStatusEnum = pgEnum('refund_status', ['processing', 'processed', 'failed']);
+
+/**
+ * One row per refund attempt on an online-paid order — Admin Panel
+ * transaction/dispute/refund tooling, 2026-09-03. Always a REAL Razorpay
+ * refund (confirmed the `/v1/payments/{id}/refund` endpoint is reachable
+ * on this account, unlike Route/Payouts/QR Codes) — money genuinely goes
+ * back to the buyer's original payment method; there is deliberately no
+ * "record-only" manual refund path, unlike payouts' manual fallback,
+ * since a refund's whole point is the buyer actually getting her money
+ * back, not just a bookkeeping entry. Supports partial refunds: more than
+ * one row can exist per order, and the sum of 'processed' rows is the
+ * source of truth for how much has actually been returned — orders.
+ * paymentStatus only flips to 'refunded' once that sum reaches the
+ * originally paid amount. Deliberately does NOT automatically claw back
+ * or adjust any seller payout already sent for this order (user's own
+ * call, 2026-09-03) — the admin refund screen just shows a clear warning
+ * when one already went out, and recovering it from the seller is a
+ * manual, off-platform matter for Admin to handle herself.
+ */
+export const refunds = pgTable('refunds', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id')
+    .notNull()
+    .references(() => orders.id, { onDelete: 'cascade' }),
+  razorpayRefundId: varchar('razorpay_refund_id', { length: 100 }).unique(),
+  amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
+  // Required, same "an unexplained real-money event is never acceptable"
+  // rule as wallet_transactions' admin_adjustment rows and payouts'
+  // manualNote — this is the only record of WHY money went back.
+  reason: varchar('reason', { length: 300 }).notNull(),
+  status: refundStatusEnum('status').notNull().default('processing'),
+  failureReason: varchar('failure_reason', { length: 300 }),
+  initiatedByStaffId: integer('initiated_by_staff_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+});
+
+export const disputeStatusEnum = pgEnum('dispute_status', ['open', 'investigating', 'resolved']);
+
+/**
+ * A tracked dispute against an order — Admin Panel transaction/dispute/
+ * refund tooling, 2026-09-03, built as a full status workflow per the
+ * user's own choice over a plain free-text note. One order can have more
+ * than one dispute row over time (a resolved issue re-opening later is a
+ * new dispute, not a reopened old one — keeps each row's timeline
+ * honest), but the API only ever allows ONE 'open'/'investigating'
+ * dispute per order at once — see lib/disputes.ts's openDispute — so
+ * duplicate active threads for the same order can't pile up.
+ */
+export const disputes = pgTable('disputes', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id')
+    .notNull()
+    .references(() => orders.id, { onDelete: 'cascade' }),
+  status: disputeStatusEnum('status').notNull().default('open'),
+  // The initial complaint/reason — required, same reasoning as refunds.reason.
+  reason: varchar('reason', { length: 500 }).notNull(),
+  assignedToStaffId: integer('assigned_to_staff_id').references(() => users.id, { onDelete: 'set null' }),
+  createdByStaffId: integer('created_by_staff_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+});
+
+/**
+ * The timeline for one dispute — every status change and every staff note
+ * lands here as its own row, so "who did what, when" is never lost the way
+ * a single mutable `resolutionNote` field would lose it. `note` is
+ * optional on its own (a pure status change, e.g. assigning someone, can
+ * carry no comment) but at least one of note/statusChangedTo is always
+ * set — enforced in lib/disputes.ts, not the schema, same pattern as
+ * other "at least one of X" invariants in this codebase.
+ */
+export const disputeComments = pgTable('dispute_comments', {
+  id: serial('id').primaryKey(),
+  disputeId: integer('dispute_id')
+    .notNull()
+    .references(() => disputes.id, { onDelete: 'cascade' }),
+  staffId: integer('staff_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  note: varchar('note', { length: 1000 }),
+  statusChangedTo: disputeStatusEnum('status_changed_to'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -899,8 +1060,118 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   bonusListingCommissionPercent: numeric('bonus_listing_commission_percent', { precision: 5, scale: 2 })
     .notNull()
     .default('10.00'),
+  // Fulfillment & Subscriptions redesign, Phase 5c — WeBohra's cut of a
+  // normal (non-bonus) online order, taken out of a seller's payout (see
+  // payouts.commissionAmount). Applies only to the product/service sale
+  // portion of her share, never to shipping — a self-managed shipping
+  // charge is her own declared cost of actually shipping the order, not
+  // revenue WeBohra takes a percentage of.
+  orderCommissionPercent: numeric('order_commission_percent', { precision: 5, scale: 2 })
+    .notNull()
+    .default('10.00'),
+  // The stakeholder-approval switch for real RazorpayX transfers —
+  // deliberately separate from (and independent of) whether
+  // RAZORPAYX_ACCOUNT_NUMBER is technically configured. That env var only
+  // ever says the plumbing is ready; it must never be what turns real
+  // money-movement on by itself. Off by default. Only a super_admin can
+  // flip this (see PATCH /api/admin/subscription-settings' own comment) —
+  // deliberately a narrower gate than the rest of this table, which any
+  // admin can edit. lib/payouts.ts's sendPayout refuses to even attempt a
+  // RazorpayX call while this is false, regardless of anything else being
+  // ready.
+  razorpayxPayoutsEnabled: boolean('razorpayx_payouts_enabled').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One row per seller, at most — where her online-order earnings actually
+ * go, and how Admin pays her (see payoutMethodEnum's own comment for the
+ * 2026-09-03 redesign away from RazorpayX Payouts as the mover of money).
+ * Both methods share the same field group — razorpayContactId/
+ * razorpayFundAccountId — her raw VPA/account number/IFSC is never stored
+ * here at all (confirmed 2026-09-03 that Razorpay Fund Accounts support
+ * account_type: 'vpa' just as well as 'bank_account' on this merchant).
+ * The moment she submits either one, it goes straight to Razorpay (a real
+ * contact + fund_account) and only these opaque ids come back — same "the
+ * specialized party owns the sensitive data, we only store a pointer"
+ * pattern as R2 owning image bytes. Fetched live from Razorpay only at the
+ * moment Admin actually needs to see it
+ * (lib/razorpay-payouts.ts's getUpiFundAccountDetails /
+ * getBankFundAccountDetails) — nothing sensitive sits in our database
+ * even briefly. `displayLabel` is a masked summary ("HDFC Bank •••• 1000"
+ * / "UPI ID on file") for HER OWN confirmation screen — never what Admin
+ * uses to actually pay her.
+ */
+export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
+  id: serial('id').primaryKey(),
+  sellerId: integer('seller_id')
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  method: payoutMethodEnum('method').notNull(),
+  razorpayContactId: varchar('razorpay_contact_id', { length: 100 }),
+  razorpayFundAccountId: varchar('razorpay_fund_account_id', { length: 100 }).unique(),
+  displayLabel: varchar('display_label', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One row per (order, seller) — her share of one paid online order, and
+ * the record of actually paying it out to her. Fulfillment &
+ * Subscriptions redesign, Phase 5c. Created the moment an order's
+ * paymentStatus becomes 'paid' (see lib/payouts.ts's createPayoutsForOrder)
+ * — one row per seller represented in that order, whether it's one seller
+ * or several; the split logic here has never depended on Route, which is
+ * exactly what makes it work the same regardless of how many sellers are
+ * in the order. `grossAmount`/`commissionAmount`/`netAmount` are computed
+ * and frozen at that moment, same snapshot-at-write-time discipline as
+ * order_items.unitPrice — a later change to the commission rate or her
+ * listings never rewrites a payout that's already been recorded.
+ * Actually sending the money (the real RazorpayX payout call) is a
+ * separate, explicit step — see status.
+ */
+export const payouts = pgTable('payouts', {
+  id: serial('id').primaryKey(),
+  orderId: integer('order_id')
+    .notNull()
+    .references(() => orders.id, { onDelete: 'restrict' }),
+  sellerId: integer('seller_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  // Her order_items subtotal for this order, plus her own shipment's
+  // charge if self-managed — what the buyer's payment actually covered
+  // for her specific portion.
+  grossAmount: numeric('gross_amount', { precision: 10, scale: 2 }).notNull(),
+  // Computed on the product/service subtotal only, never on shipping —
+  // see subscription_settings.orderCommissionPercent's own comment.
+  commissionAmount: numeric('commission_amount', { precision: 10, scale: 2 }).notNull(),
+  // grossAmount - commissionAmount — what actually gets paid out to her.
+  netAmount: numeric('net_amount', { precision: 10, scale: 2 }).notNull(),
+  status: payoutStatusEnum('status').notNull().default('pending'),
+  // Set once a real payout attempt has been made (status moves past
+  // 'pending') — unique, nulls excepted, same convention as every other
+  // gateway-id column in this codebase.
+  razorpayPayoutId: varchar('razorpay_payout_id', { length: 100 }).unique(),
+  // Set on 'failed' — e.g. "RazorpayX payouts aren't configured yet" or a
+  // real bank-side rejection reason, so Admin isn't just staring at a
+  // status with no explanation.
+  failureReason: varchar('failure_reason', { length: 300 }),
+  // Which path actually moved the money — see payoutChannelEnum's own
+  // comment. Null until 'processed'.
+  channel: payoutChannelEnum('channel'),
+  // Who took the action that produced the current status — the RazorpayX
+  // sender or the staff member recording a manual payment, either way.
+  actionedByStaffId: integer('actioned_by_staff_id').references(() => users.id, { onDelete: 'set null' }),
+  // Required when channel is 'manual' — her own record of how she actually
+  // paid ("NEFT, ref #123456, 3 Sept"), since there's no gateway response
+  // to fall back on for what happened. Same "an unexplained real-money
+  // event is never acceptable" reasoning as wallet_transactions.reason on
+  // an admin_adjustment row.
+  manualNote: varchar('manual_note', { length: 300 }),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 /**

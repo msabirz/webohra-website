@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { orders, orderItems, listings, subcategories, shipments } from '@/db/schema';
 import { getSessionFromRequest } from '@/lib/auth';
-import { isForwardMove, isOrderItemStatus } from '@/lib/order-item-status';
+import { isForwardMove, isOrderItemStage } from '@/lib/order-item-status';
 
 /**
  * GET /api/sellers/orders/[orderNumber] — order detail, scoped to only the
@@ -25,11 +25,18 @@ export async function GET(
   const sellerId = Number(session.sub);
 
   const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber));
-  if (!order || (order.paymentMethod === 'online' && order.paymentStatus !== 'paid')) {
-    // An unpaid online order isn't real work for her yet — same 404 as a
-    // genuinely nonexistent order, not just hidden from the list (see
-    // GET /api/sellers/orders' own comment), so a guessed order number
-    // can't be used to peek at it either.
+  // An unpaid online order isn't real work for her yet — same 404 as a
+  // genuinely nonexistent order, not just hidden from the list (see
+  // GET /api/sellers/orders' own comment), so a guessed order number
+  // can't be used to peek at it either. 'refunded' (added 2026-09-03) is
+  // explicitly allowed through here alongside 'paid' — it WAS real,
+  // possibly-already-fulfilled work, and she needs continued visibility
+  // into it (e.g. to know to stop fulfilling), unlike an order that was
+  // never paid for at all.
+  if (
+    !order ||
+    (order.paymentMethod === 'online' && order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded')
+  ) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
@@ -73,6 +80,7 @@ export async function GET(
       state: order.state,
       pincode: order.pincode,
       paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
       status: order.status,
       createdAt: order.createdAt,
     },
@@ -102,11 +110,20 @@ export async function PATCH(
   const itemId = Number(body?.itemId);
   const status = body?.status;
 
-  if (!itemId || !isOrderItemStatus(status)) {
+  // Only a real fulfillment stage is a valid target — cancelling an item
+  // (added 2026-09-03) is Admin-only, via a separate action that also
+  // handles the refund; she can never reach it through her own advance-
+  // status route.
+  if (!itemId || !isOrderItemStage(status)) {
     return NextResponse.json({ error: 'itemId and a valid status are required' }, { status: 400 });
   }
 
   const [order] = await db.select().from(orders).where(eq(orders.orderNumber, orderNumber));
+  // Deliberately NOT extended to allow 'refunded' through here the way
+  // GET above was — she can still see a refunded order, but advancing its
+  // fulfillment status further would be wrong once the money's already
+  // gone back to the buyer, so this keeps blocking on anything other than
+  // a currently-real 'paid' state.
   if (!order || (order.paymentMethod === 'online' && order.paymentStatus !== 'paid')) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }

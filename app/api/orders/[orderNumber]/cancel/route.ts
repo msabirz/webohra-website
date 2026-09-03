@@ -13,12 +13,15 @@ import { orders } from '@/db/schema';
  * one flat state (see orderStatusEnum in db/schema.ts).
  *
  * A pending/failed online order cancels the same as any COD order — she
- * simply gave up on paying, nothing to refund. An already-paid online
- * order is a different matter (Fulfillment & Subscriptions redesign, Phase
- * 5b) — no refund mechanism exists yet, so self-cancelling it would make
- * real money vanish into the platform with nothing to show for it on
- * either side. Blocked here rather than silently "succeeding" with no
- * actual refund behind it.
+ * simply gave up on paying, nothing to refund. An already-'paid' online
+ * order is a different matter — self-cancelling it would make real money
+ * vanish into the platform with nothing to show for it on either side, so
+ * it's blocked here; getting her money back is Admin's real refund action
+ * (POST /api/admin/orders/[orderNumber]/refund, Admin Panel transaction/
+ * dispute/refund tooling, 2026-09-03), not something she can self-serve.
+ * A 'refunded' order isn't blocked by this check (it isn't 'paid') — by
+ * the time it's refunded there's genuinely nothing left to lose by letting
+ * her close it out herself.
  */
 export async function POST(
   _request: Request,

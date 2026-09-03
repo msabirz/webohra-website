@@ -125,6 +125,46 @@ export function verifyRazorpayWebhookSignature(rawBody: string, signature: strin
   return safeEqualHex(expected, signature);
 }
 
+export type RazorpayRefund = {
+  id: string;
+  amount: number;
+  status: string;
+};
+
+/**
+ * Issues a real refund against an already-captured payment — Admin Panel
+ * transaction/dispute/refund tooling, 2026-09-03. Confirmed reachable on
+ * this account directly (POST /v1/payments/{id}/refund returns a genuine
+ * "payment not found" for a made-up id, not the "URL not found"/"feature
+ * not enabled" pattern Route, Payouts, and QR Codes all returned — this
+ * one just works). `notes.reason` rides along on the Razorpay side too,
+ * purely for their dashboard; our own source of truth is the `refunds`
+ * table row this backs (see its own schema comment). Supports partial
+ * refunds naturally — Razorpay only rejects a call that would refund more
+ * than the payment's own remaining refundable amount, which lib/refunds.ts
+ * double-checks itself first anyway using our own `refunds` rows.
+ */
+export async function createRazorpayRefund(params: {
+  paymentId: string;
+  amountRupees: number;
+  reason: string;
+}): Promise<RazorpayRefund> {
+  const res = await fetch(`${RAZORPAY_API_BASE}/payments/${params.paymentId}/refund`, {
+    method: 'POST',
+    headers: { Authorization: authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount: Math.round(params.amountRupees * 100),
+      notes: { reason: params.reason },
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data?.error?.description || `Razorpay refund failed (${res.status})`;
+    throw new Error(message);
+  }
+  return { id: data.id, amount: data.amount, status: data.status };
+}
+
 function safeEqualHex(a: string, b: string): boolean {
   const bufA = Buffer.from(a, 'hex');
   const bufB = Buffer.from(b, 'hex');
