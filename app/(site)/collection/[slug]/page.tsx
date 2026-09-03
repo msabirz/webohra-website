@@ -15,6 +15,7 @@ import { ListingDetailSkeleton } from '@/components/skeleton';
 import { authFetch } from '@/lib/session-client';
 import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
 import { VariantMenu, type Variant } from '@/components/variant-menu';
+import type { PortfolioItem } from '@/components/service-detail-view';
 
 type ListingDetail = {
   id: number;
@@ -45,6 +46,9 @@ type ListingDetail = {
   pickupCity: string | null;
   pickupAddress: { line1: string; line2: string | null; city: string; state: string; pincode: string } | null;
   pickupLeadTimeHours: number | null;
+  // Fulfillment & Subscriptions redesign, Phase 6 — only ever populated for
+  // a service listing (see ServiceDetailView, the only consumer).
+  portfolio: PortfolioItem[];
 };
 
 type FulfillmentChoice = 'delivery' | 'pickup';

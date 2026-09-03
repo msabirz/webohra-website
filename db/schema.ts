@@ -907,8 +907,10 @@ export const subscriptionSettings = pgTable('subscription_settings', {
  * A service seller's showcase — confirmed separate from a purchasable
  * listing (planning doc item 4), particularly relevant for IT & Services
  * sellers who have a portfolio of past work distinct from what she's
- * actually selling right now. The service pages themselves still need a
- * redesign to surface this; this table just makes the data storable.
+ * actually selling right now. Manageable from /seller/portfolio (any
+ * seller can build one) and surfaced on the service detail page (Phase 6
+ * of the Fulfillment & Subscriptions redesign) — product listing pages
+ * don't show it, matching the phase's "service-page redesign" scope.
  */
 export const portfolioItems = pgTable('portfolio_items', {
   id: serial('id').primaryKey(),
@@ -916,6 +918,12 @@ export const portfolioItems = pgTable('portfolio_items', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   title: varchar('title', { length: 150 }).notNull(),
+  // Phase 6 addition — a one-line note on what the piece actually was
+  // ("Built a 3-day wedding mehndi package for a 40-guest event"), since a
+  // bare title + link/photo often isn't enough context for a buyer
+  // deciding whether to trust this seller with a booking. Optional: a
+  // photo-led item can stand on its own without one.
+  description: varchar('description', { length: 300 }),
   link: varchar('link', { length: 500 }),
   imageUrl: varchar('image_url', { length: 500 }),
   sortOrder: integer('sort_order').notNull().default(0),

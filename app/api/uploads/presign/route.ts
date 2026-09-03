@@ -10,10 +10,14 @@ import { slugifyTitle } from '@/lib/ids';
 /**
  * POST /api/uploads/presign
  *
- * Seller-only, and only for a listing she actually owns. Hands back a
- * short-lived presigned R2 PUT URL so the browser uploads the image bytes
- * directly to storage — our server only ever sees the resulting public URL
- * (via /api/listings/[id]/images), never the file itself.
+ * Seller-only. Hands back a short-lived presigned R2 PUT URL so the
+ * browser uploads the image bytes directly to storage — our server only
+ * ever sees the resulting public URL, never the file itself. Two
+ * purposes: 'listing' (the original — a product/variant/field photo,
+ * scoped to a listing she actually owns, attached via
+ * /api/listings/[id]/images) and 'portfolio' (Phase 6 — a past-work
+ * showcase photo, scoped to her seller account rather than any one
+ * listing, attached via /api/sellers/portfolio).
  */
 export async function POST(request: Request) {
   const session = await getSessionFromRequest(request);
@@ -24,7 +28,7 @@ export async function POST(request: Request) {
   const sellerId = Number(session.sub);
   const [profile] = await db.select().from(sellerProfiles).where(eq(sellerProfiles.userId, sellerId));
   if (!profile) {
-    return NextResponse.json({ error: 'Only sellers can upload product photos' }, { status: 403 });
+    return NextResponse.json({ error: 'Only sellers can upload photos' }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);
@@ -36,7 +40,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const [listing] = await db.select().from(listings).where(eq(listings.id, parsed.data.listingId));
+  const sellerSlug = slugifyTitle(profile.businessName);
+
+  if (parsed.data.purpose === 'portfolio') {
+    try {
+      const { uploadUrl, publicUrl } = await createUploadUrl(sellerId, sellerSlug, 'portfolio', parsed.data.contentType);
+      return NextResponse.json({ uploadUrl, publicUrl });
+    } catch (err) {
+      console.error('R2 presign failed:', err);
+      return NextResponse.json(
+        { error: 'Photo uploads are not configured yet — contact the Idara team.' },
+        { status: 503 },
+      );
+    }
+  }
+
+  const [listing] = await db.select().from(listings).where(eq(listings.id, parsed.data.listingId!));
   if (!listing) {
     return NextResponse.json({ error: 'Product not found' }, { status: 404 });
   }
@@ -45,7 +64,6 @@ export async function POST(request: Request) {
   }
 
   try {
-    const sellerSlug = slugifyTitle(profile.businessName);
     const { uploadUrl, publicUrl } = await createUploadUrl(
       sellerId,
       sellerSlug,

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   Package,
+  Briefcase,
   ShoppingBag,
   MessageSquare,
   Handshake,
@@ -27,6 +28,7 @@ import { PortalShellSkeleton } from '@/components/skeleton';
 const NAV_ITEMS = [
   { href: '/seller/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/seller/products', label: 'Products', icon: Package },
+  { href: '/seller/portfolio', label: 'Portfolio', icon: Briefcase },
   { href: '/seller/orders', label: 'Orders', icon: ShoppingBag },
   { href: '/seller/enquiries', label: 'Enquiries', icon: MessageSquare },
   { href: '/seller/pickups', label: 'Pickups', icon: Handshake },

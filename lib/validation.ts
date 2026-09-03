@@ -258,15 +258,28 @@ export const listingImagesReorderSchema = z.object({
 });
 export type ListingImagesReorderInput = z.infer<typeof listingImagesReorderSchema>;
 
-export const uploadPresignSchema = z.object({
-  contentType: z.enum(['image/jpeg', 'image/png', 'image/webp'], {
-    message: 'Only JPEG, PNG, or WEBP images are allowed',
-  }),
-  // Which product this photo is for — the R2 key is organized by seller and
-  // product slug (see lib/storage/r2.ts), and the route verifies she
-  // actually owns this listing before ever generating a presigned URL.
-  listingId: z.number().int().positive(),
-});
+// `purpose` defaults to 'listing' so every caller that predates Phase 6
+// (product photos, variant photos, image-type custom fields) keeps working
+// unchanged with just { contentType, listingId } — 'portfolio' (Fulfillment
+// & Subscriptions redesign, Phase 6) is the one purpose that doesn't need a
+// listingId at all, since a portfolio item belongs to the seller, not any
+// one listing.
+export const uploadPresignSchema = z
+  .object({
+    contentType: z.enum(['image/jpeg', 'image/png', 'image/webp'], {
+      message: 'Only JPEG, PNG, or WEBP images are allowed',
+    }),
+    purpose: z.enum(['listing', 'portfolio']).default('listing'),
+    // Which product this photo is for — the R2 key is organized by seller
+    // and product slug (see lib/storage/r2.ts), and the route verifies she
+    // actually owns this listing before ever generating a presigned URL.
+    // Required only when purpose is 'listing' (the refine below).
+    listingId: z.number().int().positive().optional(),
+  })
+  .refine((data) => data.purpose !== 'listing' || data.listingId !== undefined, {
+    message: 'listingId is required for a product photo',
+    path: ['listingId'],
+  });
 export type UploadPresignInput = z.infer<typeof uploadPresignSchema>;
 
 export const orderCreateSchema = z.object({
@@ -731,3 +744,21 @@ export const adminWalletAdjustmentSchema = z.object({
     .max(300),
 });
 export type AdminWalletAdjustmentInput = z.infer<typeof adminWalletAdjustmentSchema>;
+
+// Fulfillment & Subscriptions redesign, Phase 6 — a seller's past-work
+// showcase item (portfolio_items). `link` accepts an empty string from a
+// cleared form field as well as omission — both mean "no link" — since a
+// controlled <input> always sends a string, never undefined, when a field
+// is simply left blank.
+export const portfolioItemSchema = z.object({
+  title: z.string().trim().min(2, 'Title must be at least 2 characters').max(150),
+  description: z.string().trim().max(300).optional().or(z.literal('')),
+  link: z.string().trim().url('Enter a valid URL (starting with https://)').max(500).optional().or(z.literal('')),
+  imageUrl: z.string().trim().max(500).optional().or(z.literal('')),
+});
+export type PortfolioItemInput = z.infer<typeof portfolioItemSchema>;
+
+export const portfolioReorderSchema = z.object({
+  order: z.array(z.number().int().positive()).min(1),
+});
+export type PortfolioReorderInput = z.infer<typeof portfolioReorderSchema>;
