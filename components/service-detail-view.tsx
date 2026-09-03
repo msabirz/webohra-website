@@ -1,12 +1,24 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { MessageCircle, ShieldCheck, Clock, Send, CheckCircle2 } from 'lucide-react';
+import { MessageCircle, ShieldCheck, Clock, Send, CheckCircle2, Briefcase, ExternalLink } from 'lucide-react';
 import { ConsultationRequestButton } from '@/components/consultation-request-button';
 import { MosaicGallery } from '@/components/mosaic-gallery';
 import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
 import { VariantMenu, type Variant } from '@/components/variant-menu';
 import { categoryColor } from '@/lib/category-color';
+
+// Fulfillment & Subscriptions redesign, Phase 6 — her past-work showcase,
+// fetched by the API alongside everything else on a service listing (see
+// GET /api/listings/[idOrSlug]'s own comment on why this is skipped
+// entirely for a product listing).
+export type PortfolioItem = {
+  id: number;
+  title: string;
+  description: string | null;
+  link: string | null;
+  imageUrl: string | null;
+};
 
 type ServiceListing = {
   id: number;
@@ -23,6 +35,7 @@ type ServiceListing = {
   images: { id: number; url: string }[];
   fields: ListingFieldValue[];
   variants: Variant[];
+  portfolio: PortfolioItem[];
 };
 
 // Icons deliberately mirror the ones used at each matching moment elsewhere
@@ -151,6 +164,50 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
             <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
               <h2 className="mb-3 font-heading text-lg font-semibold text-ink">Details</h2>
               <ListingDetailFields fields={listing.fields} />
+            </section>
+          )}
+
+          {listing.portfolio.length > 0 && (
+            <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+              <h2 className="mb-3 flex items-center gap-2 font-heading text-lg font-semibold text-ink">
+                <Briefcase className="h-4.5 w-4.5 text-ink-soft" strokeWidth={1.75} />
+                Past work
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {listing.portfolio.map((item) => (
+                  <div key={item.id} className="flex gap-3 rounded-xl bg-ivory-deep/50 p-3">
+                    {item.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.imageUrl}
+                        alt=""
+                        className="h-16 w-16 shrink-0 rounded-lg object-cover ring-1 ring-ink-soft/10"
+                      />
+                    ) : (
+                      <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-navy/5">
+                        <Briefcase className="h-5 w-5 text-navy" strokeWidth={1.75} />
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate font-body text-sm font-semibold text-ink">{item.title}</p>
+                      {item.description && (
+                        <p className="mt-0.5 line-clamp-2 font-body text-xs text-ink-soft">{item.description}</p>
+                      )}
+                      {item.link && (
+                        <a
+                          href={item.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 inline-flex items-center gap-1 font-body text-xs font-medium text-navy underline underline-offset-2"
+                        >
+                          View
+                          <ExternalLink className="h-3 w-3" strokeWidth={2} />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </section>
           )}
 

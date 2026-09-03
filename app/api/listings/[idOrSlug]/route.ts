@@ -9,6 +9,7 @@ import {
   jamaats,
   listingImages,
   listingVariants,
+  portfolioItems,
 } from '@/db/schema';
 import { db } from '@/db/index';
 import { listingStatusUpdateSchema, listingUpdateSchema } from '@/lib/validation';
@@ -166,13 +167,32 @@ export async function GET(
     if (row.showAddressOnPdp) pickupAddress = location.address;
   }
 
+  // Fulfillment & Subscriptions redesign, Phase 6 — her past-work showcase,
+  // only ever fetched for a service listing (product PDPs don't render it
+  // — see ServiceDetailView), so this skips the query entirely for the far
+  // more common physical_product case.
+  const portfolio =
+    row.listingType === 'physical_product'
+      ? []
+      : await db
+          .select({
+            id: portfolioItems.id,
+            title: portfolioItems.title,
+            description: portfolioItems.description,
+            link: portfolioItems.link,
+            imageUrl: portfolioItems.imageUrl,
+          })
+          .from(portfolioItems)
+          .where(eq(portfolioItems.sellerId, row.sellerId))
+          .orderBy(asc(portfolioItems.sortOrder));
+
   // Never expose the seller's raw phone number here — FR-37: it's surfaced
   // only through the Contact Seller / Take Consultation action itself, not
   // as browsable listing data.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { sellerPhone: _sellerPhone, ...publicListing } = row;
   return NextResponse.json({
-    listing: { ...publicListing, images, variants, fields, pickupCity, pickupAddress },
+    listing: { ...publicListing, images, variants, fields, pickupCity, pickupAddress, portfolio },
   });
 }
 

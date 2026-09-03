@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   Package,
+  Briefcase,
   ShoppingBag,
   MessageSquare,
   Handshake,
@@ -27,12 +28,15 @@ import { PortalShellSkeleton } from '@/components/skeleton';
 import { PortalNav, type NavEntry } from '@/components/portal-nav';
 
 // Grouped 2026-09-03 (was one flat 9-item list) — a lone item stays a
-// direct link (Dashboard, Products, Settings); anything with 2+ related
-// items becomes a named group, same "submenus wherever it actually
-// clarifies something" idea as the admin sidebar.
+// direct link (Dashboard, Products, Portfolio, Settings); anything with
+// 2+ related items becomes a named group, same "submenus wherever it
+// actually clarifies something" idea as the admin sidebar. Portfolio
+// (Phase 6) merged in alongside this same redesign — see this file's own
+// merge commit for the full story.
 const NAV_ITEMS: NavEntry[] = [
   { href: '/seller/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/seller/products', label: 'Products', icon: Package },
+  { href: '/seller/portfolio', label: 'Portfolio', icon: Briefcase },
   {
     label: 'Orders & Enquiries',
     icon: ShoppingBag,
