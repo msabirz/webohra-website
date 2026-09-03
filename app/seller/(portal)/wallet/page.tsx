@@ -6,6 +6,7 @@ import { authFetch } from '@/lib/session-client';
 import { buttonStyles } from '@/lib/button-styles';
 import { useSellerPortal } from '@/lib/seller-context';
 import { Skeleton } from '@/components/skeleton';
+import { loadRazorpayScript } from '@/lib/razorpay-client';
 
 type WalletTransaction = {
   id: number;
@@ -18,34 +19,6 @@ type WalletTransaction = {
 };
 
 type Wallet = { balance: string };
-
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
-  }
-}
-
-const RAZORPAY_SCRIPT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
-
-function loadRazorpayScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.Razorpay) {
-      resolve();
-      return;
-    }
-    const existing = document.querySelector(`script[src="${RAZORPAY_SCRIPT_SRC}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Could not load Razorpay')));
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = RAZORPAY_SCRIPT_SRC;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Could not load Razorpay'));
-    document.body.appendChild(script);
-  });
-}
 
 const TYPE_LABEL: Record<WalletTransaction['type'], string> = {
   topup: 'Top-up',

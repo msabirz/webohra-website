@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { orders, orderItems } from '@/db/schema';
 import { getSessionFromRequest } from '@/lib/auth';
@@ -10,6 +10,14 @@ import { getSessionFromRequest } from '@/lib/auth';
  * order can span multiple sellers). Total/item count here are scoped to
  * HER items only, not the whole order — she never sees another seller's
  * line items or their share of the total.
+ *
+ * An 'online' order that hasn't actually been paid for yet (Fulfillment &
+ * Subscriptions redesign, Phase 5b) is excluded entirely — she has no
+ * fulfillment work to do against money that never arrived, and seeing it
+ * here would read as a real order to act on. Admin/Customer Support's own
+ * order view is deliberately NOT filtered this way (see
+ * /api/admin/orders' comment) — support needs full visibility to help a
+ * buyer whose payment got stuck; only the seller-facing list hides it.
  */
 export async function GET(request: Request) {
   const session = await getSessionFromRequest(request);
@@ -32,7 +40,12 @@ export async function GET(request: Request) {
     })
     .from(orderItems)
     .innerJoin(orders, eq(orderItems.orderId, orders.id))
-    .where(eq(orderItems.sellerId, sellerId))
+    .where(
+      and(
+        eq(orderItems.sellerId, sellerId),
+        or(ne(orders.paymentMethod, 'online'), eq(orders.paymentStatus, 'paid')),
+      ),
+    )
     .groupBy(orders.id)
     .orderBy(desc(orders.createdAt));
 

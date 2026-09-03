@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, count, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
 import { db } from '@/db/index';
 import {
   users,
@@ -88,11 +88,20 @@ export async function GET(request: Request) {
     db.select({ pendingPickups: count() }).from(pickupRequests).where(eq(pickupRequests.status, 'pending')),
   ]);
 
+  // Fulfillment & Subscriptions redesign, Phase 5b — an 'online' order that
+  // hasn't actually cleared payment yet must never count toward GMV; a COD
+  // order always did (it was never in a payment pipeline to begin with),
+  // so this only excludes the specific online+unpaid case, not COD.
   const [{ gmv }] = await db
     .select({ gmv: sql<string>`coalesce(sum(${orderItems.unitPrice} * ${orderItems.quantity}), 0)` })
     .from(orderItems)
     .innerJoin(orders, eq(orderItems.orderId, orders.id))
-    .where(eq(orders.status, 'placed'));
+    .where(
+      and(
+        eq(orders.status, 'placed'),
+        or(ne(orders.paymentMethod, 'online'), eq(orders.paymentStatus, 'paid')),
+      ),
+    );
 
   return NextResponse.json({
     sellers: {

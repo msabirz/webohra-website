@@ -42,6 +42,8 @@ export default function CheckoutPage() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  // Fulfillment & Subscriptions redesign, Phase 5b.
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
 
   const ids = useMemo(() => items.map((i) => i.listingId), [items]);
 
@@ -78,6 +80,22 @@ export default function CheckoutPage() {
   const shippingTotal = shipmentGroups.reduce((sum, g) => sum + g.charge, 0);
   const total = subtotal + shippingTotal;
 
+  // Online payment only makes sense against one seller's money — a
+  // multi-seller cart has no payout-splitting mechanism yet (Phase 5c's
+  // Route integration is what adds that). Requires every line's listing to
+  // have actually loaded first — while any is still loading, this stays
+  // false rather than guessing.
+  const allListingsLoaded = items.every((item) => listings[item.listingId] !== undefined);
+  const distinctSellerIds = new Set(
+    items.map((item) => listings[item.listingId]?.sellerId).filter((id): id is number => id !== undefined),
+  );
+  const onlinePaymentEligible = items.length > 0 && allListingsLoaded && distinctSellerIds.size === 1;
+
+  useEffect(() => {
+    if (!onlinePaymentEligible && paymentMethod === 'online') setPaymentMethod('cod');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlinePaymentEligible]);
+
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -96,7 +114,7 @@ export default function CheckoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
-          paymentMethod: 'cod',
+          paymentMethod,
           // The cart stores variantId: null for a simple listing (see
           // CartItem's own comment) but the API's schema only accepts a
           // real number or an omitted key, not literal null — dropped here
@@ -219,22 +237,70 @@ export default function CheckoutPage() {
         </FormSection>
 
         <FormSection icon={Wallet} title="Payment">
-          <label className="flex items-center gap-3 rounded-xl border border-navy bg-navy/5 px-4 py-3 font-body text-sm text-ink">
-            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-navy">
-              <Check className="h-2.5 w-2.5 text-ivory" strokeWidth={3} />
+          <label
+            className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 font-body text-sm transition ${
+              paymentMethod === 'cod' ? 'border-navy bg-navy/5 text-ink' : 'border-ink-soft/15 text-ink-soft'
+            }`}
+          >
+            <input
+              type="radio"
+              name="paymentMethod"
+              className="sr-only"
+              checked={paymentMethod === 'cod'}
+              onChange={() => setPaymentMethod('cod')}
+            />
+            <span
+              className={`flex h-4 w-4 items-center justify-center rounded-full ${
+                paymentMethod === 'cod' ? 'bg-navy' : 'border-2 border-ink-soft/30'
+              }`}
+            >
+              {paymentMethod === 'cod' && <Check className="h-2.5 w-2.5 text-ivory" strokeWidth={3} />}
             </span>
             Cash on Delivery
           </label>
-          <label className="flex items-center gap-3 rounded-xl border border-ink-soft/15 bg-ivory-deep px-4 py-3 font-body text-sm text-ink-soft opacity-60">
-            <span className="h-4 w-4 rounded-full border-2 border-ink-soft/30" />
-            Pay Online — coming soon
+          <label
+            className={`flex items-center gap-3 rounded-xl border px-4 py-3 font-body text-sm transition ${
+              !onlinePaymentEligible
+                ? 'cursor-not-allowed border-ink-soft/15 bg-ivory-deep text-ink-soft opacity-60'
+                : paymentMethod === 'online'
+                  ? 'cursor-pointer border-navy bg-navy/5 text-ink'
+                  : 'cursor-pointer border-ink-soft/15 text-ink-soft'
+            }`}
+          >
+            <input
+              type="radio"
+              name="paymentMethod"
+              className="sr-only"
+              disabled={!onlinePaymentEligible}
+              checked={paymentMethod === 'online'}
+              onChange={() => setPaymentMethod('online')}
+            />
+            <span
+              className={`flex h-4 w-4 items-center justify-center rounded-full ${
+                paymentMethod === 'online' ? 'bg-navy' : 'border-2 border-ink-soft/30'
+              }`}
+            >
+              {paymentMethod === 'online' && <Check className="h-2.5 w-2.5 text-ivory" strokeWidth={3} />}
+            </span>
+            Pay Online (Razorpay)
           </label>
+          {!onlinePaymentEligible && items.length > 0 && (
+            <p className="font-body text-xs text-ink-soft">
+              {allListingsLoaded
+                ? 'Pay Online is only available when every item in your cart is from the same seller — split your order, or choose Cash on Delivery.'
+                : ''}
+            </p>
+          )}
         </FormSection>
 
         {error && <p className="font-body text-sm text-red-700">{error}</p>}
 
         <button type="submit" disabled={submitting} className={buttonStyles('primary', 'lg')}>
-          {submitting ? 'Placing order…' : `Place order · ₹${total.toLocaleString('en-IN')}`}
+          {submitting
+            ? 'Placing order…'
+            : paymentMethod === 'online'
+              ? `Continue to payment · ₹${total.toLocaleString('en-IN')}`
+              : `Place order · ₹${total.toLocaleString('en-IN')}`}
         </button>
       </form>
 

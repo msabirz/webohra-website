@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { listings, orders, orderItems, listingVariants, shipments } from '@/db/schema';
 import { orderCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { generateOrderNumber } from '@/lib/ids';
+import { createRazorpayOrder, getRazorpayKeyId } from '@/lib/razorpay';
 
 /**
  * POST /api/orders
@@ -12,10 +13,16 @@ import { generateOrderNumber } from '@/lib/ids';
  * Checkout, guest-friendly per FR-5b (unlike Contact Seller, Buy Now/Add to
  * Cart doesn't require a buyer account). Price and seller are always looked
  * up server-side from the live listing (or its variant) — never trusted
- * from the cart. This is the "UI-only cart" shell: it creates a real order
- * + address record, but no payment is actually collected — payment_method
- * only ever accepts 'cod' right now (see paymentMethodEnum in
- * db/schema.ts).
+ * from the cart. 'cod' stays a one-step "UI-only" shell exactly as before —
+ * the order is the terminal action, nothing more to confirm. 'online'
+ * (Fulfillment & Subscriptions redesign, Phase 5b) is real Razorpay
+ * payment, but only when every resolved item belongs to the same seller —
+ * a multi-seller cart has no payout-splitting mechanism yet (that's Phase
+ * 5c's Route integration), so it stays COD-only until then. An online
+ * order is still created here immediately (paymentStatus: 'pending', a
+ * real Razorpay order attached) so pricing is locked in at checkout time
+ * rather than re-resolved later when payment actually clears — see
+ * lib/order-payment.ts for how it then becomes 'paid'.
  *
  * If she's signed in, the order links to her account (userId) so it shows
  * up in her profile's order history — but an Authorization header is never
@@ -101,6 +108,19 @@ export async function POST(request: Request) {
     }
   }
 
+  if (parsed.data.paymentMethod === 'online') {
+    const distinctSellerIds = new Set(resolved.map((item) => item.sellerId));
+    if (distinctSellerIds.size > 1) {
+      return NextResponse.json(
+        {
+          error:
+            'Online payment is only available when every item in your cart is from the same seller — split your order, or choose Cash on Delivery.',
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   // One shipment per (seller, method) — mirrors lib/cart-line.ts's
   // computeShipmentGroups exactly (see its own comment for why per-method,
   // not just per-seller, and why the charge applies once per shipment).
@@ -137,6 +157,7 @@ export async function POST(request: Request) {
           buyerEmail: buyerEmail || null,
           orderNumber: generateOrderNumber(),
           userId: session ? Number(session.sub) : null,
+          paymentStatus: parsed.data.paymentMethod === 'online' ? 'pending' : null,
         })
         .returning();
     } catch (err) {
@@ -179,5 +200,44 @@ export async function POST(request: Request) {
         .returning()
     : [];
 
-  return NextResponse.json({ order, items: insertedItems, shipments: insertedShipments }, { status: 201 });
+  if (parsed.data.paymentMethod !== 'online') {
+    return NextResponse.json({ order, items: insertedItems, shipments: insertedShipments }, { status: 201 });
+  }
+
+  // Server-computed total, never trusted from the checkout page — same
+  // subtotal-plus-self-managed-shipping shape as lib/cart-line.ts's
+  // frontend total (Delhivery shipments carry a null charge here, same
+  // "no live rate lookup exists yet" reason as insertedShipments above, so
+  // they contribute nothing to this figure either — nothing to disagree
+  // with between the two).
+  const totalRupees =
+    resolved.reduce((sum, item) => sum + Number(item.unitPrice) * item.quantity, 0) +
+    insertedShipments.reduce((sum, s) => sum + Number(s.charge ?? 0), 0);
+
+  const razorpayOrder = await createRazorpayOrder({
+    amountRupees: totalRupees,
+    receipt: order.orderNumber,
+    notes: { orderNumber: order.orderNumber, purpose: 'order_payment' },
+  });
+
+  const [updatedOrder] = await db
+    .update(orders)
+    .set({ razorpayOrderId: razorpayOrder.id })
+    .where(eq(orders.id, order.id))
+    .returning();
+
+  return NextResponse.json(
+    {
+      order: updatedOrder,
+      items: insertedItems,
+      shipments: insertedShipments,
+      razorpay: {
+        razorpayOrderId: razorpayOrder.id,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        keyId: getRazorpayKeyId(),
+      },
+    },
+    { status: 201 },
+  );
 }

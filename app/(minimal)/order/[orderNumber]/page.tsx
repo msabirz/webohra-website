@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { CheckCircle2, Package, Truck, Home, MapPinned, Wallet, XCircle } from 'lucide-react';
+import { CheckCircle2, Package, Truck, Home, MapPinned, Wallet, XCircle, AlertCircle } from 'lucide-react';
 import { buttonStyles } from '@/lib/button-styles';
 import { TrackingPageSkeleton } from '@/components/skeleton';
 import { ORDER_ITEM_STATUS_LABEL, stageIndex, type OrderItemStatus } from '@/lib/order-item-status';
+import { loadRazorpayScript } from '@/lib/razorpay-client';
 
 type OrderItem = {
   id: number;
@@ -31,6 +32,14 @@ type OrderDetail = {
   state: string;
   pincode: string;
   paymentMethod: 'cod' | 'online';
+  // Fulfillment & Subscriptions redesign, Phase 5b — null for COD (see
+  // orders.paymentStatus' own comment in db/schema.ts). razorpayOrderId/
+  // razorpayKeyId/retryAmountRupees are only ever non-null together, and
+  // only while there's a real payment left to complete.
+  paymentStatus: 'pending' | 'paid' | 'failed' | null;
+  razorpayOrderId: string | null;
+  razorpayKeyId: string | null;
+  retryAmountRupees: number | null;
   status: 'placed' | 'cancelled';
   createdAt: string;
 };
@@ -60,6 +69,8 @@ export default function OrderConfirmationPage() {
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
 
   function load() {
     fetch(`/api/orders/${params.orderNumber}`)
@@ -98,6 +109,64 @@ export default function OrderConfirmationPage() {
     }
   }
 
+  /**
+   * Opens the SAME Razorpay order created at checkout (order.razorpayOrderId)
+   * — this is the one place that widget-opening code lives; checkout itself
+   * just creates the order and redirects here, whether this is her first
+   * payment attempt or a retry after a failed/abandoned one. Fulfillment &
+   * Subscriptions redesign, Phase 5b.
+   */
+  async function payNow() {
+    if (!order?.razorpayOrderId || !order.razorpayKeyId || order.retryAmountRupees === null) return;
+    setPaying(true);
+    setPayError(null);
+    try {
+      await loadRazorpayScript();
+      if (!window.Razorpay) {
+        setPayError('Could not load the payment window. Check your connection and try again.');
+        setPaying(false);
+        return;
+      }
+      const razorpay = new window.Razorpay({
+        key: order.razorpayKeyId,
+        amount: Math.round(order.retryAmountRupees * 100),
+        currency: 'INR',
+        order_id: order.razorpayOrderId,
+        name: 'WE Bohra',
+        description: `Order ${order.orderNumber}`,
+        prefill: { name: order.buyerName },
+        theme: { color: '#1B3A6B' },
+        handler: async (response: {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }) => {
+          const verifyRes = await fetch(`/api/orders/${params.orderNumber}/verify-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+            }),
+          });
+          if (verifyRes.ok) {
+            load();
+          } else {
+            const verifyData = await verifyRes.json();
+            setPayError(verifyData.error ?? 'Payment succeeded but could not be confirmed — refresh this page in a moment, or contact WeBohra support.');
+          }
+          setPaying(false);
+        },
+        modal: { ondismiss: () => setPaying(false) },
+      });
+      razorpay.open();
+    } catch {
+      setPayError('Something went wrong starting the payment. Try again.');
+      setPaying(false);
+    }
+  }
+
   if (loading) return <TrackingPageSkeleton />;
   if (notFound || !order) {
     return (
@@ -125,6 +194,12 @@ export default function OrderConfirmationPage() {
     month: 'long',
     year: 'numeric',
   });
+  // Fulfillment & Subscriptions redesign, Phase 5b — a real order row
+  // exists the instant checkout submits, but for 'online' that's not the
+  // same as money having actually arrived. Nothing below treats one of
+  // these as a normal, fulfillable order — matches Admin/seller order
+  // lists hiding it entirely until this flips.
+  const isUnpaidOnline = order.paymentMethod === 'online' && order.paymentStatus !== 'paid';
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -135,6 +210,27 @@ export default function OrderConfirmationPage() {
           </span>
           <h1 className="mt-1 font-heading text-2xl font-semibold text-ink">Order cancelled</h1>
           <p className="font-body text-sm text-ink-soft">Order #{order.orderNumber}</p>
+        </div>
+      ) : isUnpaidOnline ? (
+        <div className="flex flex-col items-center gap-3 rounded-3xl bg-gold/10 px-6 py-10 text-center">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-gold/20">
+            <AlertCircle className="h-8 w-8 text-ink" strokeWidth={1.75} />
+          </span>
+          <h1 className="mt-1 font-heading text-2xl font-semibold text-ink">
+            {order.paymentStatus === 'failed' ? 'Payment failed' : 'Almost there — complete your payment'}
+          </h1>
+          <p className="font-body text-sm text-ink-soft">
+            Order #{order.orderNumber} · Saved {orderDate}
+            {order.paymentStatus === 'failed'
+              ? '. Your card wasn\'t charged — try again below.'
+              : '. Nothing has been charged yet — this order won\'t reach the seller until payment clears.'}
+          </p>
+          {order.razorpayOrderId && (
+            <button onClick={payNow} disabled={paying} className={buttonStyles('primary', 'lg')}>
+              {paying ? 'Opening payment…' : `Pay ₹${(order.retryAmountRupees ?? 0).toLocaleString('en-IN')} now`}
+            </button>
+          )}
+          {payError && <p className="font-body text-sm text-red-700">{payError}</p>}
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 rounded-3xl bg-gradient-to-b from-teal/10 to-transparent px-6 py-10 text-center">
@@ -150,7 +246,7 @@ export default function OrderConfirmationPage() {
         </div>
       )}
 
-      {order.status === 'placed' && (
+      {order.status === 'placed' && !isUnpaidOnline && (
         <>
           {/* Status steps */}
           <div className="relative flex items-start justify-between rounded-2xl bg-white px-4 py-6 shadow-sm ring-1 ring-ink-soft/5">
@@ -202,7 +298,13 @@ export default function OrderConfirmationPage() {
             Payment
           </h2>
           <p className="font-body text-sm text-ink">
-            {order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Paid online'}
+            {order.paymentMethod === 'cod'
+              ? 'Cash on Delivery'
+              : order.paymentStatus === 'paid'
+                ? 'Paid online'
+                : order.paymentStatus === 'failed'
+                  ? 'Payment failed'
+                  : 'Payment pending'}
           </p>
           <p className="mt-2 font-body text-xs text-ink-soft">
             Track this order anytime using order #{order.orderNumber} from the site footer.
@@ -223,7 +325,7 @@ export default function OrderConfirmationPage() {
                 <p className="font-body text-xs text-ink-soft">
                   {item.businessName} · {item.subcategoryName}
                 </p>
-                {order.status === 'placed' && (
+                {order.status === 'placed' && !isUnpaidOnline && (
                   <span className="mt-1 inline-flex rounded-full bg-teal/10 px-2 py-0.5 font-body text-[10px] font-semibold text-teal-deep">
                     {ORDER_ITEM_STATUS_LABEL[item.status]}
                   </span>
@@ -258,7 +360,7 @@ export default function OrderConfirmationPage() {
 
       {cancelError && <p className="text-center font-body text-sm text-red-700">{cancelError}</p>}
 
-      {order.status === 'placed' && (
+      {order.status === 'placed' && order.paymentStatus !== 'paid' && (
         <button
           onClick={handleCancel}
           disabled={cancelling}
