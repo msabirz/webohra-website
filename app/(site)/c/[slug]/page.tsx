@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { ListingCard, type ListingCardData } from '@/components/listing-card';
 import { ListingGridSkeleton } from '@/components/skeleton';
 import { FilterSortBar, type SortValue } from '@/components/filter-sort-bar';
@@ -11,6 +11,7 @@ type Category = { id: number; name: string; slug: string; subcategories: Subcate
 
 export default function CategoryPage() {
   const params = useParams<{ slug: string }>();
+  const searchParams = useSearchParams();
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategorySlug, setSubcategorySlug] = useState<string | null>(null);
   const [sort, setSort] = useState<SortValue>('newest');
@@ -31,10 +32,14 @@ export default function CategoryPage() {
   }, []);
 
   // Resets the subcategory filter (but not sort/price) whenever the
-  // category itself changes via the URL.
+  // category itself changes via the URL — except a direct deep link
+  // already names one (the header's hover mega-menu, 2026-09-03, links
+  // straight to /c/[slug]?subcategory=[sub] so a click there lands
+  // pre-filtered instead of on the unfiltered category first).
   useEffect(() => {
-    setSubcategorySlug(null);
-  }, [params.slug]);
+    setSubcategorySlug(searchParams.get('subcategory'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- searchParams is a new object each render; re-running on params.slug (the real trigger) plus its own value is enough, and including the object itself risks an update loop
+  }, [params.slug, searchParams.get('subcategory')]);
 
   useEffect(() => {
     setLoading(true);

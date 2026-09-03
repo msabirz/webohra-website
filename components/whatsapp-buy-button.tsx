@@ -3,7 +3,7 @@
 import { useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { MessageCircle, X } from 'lucide-react';
-import { buttonStyles, type ButtonSize } from '@/lib/button-styles';
+import { buttonStyles, BOX_SHAPE_CLASS, type ButtonSize } from '@/lib/button-styles';
 
 /**
  * FR-5's real contact mechanism: a direct WhatsApp deep link to the seller's
@@ -55,7 +55,7 @@ export function WhatsAppBuyButton({
         className={buttonStyles(
           'whatsapp',
           size,
-          `${WIDTH_CLASS[width]} ${shape === 'box' ? '!rounded-xl !gap-1 !px-2' : ''}`,
+          `${WIDTH_CLASS[width]} ${shape === 'box' ? BOX_SHAPE_CLASS : ''}`,
         )}
       >
         <MessageCircle className="h-3.5 w-3.5" strokeWidth={2} />

@@ -3,18 +3,20 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, Truck, Handshake, Minus, Plus, Check, Eye } from 'lucide-react';
+import { ChevronRight, Minus, Plus, Check, Eye } from 'lucide-react';
 import { ProductGallery } from '@/components/product-gallery';
 import { ServiceDetailView } from '@/components/service-detail-view';
 import { WhatsAppBuyButton } from '@/components/whatsapp-buy-button';
 import { PickupRequestModal } from '@/components/pickup-request-modal';
+import { ProductVariantPicker } from '@/components/product-variant-picker';
+import { PickupExclusiveCallout } from '@/components/pickup-exclusive-callout';
 import { useCart } from '@/components/cart-context';
 import { getStoredLocation } from '@/lib/location-client';
 import { buttonStyles } from '@/lib/button-styles';
 import { ListingDetailSkeleton } from '@/components/skeleton';
 import { authFetch } from '@/lib/session-client';
 import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
-import { VariantMenu, type Variant } from '@/components/variant-menu';
+import type { Variant } from '@/components/variant-menu';
 import type { PortfolioItem } from '@/components/service-detail-view';
 
 type ListingDetail = {
@@ -23,7 +25,7 @@ type ListingDetail = {
   description: string;
   // null = this listing uses different types (see listings.price's own
   // comment in db/schema.ts) — buyers pick one from `variants` below via
-  // VariantMenu instead of the single price/buy-box.
+  // ProductVariantPicker instead of the single price/buy-box.
   price: string | null;
   shippingMethod: 'self_managed' | 'delhivery';
   shippingEstimateText: string | null;
@@ -60,8 +62,6 @@ type ListingDetail = {
   sellerEmail: string | null;
 };
 
-type FulfillmentChoice = 'delivery' | 'pickup';
-
 export default function ListingDetailPage() {
   const params = useParams<{ slug: string }>();
   const { addItem, openCart } = useCart();
@@ -69,7 +69,6 @@ export default function ListingDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
-  const [choice, setChoice] = useState<FulfillmentChoice>('delivery');
   const [added, setAdded] = useState(false);
   const [pickupModalOpen, setPickupModalOpen] = useState(false);
   const [buyerCity, setBuyerCity] = useState<string | undefined>(undefined);
@@ -133,7 +132,11 @@ export default function ListingDetailPage() {
   // Fulfillment & Subscriptions redesign, Phase 3 — per-listing (not
   // seller-wide) eligibility: she has to have turned this on for this
   // specific listing, and her resolved pickup location's city has to
-  // match the buyer's.
+  // match the buyer's. The row itself only renders at all when
+  // pickupEnabled is true (see PickupRow below) — shipping method
+  // (self_managed vs Delhivery) is deliberately no longer shown here,
+  // just at checkout (2026-09-03 PDP redesign, user's own call: "that
+  // will be informed [at] checkout page").
   const pickupEligible =
     listing.pickupEnabled &&
     !!listing.pickupCity &&
@@ -151,26 +154,26 @@ export default function ListingDetailPage() {
       {isPreview && <PreviewBanner status={listing.status} />}
       <Breadcrumb listing={listing} />
 
-      <div className="grid gap-10 md:grid-cols-2">
-        <ProductGallery categorySlug={listing.categorySlug} isService={false} images={listing.images} />
+      <div className="grid gap-10 md:grid-cols-2 md:items-start">
+        {/* Sticky on desktop — stays in view while the info column (now
+         *  longer: description + details sit above the price/buy box)
+         *  scrolls past it. Static on mobile, where the two columns stack.
+         *  top-[140px] clears the site's own sticky two-row header
+         *  (measured ~125px) plus a little breathing room. */}
+        <div className="md:sticky md:top-[140px]">
+          <ProductGallery categorySlug={listing.categorySlug} isService={false} images={listing.images} />
+        </div>
 
         <div className="flex flex-col gap-5">
           <div>
-            <h1 className="font-heading text-2xl font-semibold text-ink md:text-3xl">
-              {listing.title}
-            </h1>
+            <p className="mb-2 inline-flex w-fit items-center rounded-full bg-teal/10 px-2.5 py-1 font-body text-[11px] font-bold uppercase tracking-wide text-teal-deep">
+              {listing.subcategoryName}
+            </p>
+            <h1 className="font-heading text-2xl font-semibold text-ink md:text-3xl">{listing.title}</h1>
             {listing.businessName && (
               <p className="mt-1.5 font-body text-sm text-ink-soft">by {listing.businessName}</p>
             )}
           </div>
-
-          {hasVariants ? (
-            <p className="font-body text-sm text-ink-soft">Pick a type below — each is priced separately.</p>
-          ) : (
-            <p className="font-heading text-3xl font-semibold text-navy">
-              ₹{Number(listing.price).toLocaleString('en-IN')}
-            </p>
-          )}
 
           <p className="whitespace-pre-wrap font-body text-sm leading-relaxed text-ink-soft">
             {listing.description}
@@ -185,35 +188,36 @@ export default function ListingDetailPage() {
             </div>
           )}
 
-          {/* Fulfillment selector — radio rows, single CTA below, no tabs */}
-          <div className="flex flex-col gap-2.5">
-            <FulfillmentRow
-              icon={Truck}
-              selected={choice === 'delivery'}
-              onSelect={() => setChoice('delivery')}
-              title="Delivery"
-              price="See details"
-              subtitle={
-                listing.shippingMethod === 'delhivery'
-                  ? 'Shipped via Delhivery.'
-                  : listing.shippingEstimateText || 'Shipped by the seller directly.'
+          {hasVariants ? (
+            <ProductVariantPicker
+              listingId={listing.id}
+              variants={listing.variants}
+              pickup={
+                listing.pickupEnabled
+                  ? {
+                      pickupCity: listing.pickupCity,
+                      buyerCity,
+                      eligible: pickupEligible,
+                      onOrderNow: () => setPickupModalOpen(true),
+                    }
+                  : undefined
               }
             />
-            <FulfillmentRow
-              icon={Handshake}
-              selected={choice === 'pickup'}
-              onSelect={() => pickupEligible && setChoice('pickup')}
-              disabled={!pickupEligible}
-              title="Pickup & Pay"
-              price="No shipping"
-              subtitle={pickupSubtitle(listing.pickupEnabled, listing.pickupCity, buyerCity, pickupEligible)}
-            />
-          </div>
+          ) : (
+            <>
+              <p className="font-heading text-3xl font-semibold text-navy">
+                ₹{Number(listing.price).toLocaleString('en-IN')}
+              </p>
 
-          {choice === 'delivery' ? (
-            hasVariants ? (
-              <VariantMenu listingId={listing.id} variants={listing.variants} isService={false} />
-            ) : (
+              {listing.pickupEnabled && (
+                <PickupExclusiveCallout
+                  pickupCity={listing.pickupCity}
+                  buyerCity={buyerCity}
+                  eligible={pickupEligible}
+                  onOrderNow={() => setPickupModalOpen(true)}
+                />
+              )}
+
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1 rounded-full border border-ink-soft/20 p-1">
@@ -250,17 +254,9 @@ export default function ListingDetailPage() {
                   </button>
                 )}
               </div>
-            )
-          ) : (
-            <button
-              onClick={() => setPickupModalOpen(true)}
-              className={buttonStyles('accent', 'lg', 'w-full')}
-            >
-              Request Pickup &amp; Pay
-            </button>
+              <WhatsAppBuyButton listingId={listing.id} size="lg" label="Buy on WhatsApp" />
+            </>
           )}
-
-          {!hasVariants && <WhatsAppBuyButton listingId={listing.id} size="lg" label="Buy on WhatsApp" />}
         </div>
       </div>
 
@@ -313,66 +309,3 @@ function Breadcrumb({
   );
 }
 
-/** Always names the pickup city, whether or not she's currently eligible —
- *  per the requester's ask that this be stated plainly, not just "not
- *  available". */
-function pickupSubtitle(
-  pickupEnabled: boolean,
-  pickupCity: string | null,
-  buyerCity: string | undefined,
-  eligible: boolean,
-): string {
-  if (!pickupEnabled) return 'Not offered for this listing.';
-  if (!pickupCity) return 'This seller hasn’t finished setting up her pickup location yet.';
-  if (eligible) return `Available in ${pickupCity} — collect from the seller and pay her directly.`;
-  if (buyerCity) return `Only available in ${pickupCity} — not ${buyerCity}.`;
-  return `Available in ${pickupCity} — set your location to check eligibility.`;
-}
-
-function FulfillmentRow({
-  icon: Icon,
-  selected,
-  onSelect,
-  disabled,
-  title,
-  price,
-  subtitle,
-}: {
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-  selected: boolean;
-  onSelect: () => void;
-  disabled?: boolean;
-  title: string;
-  price: string;
-  subtitle: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={disabled}
-      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3.5 text-left transition-all ${
-        disabled
-          ? 'border-ink-soft/10 bg-ivory-deep/40 opacity-60'
-          : selected
-            ? 'border-navy bg-white shadow-sm ring-1 ring-navy/10'
-            : 'border-ink-soft/15 bg-ivory-deep hover:border-navy/30 hover:bg-white'
-      }`}
-    >
-      <span
-        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-          selected && !disabled ? 'bg-navy text-ivory' : 'bg-white text-ink-soft ring-1 ring-ink-soft/15'
-        }`}
-      >
-        <Icon className="h-4 w-4" strokeWidth={2} />
-      </span>
-      <span className="flex-1">
-        <span className="flex items-center justify-between">
-          <span className="font-body text-sm font-semibold text-ink">{title}</span>
-          <span className="font-body text-xs font-medium text-ink-soft">{price}</span>
-        </span>
-        <span className="mt-0.5 block font-body text-xs text-ink-soft">{subtitle}</span>
-      </span>
-    </button>
-  );
-}

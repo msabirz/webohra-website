@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ShoppingBag, Check } from 'lucide-react';
 import { useCart } from '@/components/cart-context';
-import { buttonStyles } from '@/lib/button-styles';
+import { buttonStyles, BOX_SHAPE_CLASS } from '@/lib/button-styles';
 
 /** Quick add (qty 1) from a listing card's grid view — the PDP itself offers
  *  the full quantity picker and the separate Pickup & Pay flow. */
@@ -37,7 +37,7 @@ export function AddToCartButton({
       className={buttonStyles(
         'secondary',
         'sm',
-        `${width === 'full' ? 'w-full' : 'flex-1'} ${shape === 'box' ? '!rounded-xl !gap-1 !px-2' : ''}`,
+        `${width === 'full' ? 'w-full' : 'flex-1'} ${shape === 'box' ? BOX_SHAPE_CLASS : ''}`,
       )}
     >
       {added ? (

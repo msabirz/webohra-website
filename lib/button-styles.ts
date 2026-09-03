@@ -43,6 +43,24 @@ export function iconButtonStyles(variant: ButtonVariant = 'secondary', extra = '
   return `${BASE} ${VARIANTS[variant]} h-10 w-10 !rounded-full !px-0 !py-0 ${extra}`.trim();
 }
 
+/**
+ * The chunky rectangle + elevated drop shadow used where a product-tile
+ * action sits side-by-side with another (Add to Cart / Buy on WhatsApp /
+ * Take Consultation on ListingCard) instead of the default full pill —
+ * shape only, same VARIANTS colors. One constant so all three call sites
+ * (add-to-cart-button.tsx, whatsapp-buy-button.tsx,
+ * consultation-request-button.tsx) move together (2026-09-03 restyle).
+ *
+ * A fixed pixel radius, not a `rounded-*` size token — these buttons run
+ * 'sm' (~30px tall), where rounded-2xl's 16px is already half the height
+ * and renders as a full stadium/pill, not a rectangle (caught 2026-09-03:
+ * looked identical to the default pill shape it was meant to replace).
+ * 10px stays visibly a rounded corner at this height. Padding bumped over
+ * the base 'sm' size for a chunkier block closer to the reference shape.
+ */
+export const BOX_SHAPE_CLASS =
+  '!rounded-[10px] !gap-1 !px-3 !py-2.5 !shadow-lg hover:!shadow-xl';
+
 /** Shared text input treatment — rounded, soft focus ring, used by every form on the site. */
 export const inputStyles =
   'rounded-xl border border-ink-soft/20 px-3.5 py-2.5 font-body text-sm text-ink ' +
