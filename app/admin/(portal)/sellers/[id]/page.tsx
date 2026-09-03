@@ -1,9 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck, ShieldAlert, Store, Package } from 'lucide-react';
+import {
+  ShieldCheck,
+  ShieldAlert,
+  Store,
+  Package,
+  Wallet,
+  Landmark,
+  Layers,
+  TrendingUp,
+  ShoppingBag,
+} from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles } from '@/lib/button-styles';
 import { Skeleton, RowListSkeleton } from '@/components/skeleton';
@@ -30,20 +40,49 @@ type SellerListing = {
   price: string | null;
   status: string;
   subcategoryName: string;
+  listingType: 'physical_product' | 'local_service' | 'remote_service';
   createdAt: string;
+};
+
+type Subscription = {
+  sellerType: 'product' | 'service';
+  billingMode: 'plan' | 'recharge';
+  status: string;
+  plan: { name: string; sellerType: string } | null;
+};
+
+type TopProduct = {
+  listingId: number;
+  title: string;
+  status: string;
+  listingType: 'physical_product' | 'local_service' | 'remote_service' | null;
+  unitsSold: number;
+  revenue: string;
+};
+
+type Overview = {
+  wallet: { balance: string } | null;
+  subscriptions: Subscription[];
+  orderStats: { orderCount: number; gmv: string };
+  payoutStats: { pendingAmount: string; processedAmount: string };
+  topProducts: TopProduct[];
 };
 
 export default function AdminSellerDetailPage() {
   const params = useParams<{ id: string }>();
   const { me } = useAdminPortal();
   const canVerify = me.staffRole !== 'customer_support';
+  const canPayout = me.staffRole === 'admin' || me.staffRole === 'super_admin';
 
   const [seller, setSeller] = useState<SellerDetail | null>(null);
   const [listings, setListings] = useState<SellerListing[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
   const [busy, setBusy] = useState(false);
+  const [payingOut, setPayingOut] = useState(false);
+  const [payoutError, setPayoutError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     const res = await authFetch(`/api/admin/sellers/${params.id}`);
     if (!res.ok) {
       setNotFound(true);
@@ -52,12 +91,18 @@ export default function AdminSellerDetailPage() {
     const data = await res.json();
     setSeller(data.seller);
     setListings(data.listings ?? []);
-  }
+    setOverview({
+      wallet: data.wallet,
+      subscriptions: data.subscriptions ?? [],
+      orderStats: data.orderStats,
+      payoutStats: data.payoutStats,
+      topProducts: data.topProducts ?? [],
+    });
+  }, [params.id]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.id]);
+  }, [load]);
 
   async function toggleVerify() {
     if (!seller) return;
@@ -74,11 +119,29 @@ export default function AdminSellerDetailPage() {
     }
   }
 
+  async function payOutPending() {
+    if (!seller) return;
+    setPayingOut(true);
+    setPayoutError(null);
+    try {
+      const res = await authFetch(`/api/admin/payouts/sellers/${seller.userId}/send-all`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setPayoutError(data.error ?? 'Could not send these payouts.');
+      } else if (data.failed > 0) {
+        setPayoutError(`${data.sent} sent, ${data.failed} failed — see /admin/payouts for details.`);
+      }
+      await load();
+    } finally {
+      setPayingOut(false);
+    }
+  }
+
   if (notFound) {
     return <p className="font-body text-sm text-ink-soft">Seller not found.</p>;
   }
 
-  if (!seller) {
+  if (!seller || !overview) {
     return (
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between gap-4">
@@ -103,6 +166,8 @@ export default function AdminSellerDetailPage() {
       </div>
     );
   }
+
+  const pendingAmount = Number(overview.payoutStats.pendingAmount);
 
   return (
     <div className="flex flex-col gap-6">
@@ -143,6 +208,110 @@ export default function AdminSellerDetailPage() {
           {busy ? 'Saving…' : seller.itsVerified ? 'Revoke ITS verification' : 'Approve ITS verification'}
         </button>
       )}
+
+      {/* Earnings & wallet — everything real-money about this seller in
+       *  one glance. */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          icon={ShoppingBag}
+          label="Lifetime orders (paid)"
+          value={String(overview.orderStats.orderCount)}
+          sub={`₹${Number(overview.orderStats.gmv).toLocaleString('en-IN')} GMV`}
+        />
+        <StatCard
+          icon={TrendingUp}
+          label="Paid out to date"
+          value={`₹${Number(overview.payoutStats.processedAmount).toLocaleString('en-IN')}`}
+        />
+        <Link href={`/admin/wallets/${seller.userId}`} className="block">
+          <StatCard
+            icon={Wallet}
+            label="Wallet balance"
+            value={overview.wallet ? `₹${Number(overview.wallet.balance).toLocaleString('en-IN')}` : 'No wallet'}
+            sub="View transactions →"
+          />
+        </Link>
+        <div className="flex flex-col justify-between gap-2 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5">
+          <div className="flex items-start gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy/5">
+              <Landmark className="h-4 w-4 text-navy" strokeWidth={1.75} />
+            </span>
+            <div>
+              <p className="font-body text-xs font-medium text-ink-soft">Payout pending</p>
+              <p className="font-heading text-lg font-semibold text-ink">₹{pendingAmount.toLocaleString('en-IN')}</p>
+            </div>
+          </div>
+          {canPayout && pendingAmount > 0 && (
+            <button onClick={payOutPending} disabled={payingOut} className={buttonStyles('secondary', 'sm')}>
+              {payingOut ? 'Sending…' : `Pay ₹${pendingAmount.toLocaleString('en-IN')}`}
+            </button>
+          )}
+        </div>
+      </div>
+      {payoutError && <p className="font-body text-sm text-red-700">{payoutError}</p>}
+
+      {/* Subscriptions */}
+      <div className="flex flex-col gap-3">
+        <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-ink">
+          <Layers className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+          Subscription
+        </h2>
+        {overview.subscriptions.length === 0 ? (
+          <p className="rounded-2xl bg-white p-4 font-body text-sm text-ink-soft shadow-sm ring-1 ring-ink-soft/5">
+            No subscription yet — she can&apos;t publish until she chooses one.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {overview.subscriptions.map((s) => (
+              <div key={s.sellerType} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5">
+                <p className="font-body text-xs font-medium uppercase tracking-wide text-ink-soft">
+                  {s.sellerType}
+                </p>
+                <p className="mt-0.5 font-body text-sm font-semibold text-ink">
+                  {s.plan?.name ?? 'No plan resolved'}
+                  {s.billingMode === 'recharge' && ' (pay as you go)'}
+                </p>
+                <p className="font-body text-xs text-ink-soft">{s.status}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Top products */}
+      <div className="flex flex-col gap-3">
+        <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-ink">
+          <TrendingUp className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+          Best-selling
+        </h2>
+        {overview.topProducts.length === 0 ? (
+          <p className="rounded-2xl bg-white p-4 font-body text-sm text-ink-soft shadow-sm ring-1 ring-ink-soft/5">
+            No paid orders yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {overview.topProducts.map((p, i) => (
+              <div
+                key={p.listingId}
+                className="flex items-center justify-between gap-3 rounded-xl bg-white p-3.5 shadow-sm ring-1 ring-ink-soft/5"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gold/20 font-body text-xs font-bold text-ink">
+                    {i + 1}
+                  </span>
+                  <p className="font-body text-sm text-ink">{p.title}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-body text-xs text-ink-soft">{p.unitsSold} sold</span>
+                  <span className="font-body text-sm font-medium text-navy">
+                    ₹{Number(p.revenue).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-col gap-3">
         <h2 className="font-heading text-sm font-semibold text-ink">Products</h2>
@@ -187,6 +356,31 @@ function Field({ label, value }: { label: string; value: string }) {
     <div>
       <p className="font-body text-xs font-medium uppercase tracking-wide text-ink-soft">{label}</p>
       <p className="mt-0.5 font-body text-sm text-ink">{value}</p>
+    </div>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5 transition hover:ring-navy/20">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy/5">
+        <Icon className="h-4 w-4 text-navy" strokeWidth={1.75} />
+      </span>
+      <div>
+        <p className="font-body text-xs font-medium text-ink-soft">{label}</p>
+        <p className="font-heading text-lg font-semibold text-ink">{value}</p>
+        {sub && <p className="font-body text-xs text-ink-soft">{sub}</p>}
+      </div>
     </div>
   );
 }

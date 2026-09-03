@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { Landmark, CheckCircle2, Clock, XCircle, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { Landmark, CheckCircle2, Clock, XCircle, RefreshCw, Store } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles } from '@/lib/button-styles';
-import { TableSkeleton } from '@/components/skeleton';
+import { TableSkeleton, RowListSkeleton } from '@/components/skeleton';
 import { useAdminPortal } from '@/lib/admin-context';
 
 type PayoutStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'reversed';
@@ -52,6 +53,14 @@ const FILTERS = [
   { key: 'failed', label: 'Failed' },
 ] as const;
 
+type SellerGroup = {
+  sellerId: number;
+  label: string;
+  pendingCount: number;
+  pendingAmount: number;
+  processedAmount: number;
+};
+
 /**
  * /admin/payouts — Fulfillment & Subscriptions redesign, Phase 5c. Every
  * payout row, computed automatically the moment an online order is paid
@@ -59,14 +68,23 @@ const FILTERS = [
  * RazorpayX transfer — isAdmin only (see the send endpoint's own comment);
  * Customer Support can view this page but the button is hidden for her,
  * matching the server-side gate.
+ *
+ * The "By seller" view exists specifically for the multi-seller-cart
+ * case: one order can produce several payout rows (one per seller), and a
+ * seller who shows up across several such orders can end up with several
+ * pending rows scattered through the "By order" list — "Pay all pending"
+ * clears every one of them for her in a single click (see
+ * POST /api/admin/payouts/sellers/[sellerId]/send-all), rather than
+ * requiring Admin to hunt each row down individually.
  */
 export default function AdminPayoutsPage() {
   const { me } = useAdminPortal();
   const canSend = me.staffRole === 'admin' || me.staffRole === 'super_admin';
 
+  const [view, setView] = useState<'orders' | 'sellers'>('orders');
   const [payouts, setPayouts] = useState<Payout[] | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all');
-  const [sendingId, setSendingId] = useState<number | null>(null);
+  const [sendingId, setSendingId] = useState<number | `seller-${number}` | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -97,6 +115,48 @@ export default function AdminPayoutsPage() {
     }
   }
 
+  async function sendAllForSeller(sellerId: number) {
+    setSendingId(`seller-${sellerId}`);
+    setError(null);
+    try {
+      const res = await authFetch(`/api/admin/payouts/sellers/${sellerId}/send-all`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Could not send these payouts.');
+      } else if (data.failed > 0) {
+        setError(`${data.sent} sent, ${data.failed} failed — check the order-by-order view for details.`);
+      }
+      await load();
+    } finally {
+      setSendingId(null);
+    }
+  }
+
+  // Grouping the already-loaded flat list client-side, since the same
+  // data (whatever the current status filter shows) drives both views —
+  // no separate endpoint needed just to re-shape it.
+  const bySeller = useMemo<SellerGroup[]>(() => {
+    if (!payouts) return [];
+    const map = new Map<number, SellerGroup>();
+    for (const p of payouts) {
+      const existing = map.get(p.sellerId) ?? {
+        sellerId: p.sellerId,
+        label: p.businessName ?? p.sellerName ?? `Seller #${p.sellerId}`,
+        pendingCount: 0,
+        pendingAmount: 0,
+        processedAmount: 0,
+      };
+      if (p.status === 'pending' || p.status === 'failed') {
+        existing.pendingCount += 1;
+        existing.pendingAmount += Number(p.netAmount);
+      } else if (p.status === 'processed') {
+        existing.processedAmount += Number(p.netAmount);
+      }
+      map.set(p.sellerId, existing);
+    }
+    return Array.from(map.values()).sort((a, b) => b.pendingAmount - a.pendingAmount);
+  }, [payouts]);
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -106,23 +166,92 @@ export default function AdminPayoutsPage() {
         </p>
       </div>
 
-      <div className="flex gap-1.5 rounded-full bg-white p-1.5 shadow-sm ring-1 ring-ink-soft/5 w-fit">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={`rounded-full px-4 py-1.5 font-body text-sm font-medium transition ${
-              filter === f.key ? 'bg-navy text-ivory' : 'text-ink-soft hover:bg-ivory-deep hover:text-ink'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-1.5 rounded-full bg-white p-1.5 shadow-sm ring-1 ring-ink-soft/5 w-fit">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`rounded-full px-4 py-1.5 font-body text-sm font-medium transition ${
+                filter === f.key ? 'bg-navy text-ivory' : 'text-ink-soft hover:bg-ivory-deep hover:text-ink'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5 rounded-full bg-ivory-deep p-1.5 w-fit">
+          {(['orders', 'sellers'] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`rounded-full px-4 py-1.5 font-body text-sm font-medium transition ${
+                view === v ? 'bg-navy text-ivory' : 'text-ink-soft hover:text-ink'
+              }`}
+            >
+              {v === 'orders' ? 'By order' : 'By seller'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && <p className="font-body text-sm text-red-700">{error}</p>}
 
-      {payouts === null ? (
+      {view === 'sellers' ? (
+        payouts === null ? (
+          <RowListSkeleton count={3} />
+        ) : bySeller.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-2xl bg-white p-12 text-center shadow-sm ring-1 ring-ink-soft/5">
+            <Store className="h-8 w-8 text-ink-soft/40" strokeWidth={1.5} />
+            <p className="font-body text-sm text-ink-soft">No sellers match.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {bySeller.map((s) => (
+              <div
+                key={s.sellerId}
+                className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <Link
+                  href={`/admin/sellers/${s.sellerId}`}
+                  className="flex items-center gap-3 hover:underline"
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-navy/5">
+                    <Store className="h-4.5 w-4.5 text-navy" strokeWidth={1.75} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-body text-sm font-semibold text-ink">{s.label}</p>
+                    <p className="font-body text-xs text-ink-soft">
+                      {s.pendingCount > 0
+                        ? `${s.pendingCount} order${s.pendingCount === 1 ? '' : 's'} pending`
+                        : 'Nothing pending'}
+                      {s.processedAmount > 0 && ` · ₹${s.processedAmount.toLocaleString('en-IN')} paid out`}
+                    </p>
+                  </div>
+                </Link>
+                <div className="flex items-center gap-3 self-end sm:self-auto">
+                  {s.pendingAmount > 0 && (
+                    <span className="font-body text-sm font-semibold text-navy">
+                      ₹{s.pendingAmount.toLocaleString('en-IN')} pending
+                    </span>
+                  )}
+                  {canSend && s.pendingAmount > 0 && (
+                    <button
+                      onClick={() => sendAllForSeller(s.sellerId)}
+                      disabled={sendingId !== null}
+                      className={buttonStyles('primary', 'sm')}
+                    >
+                      {sendingId === `seller-${s.sellerId}`
+                        ? 'Sending…'
+                        : `Pay ₹${s.pendingAmount.toLocaleString('en-IN')}`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : payouts === null ? (
         <TableSkeleton rows={4} />
       ) : payouts.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl bg-white p-12 text-center shadow-sm ring-1 ring-ink-soft/5">
