@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, MapPinned, Wallet, Check, Store, ShoppingBag } from 'lucide-react';
+import { User, MapPinned, Wallet, Check, Store, ShoppingBag, LogIn } from 'lucide-react';
 import { useCart } from '@/components/cart-context';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { PhoneInput } from '@/components/phone-input';
-import { authFetch } from '@/lib/session-client';
+import { authFetch, getAuthToken } from '@/lib/session-client';
 import { resolveCartLine, computeShipmentGroups, type CartListingSnapshot } from '@/lib/cart-line';
 import { loadRazorpayScript } from '@/lib/razorpay-client';
 
@@ -45,6 +45,14 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   // Fulfillment & Subscriptions redesign, Phase 5b.
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
+  // Only a nudge — checked once on mount (not reactive to a login that
+  // happens in another tab) since this is a low-stakes UI hint, not a
+  // gate: guest checkout is fully supported (2026-09-04, user's own ask —
+  // "please login if you don't want to continue as guest").
+  const [isGuest, setIsGuest] = useState(false);
+  useEffect(() => {
+    setIsGuest(!getAuthToken());
+  }, []);
 
   const ids = useMemo(() => items.map((i) => i.listingId), [items]);
 
@@ -238,6 +246,23 @@ export default function CheckoutPage() {
     <div className="grid gap-8 md:grid-cols-2">
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 md:order-1" noValidate>
         <h1 className="font-heading text-2xl font-semibold text-ink">Checkout</h1>
+
+        {isGuest && (
+          <div className="flex items-center gap-3 rounded-2xl bg-navy/5 px-4 py-3 ring-1 ring-navy/10">
+            <LogIn className="h-4 w-4 shrink-0 text-navy" strokeWidth={2} />
+            <p className="flex-1 font-body text-xs text-ink-soft">
+              <span className="font-semibold text-ink">Have an account?</span> Log in to track this
+              order and skip re-entering your details next time — or just continue below as a
+              guest.
+            </p>
+            <Link
+              href={`/login?redirect=${encodeURIComponent('/checkout')}`}
+              className="shrink-0 font-body text-xs font-semibold text-navy underline hover:text-navy-deep"
+            >
+              Log in
+            </Link>
+          </div>
+        )}
 
         <FormSection icon={User} title="Contact info">
           <TextField

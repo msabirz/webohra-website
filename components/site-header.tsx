@@ -192,24 +192,29 @@ export function SiteHeader() {
         className="relative border-b border-ink-soft/10 bg-ivory/95 backdrop-blur-md"
         onMouseLeave={scheduleClose}
       >
-        <div className="mx-auto flex max-w-6xl items-center justify-center gap-2 overflow-x-auto px-4 py-3">
+        {/* justify-start on mobile (2026-09-04, real bug — center-aligning
+         *  a horizontally-scrollable row hides that there's more to
+         *  either side, since both edges get clipped equally with no
+         *  visible "there's another chip right there" cue). Centers again
+         *  from sm: up, where the full strip almost always fits. */}
+        <div className="mx-auto flex max-w-6xl items-center justify-start gap-2 overflow-x-auto px-4 py-3 sm:justify-center">
           <Link
-            href="/search"
+            href="/collections"
             className={`shrink-0 rounded-full px-4 py-2 font-body text-sm font-medium transition ${
-              pathname === '/search'
+              pathname === '/collections'
                 ? 'bg-navy text-ivory shadow-sm'
                 : 'text-ink-soft hover:bg-white hover:text-ink hover:shadow-sm'
             }`}
           >
-            All
+            Collections
           </Link>
           {categories.map((c) => {
-            const active = pathname === `/c/${c.slug}`;
+            const active = pathname === `/category/${c.slug}`;
             const isActiveTrigger = menuOpen && activeCategory?.id === c.id;
             return (
               <Link
                 key={c.id}
-                href={`/c/${c.slug}`}
+                href={`/category/${c.slug}`}
                 ref={(el) => {
                   chipRefs.current[c.id] = el;
                 }}
@@ -264,7 +269,7 @@ export function SiteHeader() {
               {activeCategory.subcategories.map((sub) => (
                 <Link
                   key={sub.id}
-                  href={`/c/${activeCategory.slug}?subcategory=${sub.slug}`}
+                  href={`/category/${activeCategory.slug}?subcategory=${sub.slug}`}
                   onFocus={clearTimers}
                   onBlur={scheduleClose}
                   className="rounded-lg px-2.5 py-2 font-body text-sm text-ink transition hover:bg-ivory-deep hover:text-navy"
@@ -273,7 +278,7 @@ export function SiteHeader() {
                 </Link>
               ))}
               <Link
-                href={`/c/${activeCategory.slug}`}
+                href={`/category/${activeCategory.slug}`}
                 onFocus={clearTimers}
                 onBlur={scheduleClose}
                 className="mt-1 rounded-lg border-t border-ink-soft/10 px-2.5 pb-1 pt-2.5 font-body text-xs font-semibold text-navy transition hover:text-navy-deep"

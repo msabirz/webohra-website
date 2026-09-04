@@ -34,8 +34,10 @@ export default function CategoryPage() {
   // Resets the subcategory filter (but not sort/price) whenever the
   // category itself changes via the URL — except a direct deep link
   // already names one (the header's hover mega-menu, 2026-09-03, links
-  // straight to /c/[slug]?subcategory=[sub] so a click there lands
-  // pre-filtered instead of on the unfiltered category first).
+  // straight to /category/[slug]?subcategory=[sub] so a click there lands
+  // pre-filtered instead of on the unfiltered category first). Moved here
+  // from /c/[slug] 2026-09-04 (SEO-friendlier URL, old path now redirects
+  // — see next.config.ts).
   useEffect(() => {
     setSubcategorySlug(searchParams.get('subcategory'));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- searchParams is a new object each render; re-running on params.slug (the real trigger) plus its own value is enough, and including the object itself risks an update loop

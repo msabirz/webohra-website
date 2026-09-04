@@ -12,11 +12,17 @@ const SORT_OPTIONS: { value: SortValue; label: string }[] = [
   { value: 'price_desc', label: 'Price: high to low' },
 ];
 
+export type FilterCategory = { id: number; name: string; slug: string };
+
 /**
- * Standard e-commerce sort + price-range filter, shared by /search and
- * /c/[slug] (category pages) — only meaningful, per the requester's own
- * scoping, once there's more than one result to sort/filter among; the
- * caller decides whether to render this at all.
+ * Standard e-commerce sort + price-range filter, shared by /search
+ * (also aliased at /collections) and /category/[slug] — only meaningful,
+ * per the requester's own scoping, once there's more than one result to
+ * sort/filter among; the caller decides whether to render this at all.
+ *
+ * The category dropdown (2026-09-04) is optional — only /search passes
+ * `categories`, since a buyer already on one category's own page doesn't
+ * need a redundant "which category" control repeating the page she's on.
  */
 export function FilterSortBar({
   sort,
@@ -25,6 +31,9 @@ export function FilterSortBar({
   maxPrice,
   onPriceChange,
   resultCount,
+  categories,
+  selectedCategorySlug,
+  onCategoryChange,
 }: {
   sort: SortValue;
   onSortChange: (sort: SortValue) => void;
@@ -32,6 +41,9 @@ export function FilterSortBar({
   maxPrice: string;
   onPriceChange: (min: string, max: string) => void;
   resultCount: number;
+  categories?: FilterCategory[];
+  selectedCategorySlug?: string;
+  onCategoryChange?: (slug: string) => void;
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [minDraft, setMinDraft] = useState(minPrice);
@@ -57,7 +69,26 @@ export function FilterSortBar({
         <p className="font-body text-sm text-ink-soft">
           {resultCount} result{resultCount === 1 ? '' : 's'}
         </p>
-        <div className="flex items-center gap-2">
+        {/* flex-wrap (2026-09-04, real bug) — with the category select
+         *  added alongside price + sort, three controls in one rigid row
+         *  no longer fit a narrow phone width and pushed the whole page
+         *  into horizontal scroll instead of wrapping to a second line. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {categories && categories.length > 0 && (
+            <select
+              value={selectedCategorySlug || ''}
+              onChange={(e) => onCategoryChange?.(e.target.value)}
+              className="rounded-full border border-ink-soft/15 bg-white px-4 py-2 font-body text-sm text-ink shadow-sm transition hover:border-navy/30 focus:outline-none focus:ring-2 focus:ring-navy/15"
+            >
+              <option value="">All categories</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.slug}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
+
           <div className="relative">
             <button
               onClick={() => setFiltersOpen((v) => !v)}
