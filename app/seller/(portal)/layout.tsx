@@ -20,12 +20,14 @@ import {
   X,
   ShieldCheck,
   ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
 import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { SellerPortalContext, type SellerMe } from '@/lib/seller-context';
 import { NotificationBell } from '@/components/seller/notification-bell';
 import { PortalShellSkeleton } from '@/components/skeleton';
 import { PortalNav, type NavEntry } from '@/components/portal-nav';
+import { ToastProvider } from '@/components/toast-context';
 
 // Grouped 2026-09-03 (was one flat 9-item list) — a lone item stays a
 // direct link (Dashboard, Products, Portfolio, Settings); anything with
@@ -53,6 +55,7 @@ const NAV_ITEMS: NavEntry[] = [
       { href: '/seller/subscription', label: 'Subscription', icon: Layers },
       { href: '/seller/wallet', label: 'Wallet', icon: Wallet },
       { href: '/seller/payouts', label: 'Payouts', icon: Landmark },
+      { href: '/seller/disputes', label: 'Disputes', icon: AlertTriangle },
     ],
   },
   { href: '/seller/settings', label: 'Settings', icon: Settings },
@@ -144,6 +147,7 @@ export default function SellerPortalLayout({ children }: { children: React.React
   );
 
   return (
+    <ToastProvider>
     <SellerPortalContext.Provider value={{ me, refresh: load, unreadEnquiries, refreshUnread }}>
       <div className="flex min-h-screen bg-ivory">
         {/* Mobile top bar */}
@@ -228,8 +232,15 @@ export default function SellerPortalLayout({ children }: { children: React.React
           />
         )}
 
-        <main className="flex-1 px-4 py-8 pt-20 md:ml-64 md:px-8 md:py-10 md:pt-10">{children}</main>
+        {/* min-w-0 (2026-09-04, real bug) — a flex-1 item defaults to
+         *  min-width:auto, which lets wide content anywhere inside it (a
+         *  table with a min-w-[...], say) refuse to shrink and force the
+         *  whole page into horizontal scroll, defeating that content's own
+         *  overflow-x-auto wrapper entirely. min-w-0 is what actually lets
+         *  a deep child's own scroll container do its job. */}
+        <main className="min-w-0 flex-1 px-4 py-8 pt-20 md:ml-64 md:px-8 md:py-10 md:pt-10">{children}</main>
       </div>
     </SellerPortalContext.Provider>
+    </ToastProvider>
   );
 }

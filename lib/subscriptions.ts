@@ -75,6 +75,22 @@ export async function getActivePlan(sellerId: number, sellerType: SellerType) {
  * plan yet either, this is deliberately the one place that has to be
  * right.
  */
+// A machine-readable reason alongside the human-readable `error` string
+// (2026-09-04) — every one of these is an "upgrade your plan" situation,
+// which the seller form surfaces as a popup (not just inline text) with a
+// link straight to /seller/subscription, per the user's own ask: "if
+// seller is trying to add more than a product than her subscribed
+// package then show message in popup because that's important." A plain
+// string-only error was too easy to conflate with an unrelated failure
+// (network error, validation) that shouldn't get the same popup
+// treatment.
+export type PublishGateCode =
+  | 'no_plan'
+  | 'listing_limit'
+  | 'pickup_not_included'
+  | 'pickup_office_not_included'
+  | 'delhivery_not_included';
+
 export async function checkPublishGate(
   listing: {
     id: number;
@@ -84,9 +100,9 @@ export async function checkPublishGate(
     pickupAddressSource: 'seller' | 'office' | null;
     shippingMethod: 'self_managed' | 'delhivery';
   },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; code: PublishGateCode }> {
   const [subcategory] = await db.select().from(subcategories).where(eq(subcategories.id, listing.subcategoryId));
-  if (!subcategory) return { ok: false, error: 'Category not found' };
+  if (!subcategory) return { ok: false, error: 'Category not found', code: 'no_plan' };
   const sellerType = sellerTypeForListingType(subcategory.listingType);
 
   const plan = await getActivePlan(listing.sellerId, sellerType);
@@ -94,6 +110,7 @@ export async function checkPublishGate(
     return {
       ok: false,
       error: `You need an active ${sellerType} plan to publish — choose one from your Subscription page.`,
+      code: 'no_plan',
     };
   }
 
@@ -114,6 +131,7 @@ export async function checkPublishGate(
       return {
         ok: false,
         error: `Your ${plan.name} plan allows up to ${plan.maxActiveListings} active listing${plan.maxActiveListings === 1 ? '' : 's'} — you're at the limit. Archive one first, or upgrade your plan.`,
+        code: 'listing_limit',
       };
     }
   }
@@ -122,18 +140,21 @@ export async function checkPublishGate(
     return {
       ok: false,
       error: `Your ${plan.name} plan doesn't include Pickup & Pay — upgrade to enable it, or turn it off for this listing.`,
+      code: 'pickup_not_included',
     };
   }
   if (listing.pickupEnabled && listing.pickupAddressSource === 'office' && !plan.pickupOfficeOption) {
     return {
       ok: false,
       error: `Your ${plan.name} plan doesn't include pickup from a WeBohra office — upgrade, or switch this listing to pickup from your own address.`,
+      code: 'pickup_office_not_included',
     };
   }
   if (listing.shippingMethod === 'delhivery' && !plan.allowsDelhivery) {
     return {
       ok: false,
       error: `Your ${plan.name} plan doesn't include Delhivery shipping — upgrade, or switch this listing to self-managed shipping.`,
+      code: 'delhivery_not_included',
     };
   }
 

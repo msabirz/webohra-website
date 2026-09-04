@@ -300,7 +300,7 @@ function Breadcrumb({
 }) {
   return (
     <nav className="flex items-center gap-1.5 font-body text-xs text-ink-soft">
-      <Link href={`/c/${listing.categorySlug}`} className="hover:text-ink hover:underline">
+      <Link href={`/category/${listing.categorySlug}`} className="hover:text-ink hover:underline">
         {listing.categoryName}
       </Link>
       <ChevronRight className="h-3 w-3" strokeWidth={2} />

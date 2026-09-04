@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState, FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ExternalLink } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ExternalLink, TrendingUp, X } from 'lucide-react';
 import { Field, TextInput, TextArea, Select, SubmitButton } from '@/components/form';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles } from '@/lib/button-styles';
 import { ImageManager } from '@/components/seller/image-manager';
 import { VariantManager } from '@/components/seller/variant-manager';
 import { DynamicFieldInput, type SubcategoryFieldDef } from '@/components/seller/dynamic-field-input';
+import { useToast } from '@/components/toast-context';
+import { scrollToFirstError } from '@/lib/form-error-focus';
 
 type ListingType = 'physical_product' | 'local_service' | 'remote_service';
 
@@ -72,6 +75,7 @@ const emptyForm: ProductFormValues = {
 
 export function ProductForm({ initial }: { initial?: ProductFormValues }) {
   const router = useRouter();
+  const { showToast } = useToast();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
@@ -79,9 +83,33 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
   const [errors, setErrors] = useState<Partial<Record<keyof ProductFormValues, string>>>({});
   const [dynamicErrors, setDynamicErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState<string | null>(null);
+  // Set only when publishing is blocked by her subscription plan (the API
+  // sends a `code` alongside `error` specifically for this — see
+  // lib/subscriptions.ts's checkPublishGate) — a popup rather than the
+  // same inline red text every other error gets, since this specific one
+  // needs an actionable "go upgrade" link, not just an explanation
+  // (2026-09-04, user's own ask).
+  const [planGateMessage, setPlanGateMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
+  // Tracks whether the initial "she just created a brand-new draft, and
+  // the Photos section only now exists" transition already got its
+  // one-time auto-scroll (2026-09-04, user's own ask — "in second step
+  // we ask for image, cant we ask this things in one form itself?"). This
+  // is the pragmatic version: the create-then-attach-photos backend
+  // sequence is unchanged (uploads genuinely need a real listing id
+  // first), but the UI stops making that feel like a separate step — one
+  // continuous scroll straight into the now-visible Photos section,
+  // right where she left off, instead of a static page she'd otherwise
+  // have to notice changed and scroll to herself.
+  const scrolledToPhotos = useRef(false);
+  useEffect(() => {
+    if (form.id && !scrolledToPhotos.current && !initial?.id) {
+      scrolledToPhotos.current = true;
+      document.getElementById('photos-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [form.id, initial?.id]);
 
   useEffect(() => {
     fetch('/api/categories')
@@ -249,8 +277,15 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
           }
           setErrors(fieldErrors);
           setDynamicErrors(dynErrors);
+          showToast('Please fix the highlighted field(s) before saving.', 'error');
+          // Static fields are actual DOM inputs with matching ids;
+          // dynamic (per-subcategory) fields render further down and
+          // aren't part of this scroll target set yet — their errors
+          // still show inline either way.
+          scrollToFirstError(Object.keys(fieldErrors));
         } else {
           setServerError(data.error ?? 'Something went wrong. Please try again.');
+          showToast(data.error ?? 'Something went wrong. Please try again.', 'error');
         }
         return;
       }
@@ -262,9 +297,11 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
         status: data.listing.status,
       }));
       setSaved(true);
+      showToast(isUpdate ? 'Changes saved.' : 'Draft created — add photos below.', 'success');
       setTimeout(() => setSaved(false), 2000);
     } catch {
       setServerError('Could not reach the server. Check your connection and try again.');
+      showToast('Could not reach the server. Check your connection and try again.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -282,10 +319,16 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setServerError(data.error ?? 'Could not update status.');
+        if (data.code) {
+          setPlanGateMessage(data.error);
+        } else {
+          setServerError(data.error ?? 'Could not update status.');
+          showToast(data.error ?? 'Could not update status.', 'error');
+        }
         return;
       }
       setForm((prev) => ({ ...prev, status: data.listing.status }));
+      showToast(`Marked as ${STATUS_LABEL[data.listing.status as keyof typeof STATUS_LABEL]}.`, 'success');
     } finally {
       setStatusBusy(false);
     }
@@ -348,14 +391,14 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
       )}
 
       {form.id && !form.hasVariants && (
-        <div className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+        <div id="photos-section" className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
           <h2 className="font-heading text-sm font-semibold text-ink">Photos</h2>
           <ImageManager listingId={form.id} />
         </div>
       )}
 
       {form.id && form.hasVariants && (
-        <div className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+        <div id="photos-section" className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
           <div>
             <h2 className="font-heading text-sm font-semibold text-ink">Types</h2>
             <p className="mt-0.5 font-body text-xs text-ink-soft">
@@ -668,16 +711,63 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
               ? 'Saved ✓'
               : form.id
                 ? 'Save changes'
-                : 'Save as draft'}
+                : 'Continue to Add Photos'}
         </SubmitButton>
         {!form.id && (
           <p className="text-center font-body text-xs text-ink-soft">
-            Saves as a draft first — photos and a preview link appear on this same page the
-            moment it does, no need to go anywhere else.
+            One form, no separate page — the moment you continue, this same screen scrolls
+            straight down to Photos.
           </p>
         )}
       </form>
+
+      {planGateMessage && (
+        <PlanGateModal message={planGateMessage} onClose={() => setPlanGateMessage(null)} />
+      )}
     </div>
+  );
+}
+
+/** Popup shown when publishing is blocked by her subscription plan
+ *  (listing limit reached, or a feature this listing uses isn't included)
+ *  — separate from the form's usual inline error text since this one
+ *  always has a real next step: go upgrade. Portal'd to document.body for
+ *  the same reason as the WhatsApp/consultation modals elsewhere in this
+ *  codebase — a fixed-position overlay needs to escape any ancestor's own
+ *  transform/stacking context to actually cover the full viewport. */
+function PlanGateModal({ message, onClose }: { message: string; onClose: () => void }) {
+  return createPortal(
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4 backdrop-blur-sm">
+      <button aria-hidden="true" tabIndex={-1} onClick={onClose} className="absolute inset-0" />
+      <div className="relative flex w-full max-w-sm flex-col gap-4 rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-black/5">
+        <div className="flex items-start justify-between">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gold/15">
+            <TrendingUp className="h-5 w-5 text-gold" strokeWidth={2} />
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-1.5 text-ink-soft transition hover:bg-ivory-deep hover:text-ink"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" strokeWidth={2} />
+          </button>
+        </div>
+        <div>
+          <h2 className="font-heading text-lg font-semibold text-ink">Time to upgrade?</h2>
+          <p className="mt-1.5 font-body text-sm text-ink-soft">{message}</p>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} className={buttonStyles('secondary', 'sm', 'flex-1')}>
+            Not now
+          </button>
+          <a href="/seller/subscription" className={buttonStyles('accent', 'sm', 'flex-1')}>
+            View plans
+          </a>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

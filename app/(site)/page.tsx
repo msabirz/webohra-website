@@ -100,7 +100,7 @@ export default function HomePage() {
             return (
               <Link
                 key={category.id}
-                href={`/c/${category.slug}`}
+                href={`/category/${category.slug}`}
                 className="group flex flex-col items-center gap-3 rounded-2xl bg-white px-3 py-7 text-center shadow-sm ring-1 ring-ink-soft/5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
               >
                 <span
