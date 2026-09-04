@@ -31,10 +31,14 @@ export type ListingCardData = {
   /** Service contact-tiering (2026-09-03/05) — null for a physical product
    *  (meaningless there) or when GET /api/listings hasn't resolved it (an
    *  older caller); resolved from the seller's actual active service plan
-   *  otherwise. Drives which action (or none, for Basic) the card shows —
-   *  same three-way dispatch as the PDP itself, see
-   *  components/service-contact-action.tsx. */
+   *  otherwise. Drives which action the card shows — same three-way
+   *  dispatch as the PDP itself, see components/service-contact-action.tsx. */
   contactMode?: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
+  /** Only ever non-null when contactMode is 'whatsapp_number' — see GET
+   *  /api/listings' own comment on why it's withheld otherwise. Powers the
+   *  tile's "Call Now" button for that tier (2026-09-05 — previously that
+   *  tier's tile had no action at all). */
+  sellerPhone?: string | null;
 };
 
 const AUTO_CYCLE_MS = 2800;
@@ -163,6 +167,7 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
             <ServiceContactAction
               contactMode={listing.contactMode ?? 'masked_relay'}
               listingId={listing.id}
+              sellerPhone={listing.sellerPhone}
               width="full"
               shape="box"
             />

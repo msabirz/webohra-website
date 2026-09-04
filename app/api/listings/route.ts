@@ -97,6 +97,15 @@ export async function GET(request: Request) {
       businessName: sellerProfiles.businessName,
       womenOwned: users.itsVerified,
       jamaatCity: jamaats.city,
+      // Only ever surfaced in the response for a whatsapp_number-tier
+      // service (see the mapping below) — never for a physical product or
+      // any other service tier, so this doesn't leak every seller's phone
+      // number regardless of plan. Basic tier's own value proposition is
+      // exactly this — a plain, directly-shown number — same information
+      // already shown on her PDP sidebar, just now also usable as the
+      // card's "Call Now" action instead of leaving it with no action at
+      // all (2026-09-05, real bug the user's own screenshot caught).
+      sellerPhoneRaw: users.phone,
     })
     .from(listings)
     .innerJoin(subcategories, eq(listings.subcategoryId, subcategories.id))
@@ -166,12 +175,18 @@ export async function GET(request: Request) {
   );
 
   return NextResponse.json({
-    listings: rows.map((row) => ({
-      ...row,
-      coverImageUrl: coverByListingId.get(row.id) ?? null,
-      imageUrls: imagesByListingId.get(row.id) ?? [],
-      contactMode: row.listingType === 'physical_product' ? null : (contactModeBySellerId.get(row.sellerId) ?? 'masked_relay'),
-    })),
+    listings: rows.map((row) => {
+      const { sellerPhoneRaw, ...publicRow } = row;
+      const contactMode =
+        row.listingType === 'physical_product' ? null : (contactModeBySellerId.get(row.sellerId) ?? 'masked_relay');
+      return {
+        ...publicRow,
+        coverImageUrl: coverByListingId.get(row.id) ?? null,
+        imageUrls: imagesByListingId.get(row.id) ?? [],
+        contactMode,
+        sellerPhone: contactMode === 'whatsapp_number' ? sellerPhoneRaw : null,
+      };
+    }),
   });
 }
 
