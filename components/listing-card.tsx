@@ -6,7 +6,7 @@ import { Package, FileText, ChevronRight } from 'lucide-react';
 import { categoryColor } from '@/lib/category-color';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import { WhatsAppBuyButton } from '@/components/whatsapp-buy-button';
-import { ConsultationRequestButton } from '@/components/consultation-request-button';
+import { ServiceContactAction } from '@/components/service-contact-action';
 
 export type ListingCardData = {
   id: number;
@@ -28,6 +28,13 @@ export type ListingCardData = {
    *  the seller's own sort order — powers the tap-through dots below. Falls
    *  back to just `coverImageUrl` when a caller hasn't supplied this. */
   imageUrls?: string[];
+  /** Service contact-tiering (2026-09-03/05) — null for a physical product
+   *  (meaningless there) or when GET /api/listings hasn't resolved it (an
+   *  older caller); resolved from the seller's actual active service plan
+   *  otherwise. Drives which action (or none, for Basic) the card shows —
+   *  same three-way dispatch as the PDP itself, see
+   *  components/service-contact-action.tsx. */
+  contactMode?: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
 };
 
 const AUTO_CYCLE_MS = 2800;
@@ -153,7 +160,12 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
               <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
             </span>
           ) : isService ? (
-            <ConsultationRequestButton listingId={listing.id} label="Take Consultation" width="full" shape="box" />
+            <ServiceContactAction
+              contactMode={listing.contactMode ?? 'masked_relay'}
+              listingId={listing.id}
+              width="full"
+              shape="box"
+            />
           ) : (
             <>
               <AddToCartButton listingId={listing.id} width="share" shape="box" />

@@ -15,6 +15,7 @@ import { listingCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { slugifyTitle, withUniqueSuffix } from '@/lib/ids';
 import { validateFieldValues, saveFieldValues, checkShippingEstimate } from '@/lib/listing-fields';
+import { getActivePlan } from '@/lib/subscriptions';
 
 /**
  * GET /api/listings
@@ -86,6 +87,7 @@ export async function GET(request: Request) {
       displayPrice,
       shippingMethod: listings.shippingMethod,
       createdAt: listings.createdAt,
+      sellerId: listings.sellerId,
       subcategoryId: subcategories.id,
       subcategoryName: subcategories.name,
       subcategorySlug: subcategories.slug,
@@ -146,11 +148,29 @@ export async function GET(request: Request) {
     }
   }
 
+  // Service contact-tiering (2026-09-03) — the listing GRID card needs the
+  // same tier-aware action GET /api/listings/[idOrSlug] already resolves
+  // for the PDP (see that route's own comment for the full tier story);
+  // this was missed when that work landed, so a card kept showing "Take
+  // Consultation" regardless of a seller's actual plan. Resolved once per
+  // unique service seller on the page (not once per row) to avoid a
+  // redundant getActivePlan call for a seller with two listings in the
+  // same page.
+  const serviceSellerIds = [...new Set(rows.filter((r) => r.listingType !== 'physical_product').map((r) => r.sellerId))];
+  const contactModeBySellerId = new Map<number, 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay'>();
+  await Promise.all(
+    serviceSellerIds.map(async (id) => {
+      const plan = await getActivePlan(id, 'service');
+      contactModeBySellerId.set(id, plan?.contactMode ?? 'masked_relay');
+    }),
+  );
+
   return NextResponse.json({
     listings: rows.map((row) => ({
       ...row,
       coverImageUrl: coverByListingId.get(row.id) ?? null,
       imageUrls: imagesByListingId.get(row.id) ?? [],
+      contactMode: row.listingType === 'physical_product' ? null : (contactModeBySellerId.get(row.sellerId) ?? 'masked_relay'),
     })),
   });
 }
