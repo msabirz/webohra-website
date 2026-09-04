@@ -304,7 +304,7 @@ export async function PATCH(
     // specific plan includes.
     const gate = await checkPublishGate(listing);
     if (!gate.ok) {
-      return NextResponse.json({ error: gate.error }, { status: 403 });
+      return NextResponse.json({ error: gate.error, code: gate.code }, { status: 403 });
     }
   }
 
@@ -396,7 +396,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
       shippingMethod,
     });
     if (!gate.ok) {
-      return NextResponse.json({ error: gate.error }, { status: 403 });
+      return NextResponse.json({ error: gate.error, code: gate.code }, { status: 403 });
     }
   }
 

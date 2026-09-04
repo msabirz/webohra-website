@@ -19,6 +19,7 @@ import {
   Wallet,
   Landmark,
   Users,
+  User,
   Settings,
   LogOut,
   Sparkles,
@@ -29,6 +30,7 @@ import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { AdminPortalContext, type AdminMe } from '@/lib/admin-context';
 import { PortalShellSkeleton } from '@/components/skeleton';
 import { PortalNav, type NavEntry, type NavLeaf } from '@/components/portal-nav';
+import { ToastProvider } from '@/components/toast-context';
 
 type StaffRole = 'customer_support' | 'admin' | 'super_admin';
 type AdminNavLeaf = NavLeaf & { roles: readonly StaffRole[] };
@@ -43,6 +45,7 @@ type AdminNavEntry = AdminNavLeaf | AdminNavGroup;
 const NAV_ITEMS: AdminNavEntry[] = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['customer_support', 'admin', 'super_admin'] },
   { href: '/admin/sellers', label: 'Sellers', icon: ShieldCheck, roles: ['customer_support', 'admin', 'super_admin'] },
+  { href: '/admin/customers', label: 'Customers', icon: User, roles: ['customer_support', 'admin', 'super_admin'] },
   {
     label: 'Catalog',
     icon: Package,
@@ -155,6 +158,7 @@ export default function AdminPortalLayout({ children }: { children: React.ReactN
   const visibleNav = visibleNavFor(me.staffRole);
 
   return (
+    <ToastProvider>
     <AdminPortalContext.Provider value={{ me }}>
       <div className="flex min-h-screen bg-ivory">
         <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between border-b border-ink-soft/10 bg-navy px-4 py-3 md:hidden">
@@ -219,8 +223,15 @@ export default function AdminPortalLayout({ children }: { children: React.ReactN
           />
         )}
 
-        <main className="flex-1 px-4 py-8 pt-20 md:ml-64 md:px-8 md:py-10 md:pt-10">{children}</main>
+        {/* min-w-0 (2026-09-04, real bug — same fix as the seller portal
+         *  layout, see its own comment) — a flex-1 item's default
+         *  min-width:auto lets a wide table (or any wide content) deep
+         *  inside refuse to shrink and force the whole page into
+         *  horizontal scroll, defeating that content's own
+         *  overflow-x-auto wrapper. */}
+        <main className="min-w-0 flex-1 px-4 py-8 pt-20 md:ml-64 md:px-8 md:py-10 md:pt-10">{children}</main>
       </div>
     </AdminPortalContext.Provider>
+    </ToastProvider>
   );
 }
