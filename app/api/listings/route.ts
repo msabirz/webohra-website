@@ -15,6 +15,7 @@ import { listingCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { slugifyTitle, withUniqueSuffix } from '@/lib/ids';
 import { validateFieldValues, saveFieldValues, checkShippingEstimate } from '@/lib/listing-fields';
+import { getActivePlan } from '@/lib/subscriptions';
 
 /**
  * GET /api/listings
@@ -86,6 +87,7 @@ export async function GET(request: Request) {
       displayPrice,
       shippingMethod: listings.shippingMethod,
       createdAt: listings.createdAt,
+      sellerId: listings.sellerId,
       subcategoryId: subcategories.id,
       subcategoryName: subcategories.name,
       subcategorySlug: subcategories.slug,
@@ -95,6 +97,15 @@ export async function GET(request: Request) {
       businessName: sellerProfiles.businessName,
       womenOwned: users.itsVerified,
       jamaatCity: jamaats.city,
+      // Only ever surfaced in the response for a whatsapp_number-tier
+      // service (see the mapping below) — never for a physical product or
+      // any other service tier, so this doesn't leak every seller's phone
+      // number regardless of plan. Basic tier's own value proposition is
+      // exactly this — a plain, directly-shown number — same information
+      // already shown on her PDP sidebar, just now also usable as the
+      // card's "Call Now" action instead of leaving it with no action at
+      // all (2026-09-05, real bug the user's own screenshot caught).
+      sellerPhoneRaw: users.phone,
     })
     .from(listings)
     .innerJoin(subcategories, eq(listings.subcategoryId, subcategories.id))
@@ -146,12 +157,36 @@ export async function GET(request: Request) {
     }
   }
 
+  // Service contact-tiering (2026-09-03) — the listing GRID card needs the
+  // same tier-aware action GET /api/listings/[idOrSlug] already resolves
+  // for the PDP (see that route's own comment for the full tier story);
+  // this was missed when that work landed, so a card kept showing "Take
+  // Consultation" regardless of a seller's actual plan. Resolved once per
+  // unique service seller on the page (not once per row) to avoid a
+  // redundant getActivePlan call for a seller with two listings in the
+  // same page.
+  const serviceSellerIds = [...new Set(rows.filter((r) => r.listingType !== 'physical_product').map((r) => r.sellerId))];
+  const contactModeBySellerId = new Map<number, 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay'>();
+  await Promise.all(
+    serviceSellerIds.map(async (id) => {
+      const plan = await getActivePlan(id, 'service');
+      contactModeBySellerId.set(id, plan?.contactMode ?? 'masked_relay');
+    }),
+  );
+
   return NextResponse.json({
-    listings: rows.map((row) => ({
-      ...row,
-      coverImageUrl: coverByListingId.get(row.id) ?? null,
-      imageUrls: imagesByListingId.get(row.id) ?? [],
-    })),
+    listings: rows.map((row) => {
+      const { sellerPhoneRaw, ...publicRow } = row;
+      const contactMode =
+        row.listingType === 'physical_product' ? null : (contactModeBySellerId.get(row.sellerId) ?? 'masked_relay');
+      return {
+        ...publicRow,
+        coverImageUrl: coverByListingId.get(row.id) ?? null,
+        imageUrls: imagesByListingId.get(row.id) ?? [],
+        contactMode,
+        sellerPhone: contactMode === 'whatsapp_number' ? sellerPhoneRaw : null,
+      };
+    }),
   });
 }
 

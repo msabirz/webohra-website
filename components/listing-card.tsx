@@ -6,7 +6,7 @@ import { Package, FileText, ChevronRight } from 'lucide-react';
 import { categoryColor } from '@/lib/category-color';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import { WhatsAppBuyButton } from '@/components/whatsapp-buy-button';
-import { ConsultationRequestButton } from '@/components/consultation-request-button';
+import { ServiceContactAction } from '@/components/service-contact-action';
 
 export type ListingCardData = {
   id: number;
@@ -28,6 +28,17 @@ export type ListingCardData = {
    *  the seller's own sort order — powers the tap-through dots below. Falls
    *  back to just `coverImageUrl` when a caller hasn't supplied this. */
   imageUrls?: string[];
+  /** Service contact-tiering (2026-09-03/05) — null for a physical product
+   *  (meaningless there) or when GET /api/listings hasn't resolved it (an
+   *  older caller); resolved from the seller's actual active service plan
+   *  otherwise. Drives which action the card shows — same three-way
+   *  dispatch as the PDP itself, see components/service-contact-action.tsx. */
+  contactMode?: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
+  /** Only ever non-null when contactMode is 'whatsapp_number' — see GET
+   *  /api/listings' own comment on why it's withheld otherwise. Powers the
+   *  tile's "Call Now" button for that tier (2026-09-05 — previously that
+   *  tier's tile had no action at all). */
+  sellerPhone?: string | null;
 };
 
 const AUTO_CYCLE_MS = 2800;
@@ -153,7 +164,13 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
               <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
             </span>
           ) : isService ? (
-            <ConsultationRequestButton listingId={listing.id} label="Take Consultation" width="full" shape="box" />
+            <ServiceContactAction
+              contactMode={listing.contactMode ?? 'masked_relay'}
+              listingId={listing.id}
+              sellerPhone={listing.sellerPhone}
+              width="full"
+              shape="box"
+            />
           ) : (
             <>
               <AddToCartButton listingId={listing.id} width="share" shape="box" />
