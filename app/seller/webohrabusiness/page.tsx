@@ -43,7 +43,7 @@ const ROWS: Row[] = [
     how: 'Buyer taps "WhatsApp" on a product listing (WhatsAppBuyButton) — straight through to the seller, no relay',
     tracked: { ok: true, note: 'A click is logged (whatsapp_contacts table) — but nothing about what happens after. Was missing from this audit entirely until this revision — a real gap in the audit itself, not just the product.' },
     monetized: { ok: false, note: 'Zero per-use charge today' },
-    fix: 'Revised 2026-09-05, raised from an initial ₹5: ₹15 per click-through, deducted from her wallet the instant it happens — capped by her own balance, never an open-ended toll. Lower than a service connect since it\'s a single-item, lower-intent contact — but a real handoff to her phone is worth more than a token fee.',
+    fix: 'Revised 2026-09-05, now ₹20 (was ₹5, then ₹15) — unified with the service connect rate below: a real handoff to her phone is worth the same regardless of listing type. Deducted from her wallet the instant it happens, capped by her own balance, never an open-ended toll.',
     status: 'gap',
   },
   {
@@ -51,7 +51,7 @@ const ROWS: Row[] = [
     how: 'Buyer taps straight through to the seller\'s own WhatsApp number — no relay, no request logged in her portal',
     tracked: { ok: true, note: 'A click is logged (whatsapp_contacts table) — but nothing about what happens after' },
     monetized: { ok: false, note: 'Zero per-use charge. The only monetization design is the flat Silver plan fee itself — and that fee isn\'t billed yet either' },
-    fix: 'Revised 2026-09-05, raised from an initial ₹7: ₹20 per click-through, deducted from wallet at the moment it happens — higher than the product rate since a service typically carries more potential order value. Capped by her own balance, not a metered toll: if it runs low, Connect pauses with a top-up prompt rather than auto-billing further.',
+    fix: 'Revised 2026-09-05, now ₹20 (was ₹7, then unified with product\'s rate) — deducted from wallet at the moment it happens. Capped by her own balance, not a metered toll: if it runs low, Connect pauses with a top-up prompt rather than auto-billing further.',
     status: 'gap',
   },
   {
@@ -59,7 +59,7 @@ const ROWS: Row[] = [
     how: 'Buyer submits a request; it lands in the seller\'s Enquiries; she opens WhatsApp herself — this is "the lead"',
     tracked: { ok: true, note: 'Real record in her Enquiries — the strongest tracking of any channel here' },
     monetized: { ok: false, note: 'Checked directly: zero commission logic anywhere in the enquiry/consultation-request routes' },
-    fix: 'Flat ₹50, deducted from her wallet the moment the lead lands in her Enquiries — matches typical lead-gen pricing at other Indian service marketplaces (Urban Company, Sulekha) for a genuinely qualified, tracked request. Converting it is her own skill, not a risk the platform should carry. No self-reporting needed, and lead volume is naturally bounded by real buyer intent, so this stays a predictable, bounded cost even across several leads a month.',
+    fix: 'Revised 2026-09-05, now ₹35 (was ₹50) — deducted from her wallet the moment the lead lands in her Enquiries, in the same range as Sulekha\'s per-lead pricing (~₹50 per a documented complaint) and well under JustDial\'s premium B2B tier (~₹167/lead for exporters — a different, higher-value category). Converting it is her own skill, not a risk the platform should carry. Real limitation, shared with these competitors: there\'s no way to verify an actual WhatsApp conversation happened on the free wa.me link WE Bohra uses today — see the verification note below the comparison table.',
     status: 'gap',
   },
   {
@@ -206,7 +206,7 @@ export default function WeBohraBusinessAuditPage() {
           comfortably absorb variable costs. For this audience, <b>pay only when you earn</b> (a % of a real sale) is
           safe — a flat fee or a per-use toll can bite in a month she sells nothing. Every recommendation below follows
           from that, and it&apos;s why Wallet is the launch plan, not Subscription. One deliberate exception: the flat
-          ₹50 lead fee below is charged on delivery, not on a sale — accepted because lead volume is naturally bounded
+          ₹35 lead fee below is charged on delivery, not on a sale — accepted because lead volume is naturally bounded
           by real buyer intent (not an open-ended toll) and the price matches what a genuinely qualified lead is
           actually worth, not because the principle stopped applying.
         </div>
@@ -229,18 +229,18 @@ export default function WeBohraBusinessAuditPage() {
                 },
                 {
                   channel: 'WhatsApp Connect — product',
-                  wallet: '₹15 per click-through, deducted from wallet the instant it happens. Capped by her own balance — pauses with a top-up prompt if it runs low, never auto-bills further.',
-                  sub: 'Same ₹15/connect — capping doesn\'t depend on billing mode, it depends on the wallet balance the interaction draws from.',
+                  wallet: '₹20 per click-through, deducted from wallet the instant it happens. Capped by her own balance — pauses with a top-up prompt if it runs low, never auto-bills further.',
+                  sub: 'Same ₹20/connect — capping doesn\'t depend on billing mode, it depends on the wallet balance the interaction draws from.',
                 },
                 {
                   channel: 'WhatsApp Connect — service',
-                  wallet: '₹20 per click-through, same balance-capped mechanic. Higher than product\'s rate since a service typically carries more potential order value.',
+                  wallet: '₹20 per click-through, same balance-capped mechanic — unified with the product rate.',
                   sub: 'Same ₹20/connect, same balance-capped mechanic across both models.',
                 },
                 {
                   channel: 'Consultation request ("the lead")',
-                  wallet: 'Flat ₹50 per lead delivered, deducted from wallet the moment it lands in her Enquiries — regardless of whether it converts. Matches typical lead-gen pricing elsewhere (Urban Company, Sulekha). WE Bohra\'s job ends at delivering a qualified lead.',
-                  sub: 'Same flat ₹50-per-lead — a plan fee doesn\'t change who\'s responsible for converting it, so this stays consistent across both models.',
+                  wallet: 'Flat ₹35 per lead delivered, deducted from wallet the moment it lands in her Enquiries — regardless of whether it converts. In the range of Sulekha\'s per-lead pricing. WE Bohra\'s job ends at delivering a qualified lead.',
+                  sub: 'Same flat ₹35-per-lead — a plan fee doesn\'t change who\'s responsible for converting it, so this stays consistent across both models.',
                 },
                 {
                   channel: 'Overall pricing shape',
@@ -263,7 +263,7 @@ export default function WeBohraBusinessAuditPage() {
           <p className="mb-3 text-[13.5px] text-[#D7DEEA]">
             An earlier draft of this audit ruled out metering WhatsApp Connect at all, worried about an unpredictable
             bill. The distinction that changes that: a <b>metered toll</b> (auto-charged per click, no ceiling) is
-            genuinely risky for this audience — a <b>wallet-capped rate</b> (₹15 product / ₹20 service per click,
+            genuinely risky for this audience — a <b>wallet-capped rate</b> (₹20 per click, either listing type,
             drawn only from what she&apos;s already funded) is not, because she can never be charged beyond her own
             top-up. Once her balance runs low, Connect simply pauses with a recharge prompt — never an auto-bill.
           </p>
@@ -271,6 +271,47 @@ export default function WeBohraBusinessAuditPage() {
             Still unchanged: no charge on Basic-tier phone/email reveal, at any billing mode — it stays the free
             on-ramp for the smallest, most cautious sellers. Tracking it (at zero cost to her) still happens
             regardless, purely for WE Bohra&apos;s own visibility.
+          </p>
+        </div>
+
+        <div className="mt-9 flex items-center gap-4 text-xs font-bold uppercase tracking-widest text-ink-soft">
+          <span className="h-px flex-1 bg-ink-soft/20" />
+          Can we verify a lead actually chatted on WhatsApp?
+          <span className="h-px flex-1 bg-ink-soft/20" />
+        </div>
+
+        <div className="mb-6 rounded-2xl border border-[#E8C4B4] bg-[#F7E4DE] p-6">
+          <h4 className="mb-2 font-heading text-base font-semibold text-[#8A3B26]">Honest answer: not with the free wa.me link WE Bohra uses today — and this isn&apos;t unique to WE Bohra</h4>
+          <p className="mb-3 text-[13.5px] text-[#6B3624]">
+            Once a wa.me link opens WhatsApp, the conversation happens entirely inside WhatsApp&apos;s own app —
+            WE Bohra (or any website) has zero visibility into whether a message was actually sent, read, or replied
+            to. This is a structural limit of the free deep-link approach, not a gap specific to this platform.
+          </p>
+          <p className="mb-3 text-[13.5px] text-[#6B3624]">
+            <b>How JustDial/Sulekha/IndiaMART actually handle this — they mostly don&apos;t verify chat either.</b>{' '}
+            Their verification muscle is built for <b>phone calls</b>, not WhatsApp: they route calls through a
+            masked/virtual number they control, then use <b>call duration as a proxy for a genuine conversation</b> —
+            typically a 30–90 second minimum before a call counts as a &quot;qualified&quot; lead worth charging for.
+            That technique works because they own the call. It doesn&apos;t transfer to WhatsApp, where the
+            conversation leaves their infrastructure entirely — which is exactly why fake/junk leads are one of the
+            most common complaints against these platforms even with call tracking in place. JustDial once let
+            sellers dispute &quot;irrelevant&quot; leads for a refund within 24 hours, then removed that option — a real signal that
+            self-reported disputes don&apos;t hold up at scale either.
+          </p>
+          <p className="mb-3 text-[13.5px] text-[#6B3624]">
+            <b>What would actually give WE Bohra real chat-level tracking:</b> the official, paid WhatsApp Business
+            API (via a BSP like Interakt or Gupshup) — flagged earlier as a future plan, pricing not yet finalized.
+            That&apos;s a real, meaningfully larger integration, not a small toggle.
+          </p>
+          <p className="text-[13.5px] text-[#6B3624]">
+            <b>What&apos;s realistic to do now, without that:</b> reduce junk clicks rather than try to prove real
+            ones. WE Bohra already requires phone-OTP-verified registration before a buyer can click Connect or
+            Request at all — a stronger baseline than JustDial/Sulekha&apos;s more open lead forms. On top of that:
+            dedupe repeat clicks from the same buyer on the same listing within 24 hours (so a refresh or accidental
+            double-tap never double-charges), and rate-limit how many paid connects any single buyer account can
+            trigger per day. That second one matters more now than it used to — once a click costs the seller real
+            money automatically, it becomes a real target for a bad actor to drain a seller&apos;s wallet by
+            spam-clicking Connect, which wasn&apos;t a risk at all while Connect was free.
           </p>
         </div>
 
