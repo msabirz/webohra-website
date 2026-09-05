@@ -39,11 +39,19 @@ const ROWS: Row[] = [
     status: 'gap',
   },
   {
+    channel: 'WhatsApp — direct connect (product listings)',
+    how: 'Buyer taps "WhatsApp" on a product listing (WhatsAppBuyButton) — straight through to the seller, no relay',
+    tracked: { ok: true, note: 'A click is logged (whatsapp_contacts table) — but nothing about what happens after. Was missing from this audit entirely until this revision — a real gap in the audit itself, not just the product.' },
+    monetized: { ok: false, note: 'Zero per-use charge today' },
+    fix: 'Revised 2026-09-05: ₹5 per click-through, deducted from her wallet the instant it happens — capped by her own balance, never an open-ended toll. Lower rate than a service connect since it\'s a single-item, lower-intent contact.',
+    status: 'gap',
+  },
+  {
     channel: 'WhatsApp — direct connect (Silver tier service)',
     how: 'Buyer taps straight through to the seller\'s own WhatsApp number — no relay, no request logged in her portal',
     tracked: { ok: true, note: 'A click is logged (whatsapp_contacts table) — but nothing about what happens after' },
     monetized: { ok: false, note: 'Zero per-use charge. The only monetization design is the flat Silver plan fee itself — and that fee isn\'t billed yet either' },
-    fix: 'Keep this fully unmetered — no per-click charge, no cap. Wire up the flat Silver fee once subscriptions launch; while on Wallet, funded access alone unlocks it. Metering leads would create an unpredictable bill for a seller who can\'t control how many people click — the wrong risk for this audience.',
+    fix: 'Revised 2026-09-05: ₹7 per click-through, deducted from wallet at the moment it happens — higher than the product rate since a service typically carries more potential order value. Capped by her own balance, not a metered toll: if it runs low, Connect pauses with a top-up prompt rather than auto-billing further.',
     status: 'gap',
   },
   {
@@ -219,9 +227,14 @@ export default function WeBohraBusinessAuditPage() {
                   sub: 'Same 10% baseline. Could offer a reduced rate (e.g. 8%) as a paid-tier perk — rewards commitment without punishing entry sellers.',
                 },
                 {
-                  channel: 'WhatsApp direct connect',
-                  wallet: 'Unlimited, unmetered — funded wallet alone unlocks it. No per-click cost, ever.',
-                  sub: 'Same — one flat low fee for unlimited access. No cap, no per-lead metering, on either model.',
+                  channel: 'WhatsApp Connect — product',
+                  wallet: '₹5 per click-through, deducted from wallet the instant it happens. Capped by her own balance — pauses with a top-up prompt if it runs low, never auto-bills further.',
+                  sub: 'Same ₹5/connect — capping doesn\'t depend on billing mode, it depends on the wallet balance the interaction draws from.',
+                },
+                {
+                  channel: 'WhatsApp Connect — service',
+                  wallet: '₹7 per click-through, same balance-capped mechanic. Higher than product\'s rate since a service typically carries more potential order value.',
+                  sub: 'Same ₹7/connect, same balance-capped mechanic across both models.',
                 },
                 {
                   channel: 'Consultation request ("the lead")',
@@ -245,11 +258,19 @@ export default function WeBohraBusinessAuditPage() {
         </div>
 
         <div className="mt-8 rounded-2xl bg-navy p-6 text-ivory">
-          <h4 className="mb-2 font-heading text-base font-semibold text-white">Two things this rules out, on purpose</h4>
-          <ul className="list-disc space-y-1.5 pl-5 text-[13.5px] text-[#D7DEEA]">
-            <li>No per-click or per-lead metering on WhatsApp direct connect, at any billing mode — an earlier draft of this audit suggested a monthly cap here; dropped, since it creates exactly the unpredictable-bill risk this audience can least afford.</li>
-            <li>No charge on Basic-tier phone/email reveal, at any billing mode — it stays the free on-ramp for the smallest, most cautious sellers. Tracking it (at zero cost to her) still happens regardless, purely for WE Bohra&apos;s own visibility.</li>
-          </ul>
+          <h4 className="mb-2 font-heading text-base font-semibold text-white">Revised 2026-09-05 — WhatsApp Connect is now capped, on purpose, and here&apos;s why that&apos;s still safe</h4>
+          <p className="mb-3 text-[13.5px] text-[#D7DEEA]">
+            An earlier draft of this audit ruled out metering WhatsApp Connect at all, worried about an unpredictable
+            bill. The distinction that changes that: a <b>metered toll</b> (auto-charged per click, no ceiling) is
+            genuinely risky for this audience — a <b>wallet-capped rate</b> (₹5 product / ₹7 service per click,
+            drawn only from what she&apos;s already funded) is not, because she can never be charged beyond her own
+            top-up. Once her balance runs low, Connect simply pauses with a recharge prompt — never an auto-bill.
+          </p>
+          <p className="text-[13.5px] text-[#D7DEEA]">
+            Still unchanged: no charge on Basic-tier phone/email reveal, at any billing mode — it stays the free
+            on-ramp for the smallest, most cautious sellers. Tracking it (at zero cost to her) still happens
+            regardless, purely for WE Bohra&apos;s own visibility.
+          </p>
         </div>
 
         <footer className="mt-9 text-center text-xs text-ink-soft">

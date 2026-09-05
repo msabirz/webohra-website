@@ -181,7 +181,8 @@ export default function SellerPricingPreviewPage() {
               switched on from day one: unlimited listings, Pickup &amp; Pay, Delhivery shipping, priority support.
             </p>
             <ul className="mb-5 list-disc space-y-1.5 pl-5 text-[13.5px] text-[#D7DEEA]">
-              <li>Commission, payment processing, and delivery cost (only if you use Delhivery) are deducted automatically once your order settles</li>
+              <li>A real sale only ever costs commission, payment processing, and delivery (if used) — deducted automatically once it settles, never upfront</li>
+              <li>WhatsApp connects and requests draw from the same wallet at small fixed rates — see below</li>
               <li>Nothing added to what your buyer pays</li>
               <li>Listings pause if your balance runs below ₹100 — top up any time to resume</li>
             </ul>
@@ -219,6 +220,48 @@ export default function SellerPricingPreviewPage() {
               Only the commission is WE Bohra&apos;s revenue — the Razorpay fee and Delhivery cost are recovered here, then paid straight through to Razorpay and Delhivery. WE Bohra never keeps them.
             </div>
           </div>
+        </div>
+
+        {/* WhatsApp connect/request rates */}
+        <div className="mb-8 rounded-2xl border border-ink-soft/15 bg-white p-6">
+          <h3 className="mb-1 font-heading text-lg font-semibold text-navy-deep">WhatsApp connects &amp; requests — small, fixed, wallet-funded</h3>
+          <p className="mb-4 text-[13px] text-ink-soft">
+            A real sale is never capped — commission only, deducted after you&apos;ve been paid. These three are different:
+            small fixed amounts drawn from your wallet the moment they happen, so you can never be charged more than
+            you&apos;ve chosen to top up.
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-ink-soft/10">
+            <table className="w-full min-w-[520px] border-collapse text-left text-[13px]">
+              <thead>
+                <tr className="bg-ivory-deep text-ink-soft">
+                  <th className="px-4 py-2.5 font-bold">Interaction</th>
+                  <th className="px-4 py-2.5 font-bold">Applies to</th>
+                  <th className="px-4 py-2.5 text-right font-bold">Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ['WhatsApp Connect', 'Product listings', '₹5 / click-through'],
+                  ['WhatsApp Connect', 'Service listings', '₹7 / click-through'],
+                  ['WhatsApp Request (a delivered lead)', 'Service listings', '₹10 / request'],
+                ].map(([interaction, applies, rate]) => (
+                  <tr key={interaction + applies} className="border-t border-ink-soft/10">
+                    <td className="px-4 py-3 font-semibold text-ink">{interaction}</td>
+                    <td className="px-4 py-3 text-ink-soft">{applies}</td>
+                    <td className="px-4 py-3 text-right font-bold tabular-nums text-navy-deep">{rate}</td>
+                  </tr>
+                ))}
+                <tr className="border-t border-ink-soft/10 bg-teal/5">
+                  <td className="px-4 py-3 font-semibold text-ink" colSpan={2}>Phone / email reveal (Basic-equivalent)</td>
+                  <td className="px-4 py-3 text-right font-bold text-teal-deep">Always free</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-[11.5px] text-ink-soft">
+            If your balance runs low, Connect/Request buttons pause with a prompt to top up — you&apos;re never billed
+            beyond what you&apos;ve already funded.
+          </p>
         </div>
 
         {/* coming soon: fixed plans */}
