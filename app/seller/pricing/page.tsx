@@ -190,20 +190,33 @@ export default function SellerPricingPreviewPage() {
             </Link>
           </div>
           <div className="rounded-xl border border-white/15 bg-white/5 p-5">
+            <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[#8FA4C7]">
+              Example: a ₹1,500 order, shipped via Delhivery
+            </div>
+            <div className="flex justify-between border-b border-white/20 py-2.5 text-[13.5px] text-white">
+              <span>Buyer pays</span>
+              <span className="font-bold tabular-nums">₹1,500.00</span>
+            </div>
             {[
-              ['Wallet balance', '₹420.00'],
-              ['Order settled (₹1,500 item)', '+ ₹0.00'],
-              ['Commission (10%)', '− ₹150.00'],
-              ['Delhivery shipping', '− ₹80.00'],
+              ['− Commission (WE Bohra’s fee, 10%)', '− ₹150.00'],
+              ['− Payment processing (Razorpay’s fee)', '− ₹35.40'],
+              ['− Delhivery shipping (real courier cost)', '− ₹80.00'],
             ].map(([label, val]) => (
               <div key={label} className="flex justify-between border-b border-dashed border-white/15 py-2 text-[13px] text-[#D7DEEA]">
                 <span>{label}</span>
                 <span className="font-bold tabular-nums text-white">{val}</span>
               </div>
             ))}
-            <div className="flex justify-between py-2 text-[13px] text-[#D7DEEA]">
-              <span>Paid to you this settlement</span>
-              <span className="font-bold tabular-nums text-gold-soft text-[15px]">₹1,234.60</span>
+            <div className="flex justify-between border-b border-white/20 py-2.5 text-[13.5px] text-white">
+              <span>Paid out to you (the seller)</span>
+              <span className="font-bold tabular-nums text-gold-soft">₹1,234.60</span>
+            </div>
+            <div className="flex justify-between pt-2.5 text-[13px] text-[#D7DEEA]">
+              <span>WE Bohra actually keeps</span>
+              <span className="font-bold tabular-nums text-white">₹150.00</span>
+            </div>
+            <div className="mt-1 text-[11px] leading-snug text-[#8FA4C7]">
+              Only the commission is WE Bohra&apos;s revenue — the Razorpay fee and Delhivery cost are recovered here, then paid straight through to Razorpay and Delhivery. WE Bohra never keeps them.
             </div>
           </div>
         </div>
