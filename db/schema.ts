@@ -851,6 +851,49 @@ export const whatsappContacts = pgTable('whatsapp_contacts', {
 });
 
 /**
+ * POC (2026-09-05) — WhatsApp Cloud API integration, NOT the wa.me deep
+ * link whatsappContacts (above) logs. That one is tracking-only, zero
+ * visibility past the click. This table is the real thing: a message sent
+ * through Meta's WhatsApp Business Platform, whose delivery/read status
+ * comes back from Meta's own webhook (see app/api/webhooks/whatsapp), not
+ * self-reported. This is what makes a "genuine WhatsApp connect" billable
+ * with real evidence behind it, instead of just a click.
+ *
+ * Structural note this table doesn't solve: Meta requires a phone number
+ * be used exclusively for the Business API, so it can't send to/from a
+ * seller's own personal WhatsApp number. This POC sends through ONE
+ * WE-Bohra-owned number to a buyer/seller acting as the counterpart — a
+ * real deployment needs the masked-relay redesign described in
+ * [[webohra-fulfillment-subscriptions-phases]], not just this table.
+ */
+export const whatsappMessageStatusEnum = pgEnum('whatsapp_message_status', [
+  'queued',
+  'sent',
+  'delivered',
+  'read',
+  'failed',
+]);
+
+export const whatsappMessages = pgTable('whatsapp_messages', {
+  id: serial('id').primaryKey(),
+  listingId: integer('listing_id').references(() => listings.id, { onDelete: 'set null' }),
+  sellerId: integer('seller_id').references(() => users.id, { onDelete: 'set null' }),
+  // The phone number the message was sent to — a POC test-recipient
+  // number for now, not a real buyer's registered number.
+  toPhone: varchar('to_phone', { length: 20 }).notNull(),
+  // Meta's own message id ("wamid...") — the join key every status
+  // webhook event arrives keyed by. Nullable only for the brief window
+  // between "we tried to send" and "Meta accepted it and gave us an id".
+  waMessageId: varchar('wa_message_id', { length: 100 }).unique(),
+  status: whatsappMessageStatusEnum('status').notNull().default('queued'),
+  // Set only on a 'failed' status — Meta's own error code/message, so a
+  // failure is debuggable instead of a silent dead row.
+  failureReason: varchar('failure_reason', { length: 300 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  statusUpdatedAt: timestamp('status_updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Homepage hero slider — explicitly Admin-managed, not seller-managed (FR-12
  * style config, no code deploy needed to add/reorder a slide). No media
  * pipeline (R2) exists yet, so a slide is a styled color block + copy + a
