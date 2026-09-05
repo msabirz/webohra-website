@@ -241,9 +241,9 @@ export default function SellerPricingPreviewPage() {
               </thead>
               <tbody>
                 {[
-                  ['WhatsApp Connect', 'Product listings', '₹5 / click-through'],
-                  ['WhatsApp Connect', 'Service listings', '₹7 / click-through'],
-                  ['WhatsApp Request (a delivered lead)', 'Service listings', '₹10 / request'],
+                  ['WhatsApp Connect', 'Product listings', '₹15 / click-through'],
+                  ['WhatsApp Connect', 'Service listings', '₹20 / click-through'],
+                  ['WhatsApp Request (a delivered lead)', 'Service listings', '₹50 / request'],
                 ].map(([interaction, applies, rate]) => (
                   <tr key={interaction + applies} className="border-t border-ink-soft/10">
                     <td className="px-4 py-3 font-semibold text-ink">{interaction}</td>

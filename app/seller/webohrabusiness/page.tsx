@@ -43,7 +43,7 @@ const ROWS: Row[] = [
     how: 'Buyer taps "WhatsApp" on a product listing (WhatsAppBuyButton) — straight through to the seller, no relay',
     tracked: { ok: true, note: 'A click is logged (whatsapp_contacts table) — but nothing about what happens after. Was missing from this audit entirely until this revision — a real gap in the audit itself, not just the product.' },
     monetized: { ok: false, note: 'Zero per-use charge today' },
-    fix: 'Revised 2026-09-05: ₹5 per click-through, deducted from her wallet the instant it happens — capped by her own balance, never an open-ended toll. Lower rate than a service connect since it\'s a single-item, lower-intent contact.',
+    fix: 'Revised 2026-09-05, raised from an initial ₹5: ₹15 per click-through, deducted from her wallet the instant it happens — capped by her own balance, never an open-ended toll. Lower than a service connect since it\'s a single-item, lower-intent contact — but a real handoff to her phone is worth more than a token fee.',
     status: 'gap',
   },
   {
@@ -51,7 +51,7 @@ const ROWS: Row[] = [
     how: 'Buyer taps straight through to the seller\'s own WhatsApp number — no relay, no request logged in her portal',
     tracked: { ok: true, note: 'A click is logged (whatsapp_contacts table) — but nothing about what happens after' },
     monetized: { ok: false, note: 'Zero per-use charge. The only monetization design is the flat Silver plan fee itself — and that fee isn\'t billed yet either' },
-    fix: 'Revised 2026-09-05: ₹7 per click-through, deducted from wallet at the moment it happens — higher than the product rate since a service typically carries more potential order value. Capped by her own balance, not a metered toll: if it runs low, Connect pauses with a top-up prompt rather than auto-billing further.',
+    fix: 'Revised 2026-09-05, raised from an initial ₹7: ₹20 per click-through, deducted from wallet at the moment it happens — higher than the product rate since a service typically carries more potential order value. Capped by her own balance, not a metered toll: if it runs low, Connect pauses with a top-up prompt rather than auto-billing further.',
     status: 'gap',
   },
   {
@@ -59,7 +59,7 @@ const ROWS: Row[] = [
     how: 'Buyer submits a request; it lands in the seller\'s Enquiries; she opens WhatsApp herself — this is "the lead"',
     tracked: { ok: true, note: 'Real record in her Enquiries — the strongest tracking of any channel here' },
     monetized: { ok: false, note: 'Checked directly: zero commission logic anywhere in the enquiry/consultation-request routes' },
-    fix: 'Flat ₹10, deducted from her wallet the moment the lead lands in her Enquiries — WE Bohra\'s job is delivering a qualified lead; converting it is her own skill, not a risk the platform should carry. No self-reporting needed, and lead volume is naturally bounded by real buyer intent, so ₹10 stays a small, predictable cost even across several leads a month.',
+    fix: 'Flat ₹50, deducted from her wallet the moment the lead lands in her Enquiries — matches typical lead-gen pricing at other Indian service marketplaces (Urban Company, Sulekha) for a genuinely qualified, tracked request. Converting it is her own skill, not a risk the platform should carry. No self-reporting needed, and lead volume is naturally bounded by real buyer intent, so this stays a predictable, bounded cost even across several leads a month.',
     status: 'gap',
   },
   {
@@ -206,8 +206,9 @@ export default function WeBohraBusinessAuditPage() {
           comfortably absorb variable costs. For this audience, <b>pay only when you earn</b> (a % of a real sale) is
           safe — a flat fee or a per-use toll can bite in a month she sells nothing. Every recommendation below follows
           from that, and it&apos;s why Wallet is the launch plan, not Subscription. One deliberate exception: the flat
-          ₹10 lead fee below is charged on delivery, not on a sale — accepted because the amount is small and lead
-          volume is bounded by real buyer intent, not because the principle stopped applying.
+          ₹50 lead fee below is charged on delivery, not on a sale — accepted because lead volume is naturally bounded
+          by real buyer intent (not an open-ended toll) and the price matches what a genuinely qualified lead is
+          actually worth, not because the principle stopped applying.
         </div>
 
         <div className="overflow-x-auto rounded-2xl border border-ink-soft/15 bg-white">
@@ -228,18 +229,18 @@ export default function WeBohraBusinessAuditPage() {
                 },
                 {
                   channel: 'WhatsApp Connect — product',
-                  wallet: '₹5 per click-through, deducted from wallet the instant it happens. Capped by her own balance — pauses with a top-up prompt if it runs low, never auto-bills further.',
-                  sub: 'Same ₹5/connect — capping doesn\'t depend on billing mode, it depends on the wallet balance the interaction draws from.',
+                  wallet: '₹15 per click-through, deducted from wallet the instant it happens. Capped by her own balance — pauses with a top-up prompt if it runs low, never auto-bills further.',
+                  sub: 'Same ₹15/connect — capping doesn\'t depend on billing mode, it depends on the wallet balance the interaction draws from.',
                 },
                 {
                   channel: 'WhatsApp Connect — service',
-                  wallet: '₹7 per click-through, same balance-capped mechanic. Higher than product\'s rate since a service typically carries more potential order value.',
-                  sub: 'Same ₹7/connect, same balance-capped mechanic across both models.',
+                  wallet: '₹20 per click-through, same balance-capped mechanic. Higher than product\'s rate since a service typically carries more potential order value.',
+                  sub: 'Same ₹20/connect, same balance-capped mechanic across both models.',
                 },
                 {
                   channel: 'Consultation request ("the lead")',
-                  wallet: 'Flat ₹10 per lead delivered, deducted from wallet the moment it lands in her Enquiries — regardless of whether it converts. WE Bohra\'s job ends at delivering a qualified lead.',
-                  sub: 'Same flat ₹10-per-lead — a plan fee doesn\'t change who\'s responsible for converting it, so this stays consistent across both models.',
+                  wallet: 'Flat ₹50 per lead delivered, deducted from wallet the moment it lands in her Enquiries — regardless of whether it converts. Matches typical lead-gen pricing elsewhere (Urban Company, Sulekha). WE Bohra\'s job ends at delivering a qualified lead.',
+                  sub: 'Same flat ₹50-per-lead — a plan fee doesn\'t change who\'s responsible for converting it, so this stays consistent across both models.',
                 },
                 {
                   channel: 'Overall pricing shape',
@@ -262,7 +263,7 @@ export default function WeBohraBusinessAuditPage() {
           <p className="mb-3 text-[13.5px] text-[#D7DEEA]">
             An earlier draft of this audit ruled out metering WhatsApp Connect at all, worried about an unpredictable
             bill. The distinction that changes that: a <b>metered toll</b> (auto-charged per click, no ceiling) is
-            genuinely risky for this audience — a <b>wallet-capped rate</b> (₹5 product / ₹7 service per click,
+            genuinely risky for this audience — a <b>wallet-capped rate</b> (₹15 product / ₹20 service per click,
             drawn only from what she&apos;s already funded) is not, because she can never be charged beyond her own
             top-up. Once her balance runs low, Connect simply pauses with a recharge prompt — never an auto-bill.
           </p>
