@@ -35,7 +35,7 @@ const ROWS: Row[] = [
     how: 'Buyer pays cash on delivery, or cash at pickup — same payment_method as COD, confirmed in schema (no separate "pickup" payment type exists)',
     tracked: { ok: true, note: 'Real order record exists' },
     monetized: { ok: false, note: 'Checked in code: a COD order never creates a payout row — no commission record, ever' },
-    fix: 'Deduct commission (+ Delhivery cost if applicable) from the seller\'s wallet at the weekly settlement — same trigger as the online payout redesign.',
+    fix: 'Same 10% commission as online orders, deducted from her wallet at settlement — no extra/higher rate. Fair because it mirrors what she\'d already owe if the buyer had paid online.',
     status: 'gap',
   },
   {
@@ -43,7 +43,7 @@ const ROWS: Row[] = [
     how: 'Buyer taps straight through to the seller\'s own WhatsApp number — no relay, no request logged in her portal',
     tracked: { ok: true, note: 'A click is logged (whatsapp_contacts table) — but nothing about what happens after' },
     monetized: { ok: false, note: 'Zero per-use charge. The only monetization design is the flat Silver plan fee itself — and that fee isn\'t billed yet either' },
-    fix: 'Short term: wire up subscription billing so the Silver fee is actually collected. Longer term: consider a monthly cap on direct-connect reveals, since one flat fee currently buys unlimited leads regardless of volume.',
+    fix: 'Keep this fully unmetered — no per-click charge, no cap. Wire up the flat Silver fee once subscriptions launch; while on Wallet, funded access alone unlocks it. Metering leads would create an unpredictable bill for a seller who can\'t control how many people click — the wrong risk for this audience.',
     status: 'gap',
   },
   {
@@ -51,7 +51,7 @@ const ROWS: Row[] = [
     how: 'Buyer submits a request; it lands in the seller\'s Enquiries; she opens WhatsApp herself — this is "the lead"',
     tracked: { ok: true, note: 'Real record in her Enquiries — the strongest tracking of any channel here' },
     monetized: { ok: false, note: 'Checked directly: zero commission logic anywhere in the enquiry/consultation-request routes' },
-    fix: 'This is the easiest one to monetize — it\'s already a trackable, discrete event. Charge per lead delivered, or give a fixed number free per month then charge beyond it.',
+    fix: 'Pay-on-success only: a small flat fee (~₹15–25) deducted only when she marks a request "Converted" herself — never charged for a lead that went nowhere. Trade-off: relies on honest self-reporting, a real leakage risk worth accepting deliberately, not a flaw to hide.',
     status: 'gap',
   },
   {
@@ -59,7 +59,7 @@ const ROWS: Row[] = [
     how: 'Buyer calls or emails the seller directly — "Call Now" button or plain contact info',
     tracked: { ok: false, note: 'Checked directly in service-contact-action.tsx: the Call Now button has no logging call at all — not even a click count' },
     monetized: { ok: false, note: 'Completely invisible to WE Bohra today — the only channel with zero visibility of any kind' },
-    fix: 'At minimum, log the reveal/click (same pattern as the WhatsApp table) so there\'s real data, even before deciding whether to charge for it. Basic is the entry tier — worth a deliberate call on whether to monetize this one or keep it as a free on-ramp.',
+    fix: 'Recommend leaving this genuinely free, permanently — she\'s often testing whether she can sell at all, and this is her lowest-friction on-ramp. Add tracking only (zero cost to her), never a charge.',
     status: 'gap',
   },
   {
@@ -67,7 +67,7 @@ const ROWS: Row[] = [
     how: 'Seller ships via courier instead of self-managed',
     tracked: { ok: true, note: 'Shipment happens, but no cost is ever recorded against anyone' },
     monetized: { ok: false, note: 'Checked directly: buyer is charged ₹0, and nothing recovers the ~₹80/shipment real cost from the seller either' },
-    fix: 'Recover the real cost from the seller\'s settlement (commission + Razorpay fee + Delhivery cost, all in one deduction) — see the Plan Repricing Proposal for the full design.',
+    fix: 'Already the right shape for this audience: recovered only from her settlement, only when a sale actually happens — zero upfront cost, zero risk of an unaffordable bill. See the Plan Repricing Proposal for the full design.',
     status: 'gap',
   },
   {
@@ -75,7 +75,7 @@ const ROWS: Row[] = [
     how: 'Seller picks a paid tier for more listings/features',
     tracked: { ok: true, note: 'Real plan assignment, real price shown to her' },
     monetized: { ok: false, note: 'No code anywhere actually charges her for it — confirmed in the Business Model doc' },
-    fix: 'Wire up recurring billing, reusing the existing Razorpay integration. Deferred to the wallet-first launch\'s "coming in a few months" phase.',
+    fix: 'Position as an earned upgrade, never the default: show her, from her own real wallet history, "you paid ₹850 in deductions last month — Gold at ₹786 would have saved you ₹64." Only pitch it once the math genuinely favors her.',
     status: 'partial',
   },
   {
@@ -83,7 +83,7 @@ const ROWS: Row[] = [
     how: 'Seller tops up a wallet instead of picking a fixed plan',
     tracked: { ok: true, note: 'Real Razorpay top-up, credited correctly' },
     monetized: { ok: false, note: 'Nothing ever debits it — the commission_deduction transaction type exists in the schema but is never used' },
-    fix: 'This is the wallet-first launch\'s core engine — the debit logic being built now covers commission, Razorpay fee-share, and Delhivery cost together.',
+    fix: 'The wallet-first launch\'s core engine. Also worth lowering the entry barrier further: consider ₹200–300 minimum recharge (not ₹500) and a ₹50 minimum balance (not ₹100), so a small shortfall doesn\'t suddenly pull her listings.',
     status: 'partial',
   },
   {
@@ -186,14 +186,68 @@ export default function WeBohraBusinessAuditPage() {
           </table>
         </div>
 
+        <div className="mt-9 flex items-center gap-4 text-xs font-bold uppercase tracking-widest text-ink-soft">
+          <span className="h-px flex-1 bg-ink-soft/20" />
+          Wallet vs. Subscription — how the fix differs
+          <span className="h-px flex-1 bg-ink-soft/20" />
+        </div>
+
+        <div className="mb-6 rounded-lg border border-teal/30 bg-teal/10 px-4 py-3 text-[13px] text-teal-deep">
+          <b>Governing principle:</b> most WE Bohra sellers are homemakers running a small, often seasonal business —
+          not sellers with an existing high-follower audience who can treat this as a serious income stream and
+          comfortably absorb variable costs. For this audience, <b>pay only when you earn</b> (a % of a real sale) is
+          safe — a flat fee or a per-use toll can bite in a month she sells nothing. Every recommendation below follows
+          from that, and it&apos;s why Wallet is the launch plan, not Subscription.
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-ink-soft/15 bg-white">
+          <table className="w-full min-w-[760px] border-collapse text-left text-[13px]">
+            <thead>
+              <tr className="bg-teal-deep text-white">
+                <th className="px-4 py-3 font-bold">Channel</th>
+                <th className="px-4 py-3 font-bold">On Wallet (now)</th>
+                <th className="px-4 py-3 font-bold">On a fixed Subscription (later)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                {
+                  channel: 'COD / cash orders',
+                  wallet: 'Same 10% commission as online, deducted from wallet at settlement — no extra rate for paying cash.',
+                  sub: 'Same 10% baseline. Could offer a reduced rate (e.g. 8%) as a paid-tier perk — rewards commitment without punishing entry sellers.',
+                },
+                {
+                  channel: 'WhatsApp direct connect',
+                  wallet: 'Unlimited, unmetered — funded wallet alone unlocks it. No per-click cost, ever.',
+                  sub: 'Same — one flat low fee for unlimited access. No cap, no per-lead metering, on either model.',
+                },
+                {
+                  channel: 'Consultation request ("the lead")',
+                  wallet: 'Pay-on-success only: ~₹15–25 deducted from wallet, only when she self-marks a request Converted.',
+                  sub: 'Same pay-on-success mechanic — a flat plan fee doesn\'t change the fairness logic here, so it stays consistent across both models.',
+                },
+                {
+                  channel: 'Overall pricing shape',
+                  wallet: 'Zero fixed cost. She only ever pays a % of money she\'s already received — cannot go into debt to WE Bohra.',
+                  sub: 'A fixed monthly bill regardless of sales — real risk for unpredictable income. Only worth offering once her own wallet data proves it\'d genuinely save her money.',
+                },
+              ].map((r) => (
+                <tr key={r.channel} className="align-top">
+                  <td className="border-b border-ink-soft/10 px-4 py-4 font-semibold text-ink">{r.channel}</td>
+                  <td className="border-b border-ink-soft/10 px-4 py-4 text-[12.5px] text-ink-soft">{r.wallet}</td>
+                  <td className="border-b border-ink-soft/10 px-4 py-4 text-[12.5px] text-ink-soft">{r.sub}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
         <div className="mt-8 rounded-2xl bg-navy p-6 text-ivory">
-          <h4 className="mb-2 font-heading text-base font-semibold text-white">The one deliberate exception worth deciding on purpose</h4>
-          <p className="text-[13.5px] text-[#D7DEEA]">
-            Basic-tier phone/email is the only channel where monetizing it at all is a real trade-off, not just an
-            oversight — it&apos;s the cheapest entry tier, meant to be a low-friction on-ramp for the smallest sellers.
-            Tracking it costs nothing and should happen regardless; charging for it is a judgment call the stakeholder
-            should make explicitly, not something this audit assumes either way.
-          </p>
+          <h4 className="mb-2 font-heading text-base font-semibold text-white">Two things this rules out, on purpose</h4>
+          <ul className="list-disc space-y-1.5 pl-5 text-[13.5px] text-[#D7DEEA]">
+            <li>No per-click or per-lead metering on WhatsApp direct connect, at any billing mode — an earlier draft of this audit suggested a monthly cap here; dropped, since it creates exactly the unpredictable-bill risk this audience can least afford.</li>
+            <li>No charge on Basic-tier phone/email reveal, at any billing mode — it stays the free on-ramp for the smallest, most cautious sellers. Tracking it (at zero cost to her) still happens regardless, purely for WE Bohra&apos;s own visibility.</li>
+          </ul>
         </div>
 
         <footer className="mt-9 text-center text-xs text-ink-soft">
