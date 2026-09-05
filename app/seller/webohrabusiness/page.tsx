@@ -51,7 +51,7 @@ const ROWS: Row[] = [
     how: 'Buyer submits a request; it lands in the seller\'s Enquiries; she opens WhatsApp herself — this is "the lead"',
     tracked: { ok: true, note: 'Real record in her Enquiries — the strongest tracking of any channel here' },
     monetized: { ok: false, note: 'Checked directly: zero commission logic anywhere in the enquiry/consultation-request routes' },
-    fix: 'Pay-on-success only: a small flat fee (~₹15–25) deducted only when she marks a request "Converted" herself — never charged for a lead that went nowhere. Trade-off: relies on honest self-reporting, a real leakage risk worth accepting deliberately, not a flaw to hide.',
+    fix: 'Flat ₹10, deducted from her wallet the moment the lead lands in her Enquiries — WE Bohra\'s job is delivering a qualified lead; converting it is her own skill, not a risk the platform should carry. No self-reporting needed, and lead volume is naturally bounded by real buyer intent, so ₹10 stays a small, predictable cost even across several leads a month.',
     status: 'gap',
   },
   {
@@ -197,7 +197,9 @@ export default function WeBohraBusinessAuditPage() {
           not sellers with an existing high-follower audience who can treat this as a serious income stream and
           comfortably absorb variable costs. For this audience, <b>pay only when you earn</b> (a % of a real sale) is
           safe — a flat fee or a per-use toll can bite in a month she sells nothing. Every recommendation below follows
-          from that, and it&apos;s why Wallet is the launch plan, not Subscription.
+          from that, and it&apos;s why Wallet is the launch plan, not Subscription. One deliberate exception: the flat
+          ₹10 lead fee below is charged on delivery, not on a sale — accepted because the amount is small and lead
+          volume is bounded by real buyer intent, not because the principle stopped applying.
         </div>
 
         <div className="overflow-x-auto rounded-2xl border border-ink-soft/15 bg-white">
@@ -223,8 +225,8 @@ export default function WeBohraBusinessAuditPage() {
                 },
                 {
                   channel: 'Consultation request ("the lead")',
-                  wallet: 'Pay-on-success only: ~₹15–25 deducted from wallet, only when she self-marks a request Converted.',
-                  sub: 'Same pay-on-success mechanic — a flat plan fee doesn\'t change the fairness logic here, so it stays consistent across both models.',
+                  wallet: 'Flat ₹10 per lead delivered, deducted from wallet the moment it lands in her Enquiries — regardless of whether it converts. WE Bohra\'s job ends at delivering a qualified lead.',
+                  sub: 'Same flat ₹10-per-lead — a plan fee doesn\'t change who\'s responsible for converting it, so this stays consistent across both models.',
                 },
                 {
                   channel: 'Overall pricing shape',
