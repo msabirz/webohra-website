@@ -80,6 +80,10 @@ export async function GET(
       sellerEmail: users.email,
       womenOwned: users.itsVerified,
       businessName: sellerProfiles.businessName,
+      // Seller storefront (Tier 4, item 24, 2026-09-07) — null for any
+      // seller who registered before this column existed and hasn't
+      // been backfilled yet; the PDP/SDP link is simply omitted then.
+      sellerSlug: sellerProfiles.slug,
       // The listing's "selling location" for Pickup & Pay eligibility — null
       // if the seller never set a jamaat (self-managed-shipping-only sellers).
       jamaatCity: jamaats.city,

@@ -5,7 +5,7 @@
  */
 import { isNull } from 'drizzle-orm';
 import { db } from '../db/index';
-import { listings, orders } from '../db/schema';
+import { listings, orders, sellerProfiles } from '../db/schema';
 import { slugifyTitle, withUniqueSuffix, generateOrderNumber } from '../lib/ids';
 import { eq } from 'drizzle-orm';
 
@@ -29,6 +29,19 @@ async function main() {
       .where(eq(orders.id, order.id));
   }
   console.log(`Backfilled ${ordersToFix.length} order numbers.`);
+
+  // Seller storefront (Tier 4, item 24, 2026-09-07) — same pattern, for
+  // every seller profile that predates sellerProfiles.slug.
+  const profilesToFix = await db.select().from(sellerProfiles).where(isNull(sellerProfiles.slug));
+  for (const profile of profilesToFix) {
+    const base = slugifyTitle(profile.businessName);
+    const [collision] = await db.select().from(sellerProfiles).where(eq(sellerProfiles.slug, base));
+    await db
+      .update(sellerProfiles)
+      .set({ slug: collision ? withUniqueSuffix(base) : base })
+      .where(eq(sellerProfiles.id, profile.id));
+  }
+  console.log(`Backfilled ${profilesToFix.length} seller profile slugs.`);
 }
 
 main()
