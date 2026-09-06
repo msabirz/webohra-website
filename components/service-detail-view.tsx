@@ -7,6 +7,8 @@ import { MosaicGallery } from '@/components/mosaic-gallery';
 import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
 import { VariantMenu, type Variant } from '@/components/variant-menu';
 import { categoryColor } from '@/lib/category-color';
+import { WishlistButton } from '@/components/wishlist-button';
+import { ShareButton } from '@/components/share-button';
 
 // Fulfillment & Subscriptions redesign, Phase 6 — her past-work showcase,
 // fetched by the API alongside everything else on a service listing (see
@@ -119,6 +121,13 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
         {listing.businessName && (
           <p className="font-body text-sm text-ink-soft">by {listing.businessName}</p>
         )}
+        <div className="flex items-center gap-2">
+          <ShareButton title={listing.title} />
+          <WishlistButton
+            listingId={listing.id}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/70 text-ink-soft shadow-sm transition"
+          />
+        </div>
         {hasVariants ? (
           <div ref={heroButtonRef}>
             <p className="font-body text-sm text-ink-soft">

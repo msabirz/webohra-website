@@ -253,6 +253,27 @@
       "when": 1788695006138,
       "tag": "0035_public_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1788700471142,
+      "tag": "0036_crazy_absorbing_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1788700934648,
+      "tag": "0037_ordinary_shen",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788701235372,
+      "tag": "0038_perfect_luminals",
+      "breakpoints": true
     }
   ]
 }

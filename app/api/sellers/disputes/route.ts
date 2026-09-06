@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { disputes, orders, orderItems } from '@/db/schema';
 import { getSessionFromRequest } from '@/lib/auth';
@@ -16,11 +16,15 @@ import { getSessionFromRequest } from '@/lib/auth';
  * Read-only, and deliberately just the dispute's own reason/status/dates
  * — not the full internal comment timeline (see disputes' own schema
  * comment): that timeline can carry staff-to-staff notes (assignment
- * changes, internal deliberation) never meant for her to see. If a
- * multi-seller order has a dispute, she sees it too — disputes aren't
- * structurally scoped to one seller (no sellerId column on the table
- * itself, see the schema's own comment), so "any order she's part of" is
- * the honest boundary, same one /api/sellers/orders already uses.
+ * changes, internal deliberation) never meant for her to see.
+ *
+ * Precision fix, 2026-09-06: a dispute with a real `sellerId` (a buyer
+ * reported it about one specific seller's item — see
+ * lib/disputes.ts's openDisputeAsBuyer) is only ever visible to that one
+ * seller, not every seller in the order. A dispute with no `sellerId`
+ * (single-seller order, or an older/staff-created one predating this
+ * column) still falls back to "any order she's part of," same boundary
+ * /api/sellers/orders already uses.
  */
 export async function GET(request: Request) {
   const session = await getSessionFromRequest(request);
@@ -51,7 +55,12 @@ export async function GET(request: Request) {
     })
     .from(disputes)
     .innerJoin(orders, eq(disputes.orderId, orders.id))
-    .where(inArray(disputes.orderId, orderIds))
+    .where(
+      and(
+        inArray(disputes.orderId, orderIds),
+        or(isNull(disputes.sellerId), eq(disputes.sellerId, sellerId)),
+      ),
+    )
     .orderBy(desc(disputes.createdAt));
 
   return NextResponse.json({ disputes: rows });

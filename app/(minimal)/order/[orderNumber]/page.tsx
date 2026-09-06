@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { CheckCircle2, Package, Truck, Home, MapPinned, Wallet, XCircle, AlertCircle } from 'lucide-react';
-import { buttonStyles } from '@/lib/button-styles';
+import { CheckCircle2, Package, Truck, Home, MapPinned, Wallet, XCircle, AlertCircle, Flag } from 'lucide-react';
+import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { TrackingPageSkeleton } from '@/components/skeleton';
 import { ORDER_ITEM_STATUS_LABEL, stageIndex, isOrderItemStage, type OrderItemStatus } from '@/lib/order-item-status';
 import { loadRazorpayScript } from '@/lib/razorpay-client';
@@ -384,9 +384,133 @@ export default function OrderConfirmationPage() {
         </button>
       )}
 
+      {order.status === 'placed' && !isUnpaidOnline && (
+        <ReportIssue orderNumber={order.orderNumber} sellers={shipmentList} />
+      )}
+
       <Link href="/" className={buttonStyles('primary', 'lg')}>
         Continue shopping
       </Link>
+    </div>
+  );
+}
+
+type Dispute = { id: number; status: 'open' | 'investigating' | 'resolved'; reason: string; createdAt: string };
+
+/**
+ * "Report an issue" (2026-09-06, marketplace-completeness scan) — there
+ * was genuinely no buyer-facing way to raise a dispute before this, only
+ * staff could open one. Works for guest checkout too, same order-number
+ * trust model as the rest of this page. If the order has more than one
+ * seller, she has to pick which one it's about (the precision fix — see
+ * disputes.sellerId's own schema comment) rather than it silently
+ * bleeding through to every seller in the order.
+ */
+function ReportIssue({ orderNumber, sellers }: { orderNumber: string; sellers: OrderShipment[] }) {
+  const distinctSellers = Array.from(new Map(sellers.map((s) => [s.sellerId, s])).values());
+  const [existing, setExisting] = useState<Dispute | null | undefined>(undefined);
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [sellerId, setSellerId] = useState<number | ''>(distinctSellers.length === 1 ? distinctSellers[0].sellerId : '');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/orders/${orderNumber}/disputes`)
+      .then((res) => (res.ok ? res.json() : { activeDispute: null }))
+      .then((data) => setExisting(data.activeDispute));
+  }, [orderNumber]);
+
+  async function submit() {
+    if (reason.trim().length < 10) {
+      setError('Tell us a bit more — at least 10 characters.');
+      return;
+    }
+    if (distinctSellers.length > 1 && !sellerId) {
+      setError('This order has more than one seller — pick which one this is about.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/orders/${orderNumber}/disputes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason.trim(), ...(sellerId && { sellerId }) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Could not send this.');
+        return;
+      }
+      setExisting(data.dispute);
+      setOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (existing === undefined) return null;
+
+  if (existing) {
+    return (
+      <div className="flex items-center gap-2 rounded-2xl bg-gold/10 px-4 py-3 font-body text-sm text-ink">
+        <Flag className="h-4 w-4 shrink-0 text-gold-soft" strokeWidth={2} />
+        You reported an issue on this order — we&apos;re looking into it.
+      </div>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center justify-center gap-1.5 font-body text-sm font-medium text-ink-soft underline underline-offset-2 hover:text-ink"
+      >
+        <Flag className="h-3.5 w-3.5" strokeWidth={2} />
+        Report an issue with this order
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
+      <h2 className="font-heading text-sm font-semibold text-ink">Report an issue</h2>
+      {distinctSellers.length > 1 && (
+        <label className="flex flex-col gap-1.5">
+          <span className="font-body text-xs font-medium text-ink-soft">Which seller is this about?</span>
+          <select
+            value={sellerId}
+            onChange={(e) => setSellerId(Number(e.target.value))}
+            className={inputStyles}
+          >
+            <option value="" disabled>
+              Choose a seller
+            </option>
+            {distinctSellers.map((s) => (
+              <option key={s.sellerId} value={s.sellerId}>
+                {s.businessName ?? `Seller #${s.sellerId}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <textarea
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="What went wrong?"
+        rows={4}
+        className={inputStyles}
+      />
+      {error && <p className="font-body text-xs text-red-700">{error}</p>}
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={submitting} className={buttonStyles('primary', 'sm')}>
+          {submitting ? 'Sending…' : 'Send report'}
+        </button>
+        <button onClick={() => setOpen(false)} className={buttonStyles('secondary', 'sm')}>
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
