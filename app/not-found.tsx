@@ -7,6 +7,7 @@ import { SiteHeader } from '@/components/site-header';
 import { SiteFooter } from '@/components/site-footer';
 import { CartProvider } from '@/components/cart-context';
 import { CartDrawer } from '@/components/cart-drawer';
+import { WishlistProvider } from '@/components/wishlist-context';
 import { ListingCard, type ListingCardData } from '@/components/listing-card';
 import { ListingGridSkeleton } from '@/components/skeleton';
 import { buttonStyles } from '@/lib/button-styles';
@@ -44,6 +45,7 @@ export default function NotFound() {
   }, []);
 
   return (
+    <WishlistProvider>
     <CartProvider>
       <div className="flex min-h-screen flex-col bg-ivory">
         <SiteHeader />
@@ -80,5 +82,6 @@ export default function NotFound() {
       </div>
       <CartDrawer />
     </CartProvider>
+    </WishlistProvider>
   );
 }

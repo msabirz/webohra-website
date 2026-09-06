@@ -239,6 +239,20 @@
       "when": 1788693686375,
       "tag": "0033_slim_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788694410371,
+      "tag": "0034_silent_taskmaster",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788695006138,
+      "tag": "0035_public_sentinels",
+      "breakpoints": true
     }
   ]
 }
