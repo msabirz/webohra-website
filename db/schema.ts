@@ -813,6 +813,19 @@ export const orderItems = pgTable('order_items', {
   // variant is renamed or gone.
   variantId: integer('variant_id').references(() => listingVariants.id, { onDelete: 'set null' }),
   variantName: varchar('variant_name', { length: 100 }),
+  // Full payout redesign (Tier 4, item 21, 2026-09-06) — set the moment
+  // the weekly settlement batch actually charges commission for this
+  // specific item (a payout row for 'online', a wallet deduction for
+  // 'cod'). Null means "delivered but still within the buffer" OR
+  // "never delivered at all" — both genuinely mean no money has moved
+  // for this item yet. This is what makes the COD return flow safe under
+  // the new delayed-settlement timing: a return within the buffer window
+  // moves status straight to 'returned' before this ever gets set, so it
+  // naturally never reaches the settlement query at all (no commission
+  // was ever charged, nothing to reverse) — see
+  // app/api/admin/disputes/[id]/resolve-with-credit's own check against
+  // this same column for the other half of that fix.
+  settledAt: timestamp('settled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -901,6 +914,18 @@ export const disputes = pgTable('disputes', {
   // from createdByBuyerId/createdByStaffId above. Exactly one of the
   // three creator columns is ever set.
   createdBySellerId: integer('created_by_seller_id').references(() => users.id, { onDelete: 'set null' }),
+  // Full payout redesign (Tier 4, item 21, 2026-09-06) — set only by the
+  // COD return flow (app/api/sellers/order-items/[itemId]/return), which
+  // is the one dispute-creation path that always knows exactly which
+  // item it's about. Lets resolveDisputeWithCredit check that specific
+  // item's orderItems.settledAt before crediting anything back: under
+  // the new delayed (7-day-buffer) settlement timing, a return can now
+  // happen BEFORE commission was ever actually charged, and crediting a
+  // "reversal" for a commission that was never taken would be a real
+  // double-credit bug, not a rounding curiosity. Null for every other
+  // dispute-creation path (staff, buyer) — none of them are ever
+  // resolved with a credit tied to one specific item's settlement state.
+  orderItemId: integer('order_item_id').references(() => orderItems.id, { onDelete: 'set null' }),
   // How much was actually credited back to her wallet on resolution —
   // null until resolved-with-credit (lib/disputes.ts's
   // resolveDisputeWithCredit). The real traceability record: which
@@ -1380,6 +1405,22 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   // point for a real buyer's genuine browsing session, tunable here
   // without a deploy if it turns out wrong in practice.
   whatsappConnectDailyLimitPerBuyer: integer('whatsapp_connect_daily_limit_per_buyer').notNull().default(10),
+  // Full payout redesign (Tier 4, item 21, 2026-09-06) — the settlement
+  // math's three components, admin-configurable rather than hardcoded,
+  // same principle as every other real-money number on this row.
+  // Razorpay's real effective rate (2% + 18% GST) as of this writing;
+  // Delhivery's ~₹80/shipment is a round estimate (no live rate lookup
+  // exists yet, same limitation shipments.charge already has for this
+  // method). Both are a seller's own real cost of the sale, never
+  // absorbed by WE Bohra — see lib/settlement.ts for where they're used.
+  razorpayFeePercent: numeric('razorpay_fee_percent', { precision: 5, scale: 2 }).notNull().default('2.36'),
+  delhiveryCostPerShipment: numeric('delhivery_cost_per_shipment', { precision: 10, scale: 2 })
+    .notNull()
+    .default('80.00'),
+  // How long after delivery a settlement waits before charging commission
+  // — the 7-day buffer the finalized design calls for (matches Flipkart's
+  // actual pattern), tunable here without a deploy.
+  settlementBufferDays: integer('settlement_buffer_days').notNull().default(7),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1418,19 +1459,22 @@ export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
 });
 
 /**
- * One row per (order, seller) — her share of one paid online order, and
- * the record of actually paying it out to her. Fulfillment &
- * Subscriptions redesign, Phase 5c. Created the moment an order's
- * paymentStatus becomes 'paid' (see lib/payouts.ts's createPayoutsForOrder)
- * — one row per seller represented in that order, whether it's one seller
- * or several; the split logic here has never depended on Route, which is
- * exactly what makes it work the same regardless of how many sellers are
- * in the order. `grossAmount`/`commissionAmount`/`netAmount` are computed
- * and frozen at that moment, same snapshot-at-write-time discipline as
- * order_items.unitPrice — a later change to the commission rate or her
- * listings never rewrites a payout that's already been recorded.
- * Actually sending the money (the real RazorpayX payout call) is a
- * separate, explicit step — see status.
+ * One row per (order, seller) — her share of settled online-order
+ * earnings, and the record of actually paying it out to her. Originally
+ * created the instant an order's paymentStatus became 'paid'
+ * (Fulfillment & Subscriptions redesign, Phase 5c); the full payout
+ * redesign (Tier 4, item 21, 2026-09-06) moved creation to
+ * lib/settlement.ts's runWeeklySettlement instead — delivery + a
+ * buffer, never payment alone. Not strictly one row per whole order
+ * anymore either: settlement runs per order ITEM, so a multi-item order
+ * can produce more than one payout row for the same (order, seller) pair
+ * across separate weekly runs, as each item individually clears the
+ * buffer. `grossAmount`/`commissionAmount`/`netAmount` are computed and
+ * frozen at settlement time, same snapshot-at-write-time discipline as
+ * order_items.unitPrice — a later change to the commission rate never
+ * rewrites a payout that's already been recorded. Actually sending the
+ * money (the real RazorpayX payout call) is a separate, explicit step —
+ * see status.
  */
 
 /**
@@ -1458,7 +1502,7 @@ export const payouts = pgTable('payouts', {
     .notNull()
     .references(() => orders.id, { onDelete: 'restrict' }),
   // Defaults every new payout to 'regular_settlement' at creation
-  // (lib/payouts.ts's createPayoutsForOrder) — nullable + set null on
+  // (lib/settlement.ts's runWeeklySettlement) — nullable + set null on
   // delete so removing a category from the admin list never blocks or
   // corrupts a historical payout row, it just goes uncategorized.
   categoryId: integer('category_id').references(() => payoutCategories.id, { onDelete: 'set null' }),

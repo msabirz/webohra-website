@@ -47,7 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
     );
   }
 
-  const result = await openDisputeAsSeller(item.orderId, sellerId, parsed.data.reason);
+  const result = await openDisputeAsSeller(item.orderId, sellerId, parsed.data.reason, item.id);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 409 });
   }

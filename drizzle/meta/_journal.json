@@ -302,6 +302,13 @@
       "when": 1788715967550,
       "tag": "0042_groovy_kid_colt",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1788719128505,
+      "tag": "0043_woozy_vengeance",
+      "breakpoints": true
     }
   ]
 }

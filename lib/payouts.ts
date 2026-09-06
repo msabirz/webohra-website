@@ -1,91 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
-import {
-  orderItems,
-  shipments,
-  payouts,
-  payoutCategories,
-  subscriptionSettings,
-  sellerPayoutAccounts,
-} from '@/db/schema';
+import { payouts, sellerPayoutAccounts, subscriptionSettings } from '@/db/schema';
 import { createPayout } from '@/lib/razorpay-payouts';
 
-/**
- * Creates one payout row per seller represented in a just-paid order —
- * Fulfillment & Subscriptions redesign, Phase 5c. Called from
- * lib/order-payment.ts's confirmOrderPayment right after an order
- * genuinely becomes 'paid' for the first time (never on an idempotent
- * no-op re-confirmation, which would otherwise double-create these rows).
- * Idempotent on its own too — if payout rows already exist for this
- * order, this is a safe no-op, so a caller can't accidentally create them
- * twice even if it tries.
- *
- * Deliberately seller-count-agnostic: this groups by sellerId and creates
- * as many rows as there are sellers in the order, whether that's one or
- * five. That's the whole point of the RazorpayX approach over Route —
- * nothing here needed Route's automatic split to exist.
- */
-export async function createPayoutsForOrder(orderId: number): Promise<void> {
-  const [existing] = await db.select().from(payouts).where(eq(payouts.orderId, orderId)).limit(1);
-  if (existing) return;
-
-  const [items, orderShipments, [settings], [regularCategory]] = await Promise.all([
-    db.select().from(orderItems).where(eq(orderItems.orderId, orderId)),
-    db.select().from(shipments).where(eq(shipments.orderId, orderId)),
-    db.select().from(subscriptionSettings).limit(1),
-    // Every payout created through this normal flow gets tagged
-    // 'regular_settlement' — admin only ever needs to re-tag the
-    // exception, not the routine case. Missing category row (e.g. a
-    // fresh install before the seed step ran) degrades to uncategorized
-    // rather than blocking payout creation.
-    db.select().from(payoutCategories).where(eq(payoutCategories.key, 'regular_settlement')).limit(1),
-  ]);
-  if (items.length === 0) return;
-
-  const commissionPercent = Number(settings?.orderCommissionPercent ?? '10.00');
-
-  // Her order_items subtotal, grouped by seller — the product/service sale
-  // portion commission actually applies to.
-  const subtotalBySeller = new Map<number, number>();
-  for (const item of items) {
-    const lineTotal = Number(item.unitPrice) * item.quantity;
-    subtotalBySeller.set(item.sellerId, (subtotalBySeller.get(item.sellerId) ?? 0) + lineTotal);
-  }
-
-  // Her own self-managed shipping charge (if any) passes through
-  // untaxed — see subscription_settings.orderCommissionPercent's own
-  // comment on why shipping never has commission applied to it. A
-  // Delhivery shipment's charge is always null today (no live rate
-  // lookup exists yet), so it contributes nothing here either way.
-  const shippingBySeller = new Map<number, number>();
-  for (const shipment of orderShipments) {
-    if (shipment.charge === null) continue;
-    shippingBySeller.set(shipment.sellerId, (shippingBySeller.get(shipment.sellerId) ?? 0) + Number(shipment.charge));
-  }
-
-  const rows = Array.from(subtotalBySeller.entries()).map(([sellerId, productSubtotal]) => {
-    const shippingAmount = shippingBySeller.get(sellerId) ?? 0;
-    const commissionAmount = (productSubtotal * commissionPercent) / 100;
-    const grossAmount = productSubtotal + shippingAmount;
-    const netAmount = grossAmount - commissionAmount;
-    return {
-      orderId,
-      sellerId,
-      categoryId: regularCategory?.id ?? null,
-      grossAmount: grossAmount.toFixed(2),
-      commissionAmount: commissionAmount.toFixed(2),
-      netAmount: netAmount.toFixed(2),
-    };
-  });
-
-  // A concurrent duplicate call (extremely unlikely — see
-  // confirmOrderPayment's own race-safety comment on why this only ever
-  // runs once per order in practice) would violate no constraint here and
-  // could double-insert; guarded by the existence check above, which is
-  // good enough given how this is actually invoked (never called outside
-  // that one already-idempotent path).
-  await db.insert(payouts).values(rows);
-}
+// Payout ROWS are no longer created here — see lib/settlement.ts's
+// runWeeklySettlement (full payout redesign, Tier 4 item 21, 2026-09-06).
+// This file is now only the money-MOVING half: sending an already-created
+// payout, or recording that it was paid manually.
 
 export type SendPayoutResult =
   | { ok: true; status: string }

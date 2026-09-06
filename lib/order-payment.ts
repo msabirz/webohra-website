@@ -1,7 +1,6 @@
 import { and, eq, ne } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { orders } from '@/db/schema';
-import { createPayoutsForOrder } from '@/lib/payouts';
 import { notifyPaymentReceived, notifyPaymentFailed } from '@/lib/notifications/triggers';
 
 /**
@@ -42,15 +41,17 @@ export async function confirmOrderPayment(params: {
     .where(and(eq(orders.id, order.id), ne(orders.paymentStatus, 'paid')))
     .returning();
 
-  // Fulfillment & Subscriptions redesign, Phase 5c — only on a genuine
-  // first confirmation (`updated` is truthy), never on the idempotent
-  // no-op path above or the "lost the race" branch just below, so a
-  // payout row is never created twice for the same order. Notifications
-  // infrastructure (Tier 3, item 20, 2026-09-06) piggybacks on the exact
-  // same guard, for the exact same reason — a redundant webhook call
-  // must never send a second "payment received" notification.
+  // Full payout redesign (Tier 4, item 21, 2026-09-06) — this used to
+  // call createPayoutsForOrder right here, the instant an online payment
+  // was confirmed, well before anything was actually delivered. Payouts
+  // now come from lib/settlement.ts's weekly batch instead, triggered by
+  // delivery + a 7-day buffer, never by payment alone — being paid for
+  // is necessary but no longer sufficient for a payout to exist.
+  // Notifications infrastructure (Tier 3, item 20, 2026-09-06) still
+  // piggybacks on this exact `if (updated)` guard, for the same reason
+  // it always did — only a genuine first confirmation, never a redundant
+  // webhook call, should send a "payment received" notification.
   if (updated) {
-    await createPayoutsForOrder(updated.id);
     await notifyPaymentReceived(updated);
   }
 

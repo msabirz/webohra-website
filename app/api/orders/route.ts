@@ -22,16 +22,16 @@ import { notifyOrderConfirmed } from '@/lib/notifications/triggers';
  * always worked, just generalized). This used to be gated to a
  * single-seller cart while payout-splitting depended on Razorpay Route,
  * which never got enabled on this account; that dependency is gone as of
- * the 2026-09-03 payout redesign (lib/payouts.ts's createPayoutsForOrder
- * has always been seller-count-agnostic, and Admin now settles each
- * seller's share directly rather than through any Razorpay split), so the
- * restriction was lifted the same day. An online order is still created
- * here immediately (paymentStatus: 'pending', a real Razorpay order
- * attached) so pricing is locked in at checkout time rather than
- * re-resolved later when payment actually clears — see
- * lib/order-payment.ts for how it then becomes 'paid', and
- * lib/payouts.ts's createPayoutsForOrder for how each seller's share gets
- * computed the moment it does, one payout row per seller in the order.
+ * the 2026-09-03 payout redesign (settlement has always been
+ * seller-count-agnostic, Admin settles each seller's share directly
+ * rather than through any Razorpay split), so the restriction was lifted
+ * the same day. An online order is still created here immediately
+ * (paymentStatus: 'pending', a real Razorpay order attached) so pricing
+ * is locked in at checkout time rather than re-resolved later when
+ * payment actually clears — see lib/order-payment.ts for how it then
+ * becomes 'paid'. Being paid no longer creates a payout by itself (full
+ * payout redesign, Tier 4 item 21, 2026-09-06) — see lib/settlement.ts's
+ * weekly batch, triggered by delivery + a 7-day buffer instead.
  *
  * If she's signed in, the order links to her account (userId) so it shows
  * up in her profile's order history — but an Authorization header is never

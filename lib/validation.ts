@@ -865,6 +865,10 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
   whatsappConnectFeeRupees: z.number().nonnegative('Fee can’t be negative').optional(),
   whatsappLeadFeeRupees: z.number().nonnegative('Fee can’t be negative').optional(),
   whatsappConnectDailyLimitPerBuyer: z.number().int().positive('Must be at least 1').optional(),
+  // Full payout redesign (Tier 4, item 21, 2026-09-06).
+  razorpayFeePercent: z.number().min(0, 'Can’t be negative').max(100, 'Can’t exceed 100%').optional(),
+  delhiveryCostPerShipment: z.number().nonnegative('Can’t be negative').optional(),
+  settlementBufferDays: z.number().int().nonnegative('Can’t be negative').optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 
