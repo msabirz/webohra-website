@@ -1,6 +1,13 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { orderItems, shipments, payouts, subscriptionSettings, sellerPayoutAccounts } from '@/db/schema';
+import {
+  orderItems,
+  shipments,
+  payouts,
+  payoutCategories,
+  subscriptionSettings,
+  sellerPayoutAccounts,
+} from '@/db/schema';
 import { createPayout } from '@/lib/razorpay-payouts';
 
 /**
@@ -22,10 +29,16 @@ export async function createPayoutsForOrder(orderId: number): Promise<void> {
   const [existing] = await db.select().from(payouts).where(eq(payouts.orderId, orderId)).limit(1);
   if (existing) return;
 
-  const [items, orderShipments, [settings]] = await Promise.all([
+  const [items, orderShipments, [settings], [regularCategory]] = await Promise.all([
     db.select().from(orderItems).where(eq(orderItems.orderId, orderId)),
     db.select().from(shipments).where(eq(shipments.orderId, orderId)),
     db.select().from(subscriptionSettings).limit(1),
+    // Every payout created through this normal flow gets tagged
+    // 'regular_settlement' — admin only ever needs to re-tag the
+    // exception, not the routine case. Missing category row (e.g. a
+    // fresh install before the seed step ran) degrades to uncategorized
+    // rather than blocking payout creation.
+    db.select().from(payoutCategories).where(eq(payoutCategories.key, 'regular_settlement')).limit(1),
   ]);
   if (items.length === 0) return;
 
@@ -58,6 +71,7 @@ export async function createPayoutsForOrder(orderId: number): Promise<void> {
     return {
       orderId,
       sellerId,
+      categoryId: regularCategory?.id ?? null,
       grossAmount: grossAmount.toFixed(2),
       commissionAmount: commissionAmount.toFixed(2),
       netAmount: netAmount.toFixed(2),

@@ -15,6 +15,8 @@ type WalletTransaction = {
   type: 'topup' | 'commission_deduction' | 'admin_adjustment';
   amount: string;
   balanceAfter: string;
+  orderId: number | null;
+  orderNumber: string | null;
   reason: string | null;
   gatewayPaymentId: string | null;
   createdAt: string;
@@ -199,6 +201,7 @@ export default function AdminWalletDetailPage() {
                   <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium">Amount</th>
                   <th className="px-4 py-3 font-medium">Balance after</th>
+                  <th className="px-4 py-3 font-medium">Order</th>
                   <th className="px-4 py-3 font-medium">Note</th>
                 </tr>
               </thead>
@@ -227,6 +230,15 @@ export default function AdminWalletDetailPage() {
                       </td>
                       <td className="px-4 py-3 tabular-nums text-ink-soft">
                         ₹{Number(t.balanceAfter).toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-3">
+                        {t.orderNumber ? (
+                          <Link href={`/admin/orders/${t.orderNumber}`} className="text-navy underline underline-offset-2">
+                            {t.orderNumber}
+                          </Link>
+                        ) : (
+                          <span className="text-ink-soft">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-ink-soft">
                         {t.reason ?? (t.gatewayPaymentId ? `Razorpay ${t.gatewayPaymentId}` : '—')}

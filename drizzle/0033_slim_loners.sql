@@ -1,0 +1,1 @@
+ALTER TABLE "subscription_settings" ADD COLUMN "coupons_enabled" boolean DEFAULT false NOT NULL;

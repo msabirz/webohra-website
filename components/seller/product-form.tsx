@@ -113,6 +113,29 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
     }
   }, [form.id, initial?.id]);
 
+  // Whether "A WeBohra office" is actually a real option for her — both
+  // her plan and her jamaat's office mapping have to hold (2026-09-06,
+  // see app/api/sellers/pickup-eligibility). Defaults closed (false)
+  // until this resolves, so the dropdown never briefly offers a choice
+  // that then has to be yanked away.
+  const [officeAvailable, setOfficeAvailable] = useState(false);
+  useEffect(() => {
+    authFetch('/api/sellers/pickup-eligibility?sellerType=product')
+      .then((res) => (res.ok ? res.json() : { officeAvailable: false }))
+      .then((data) => setOfficeAvailable(Boolean(data.officeAvailable)))
+      .catch(() => setOfficeAvailable(false));
+  }, []);
+  // If she'd previously picked office (back when it was available — an
+  // office got deactivated, or her plan changed) and it's no longer
+  // eligible, fall back to her own address rather than silently
+  // submitting a choice the dropdown no longer even shows her.
+  useEffect(() => {
+    if (!officeAvailable && form.pickupAddressSource === 'office') {
+      setForm((f) => ({ ...f, pickupAddressSource: 'seller' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeAvailable]);
+
   useEffect(() => {
     fetch('/api/categories')
       .then((res) => res.json())
@@ -629,7 +652,13 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
                   Allow Pickup &amp; Pay for this listing
                 </label>
 
-                {form.pickupEnabled && (
+                {form.pickupEnabled && !officeAvailable && (
+                  <p className="font-body text-sm text-ink-soft">
+                    Buyers collect from your own address. Office pickup isn&apos;t available yet for your jamaat/plan.
+                  </p>
+                )}
+
+                {form.pickupEnabled && officeAvailable && (
                   <>
                     <Field label="Pickup from" htmlFor="pickupAddressSource" error={errors.pickupAddressSource}>
                       <Select

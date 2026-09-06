@@ -13,6 +13,8 @@ type WalletTransaction = {
   type: 'topup' | 'commission_deduction' | 'admin_adjustment';
   amount: string;
   balanceAfter: string;
+  orderId: number | null;
+  orderNumber: string | null;
   reason: string | null;
   gatewayPaymentId: string | null;
   createdAt: string;
@@ -240,6 +242,7 @@ export default function SellerWalletPage() {
                   <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium">Amount</th>
                   <th className="px-4 py-3 font-medium">Balance after</th>
+                  <th className="px-4 py-3 font-medium">Order</th>
                   <th className="px-4 py-3 font-medium">Note</th>
                 </tr>
               </thead>
@@ -269,6 +272,7 @@ export default function SellerWalletPage() {
                       <td className="px-4 py-3 tabular-nums text-ink-soft">
                         ₹{Number(t.balanceAfter).toLocaleString('en-IN')}
                       </td>
+                      <td className="px-4 py-3 font-medium text-ink-soft">{t.orderNumber ?? '—'}</td>
                       <td className="px-4 py-3 text-ink-soft">{t.reason ?? '—'}</td>
                     </tr>
                   );
