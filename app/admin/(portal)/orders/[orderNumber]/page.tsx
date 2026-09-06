@@ -102,7 +102,7 @@ type OrderDetail = {
     city: string;
     state: string;
     pincode: string;
-    paymentMethod: 'cod' | 'online';
+    paymentMethod: 'cod' | 'online' | 'pickup_and_pay';
     paymentStatus: PaymentStatus;
     razorpayOrderId: string | null;
     razorpayPaymentId: string | null;

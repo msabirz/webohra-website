@@ -7,7 +7,14 @@ import { resolvePickupLocation } from '@/lib/pickup';
 import { generatePickupTrackingNumber } from '@/lib/ids';
 
 /**
- * POST /api/pickup-requests
+ * POST /api/pickup-requests — SUPERSEDED (Tier 4, item 22, 2026-09-06).
+ * No live UI calls this anymore — see pickupRequests' own schema comment
+ * for why it's kept rather than deleted (existing tracking links), and
+ * POST /api/listings/[idOrSlug]/pickup-order for the real, order-linked
+ * replacement a new Pickup & Pay booking actually goes through now.
+ *
+ * Everything below this comment is the original implementation,
+ * untouched, describing how it used to work when it was live:
  *
  * Pickup & Pay, reshaped at the requester's direction into a booking-style
  * ask (see pickupRequests in db/schema.ts): she picks a date + time, no

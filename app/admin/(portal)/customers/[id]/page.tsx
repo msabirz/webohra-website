@@ -22,7 +22,7 @@ type Order = {
   id: number;
   orderNumber: string;
   status: string;
-  paymentMethod: 'cod' | 'online';
+  paymentMethod: 'cod' | 'online' | 'pickup_and_pay';
   paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded' | null;
   createdAt: string;
   totalRupees: number;
@@ -111,7 +111,11 @@ export default function AdminCustomerDetailPage() {
                   <p className="truncate font-body text-xs text-ink-soft">
                     {new Date(o.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     {' · '}
-                    {o.paymentMethod === 'cod' ? 'Cash on Delivery' : (o.paymentStatus ?? 'pending')}
+                    {o.paymentMethod === 'cod'
+                      ? 'Cash on Delivery'
+                      : o.paymentMethod === 'pickup_and_pay'
+                        ? 'Pickup & Pay'
+                        : (o.paymentStatus ?? 'pending')}
                   </p>
                 </div>
                 <p className="shrink-0 font-body text-sm font-semibold text-navy">

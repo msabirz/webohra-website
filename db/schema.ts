@@ -554,7 +554,12 @@ export const otpCodes = pgTable('otp_codes', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const paymentMethodEnum = pgEnum('payment_method', ['cod', 'online']);
+// 'pickup_and_pay' added Tier 4, item 22 (2026-09-06) — she buys, picks
+// up in person, pays the seller directly then. Never enters a payment
+// gateway pipeline (paymentStatus stays null, same reasoning as 'cod')
+// — see shipments.pickupScheduledDate/pickupCompletedAt for the actual
+// fulfillment tracking this method needs that 'cod' doesn't.
+export const paymentMethodEnum = pgEnum('payment_method', ['cod', 'online', 'pickup_and_pay']);
 
 /** Only ever meaningful for paymentMethod: 'online' — null for every COD
  *  order (see orders.paymentStatus' own comment for why null, not
@@ -741,6 +746,14 @@ export const orders = pgTable('orders', {
   buyerName: varchar('buyer_name', { length: 150 }).notNull(),
   buyerPhone: varchar('buyer_phone', { length: 20 }).notNull(),
   buyerEmail: varchar('buyer_email', { length: 200 }),
+  // For paymentMethod: 'pickup_and_pay' (Tier 4, item 22, 2026-09-06),
+  // these deliberately hold the SELLER's own resolved pickup location
+  // (via lib/pickup.ts's resolvePickupLocation), not a buyer delivery
+  // destination — there is no delivery for this method, and keeping
+  // these columns required rather than making the whole `orders` table's
+  // address non-null (a much wider, riskier change touching every other
+  // order type) was the deliberate trade-off. Same "snapshot at
+  // creation time" reasoning shipments.addressLine1 already carries.
   addressLine1: varchar('address_line1', { length: 200 }).notNull(),
   addressLine2: varchar('address_line2', { length: 200 }),
   city: varchar('city', { length: 100 }).notNull(),
@@ -1011,14 +1024,24 @@ export const reviews = pgTable('reviews', {
 });
 
 /**
- * Pickup & Pay request (SRS §3.8a-adjacent contingency, reshaped at the
- * requester's direction into a booking-style ask rather than the QR/mark-
- * paid flow this replaced): buyer picks a date + place, seller follows up
- * off-platform within 24h. No payment happens here at all — this is a
- * request to arrange one, same "never fabricate what didn't happen" rule as
- * everywhere else (enquiryStatusEnum, shippingEstimateText). Deliberately
- * has no buyer account requirement, matching the eligibility rule that a
- * guest can request this too.
+ * Pickup & Pay request (SRS §3.8a-adjacent contingency) — ORIGINALLY a
+ * disconnected booking-style ask (buyer picks a date + place, no real
+ * order behind it at all). **Its buyer-booking role is retired as of
+ * the full payout redesign's Pickup & Pay follow-up (Tier 4, item 22,
+ * 2026-09-06)** — a new booking now creates a real `orders`/`orderItems`/
+ * `shipments` (method: 'pickup_and_pay') row instead, via
+ * POST /api/listings/[idOrSlug]/pickup-order, tracked through the same
+ * /order/[orderNumber] page every other order type uses. This table and
+ * its buyer-facing routes (app/api/pickup-requests,
+ * app/(minimal)/pickup/[trackingNumber]) are left in place, unused by
+ * any live UI, only so any pre-existing booking's tracking link keeps
+ * resolving — never write a new row here for a new booking.
+ *
+ * What's NOT retired: this table's OTHER, unrelated role — Customer
+ * Support logging whether a seller's own parcel physically arrived at a
+ * WeBohra jamaat OFFICE (FR-47, `status`/`handledByStaffId` below,
+ * `/admin/pickups` + `/seller/pickups`) has nothing to do with a buyer
+ * collecting an order and continues exactly as before.
  */
 export const pickupRequests = pgTable('pickup_requests', {
   id: serial('id').primaryKey(),
@@ -1220,6 +1243,16 @@ export const shipments = pgTable('shipments', {
   pincode: varchar('pincode', { length: 10 }),
   expectedAtOfficeBy: timestamp('expected_at_office_by', { withTimezone: true }),
   arrivedAtOfficeAt: timestamp('arrived_at_office_at', { withTimezone: true }),
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — only ever
+  // set for method: 'pickup_and_pay'. The slot she picked at checkout
+  // (same varchar convention as the retired pickupRequests.requestedDate/
+  // requestedTime), and the moment the seller actually confirms the
+  // buyer collected it — the second-stage 4%/6% commission fires exactly
+  // when this gets set (see app/api/sellers/orders/[orderNumber]'s own
+  // comment), never through the weekly settlement batch.
+  pickupScheduledDate: varchar('pickup_scheduled_date', { length: 10 }),
+  pickupScheduledTime: varchar('pickup_scheduled_time', { length: 5 }),
+  pickupCompletedAt: timestamp('pickup_completed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -1421,6 +1454,18 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   // — the 7-day buffer the finalized design calls for (matches Flipkart's
   // actual pattern), tunable here without a deploy.
   settlementBufferDays: integer('settlement_buffer_days').notNull().default(7),
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — the FIRST
+  // of the two stages, charged at checkout confirmation (non-refundable,
+  // framed as a lead-generation fee). Deliberately NOT a second
+  // independent rate: the design's own rule is "every sale is 10%
+  // total, split differently in time, never a special rate" — so the
+  // second stage is always `orderCommissionPercent - this value`,
+  // derived at settlement time (see lib/settlement.ts's
+  // completePickupAndPay), never its own separately-configurable
+  // number that could drift out of summing to the real total.
+  pickupAndPayCheckoutFeePercent: numeric('pickup_and_pay_checkout_fee_percent', { precision: 5, scale: 2 })
+    .notNull()
+    .default('6.00'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

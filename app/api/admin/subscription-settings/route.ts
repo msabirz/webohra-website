@@ -68,6 +68,7 @@ export async function PATCH(request: Request) {
     whatsappLeadFeeRupees,
     razorpayFeePercent,
     delhiveryCostPerShipment,
+    pickupAndPayCheckoutFeePercent,
     ...rest
   } = parsed.data;
   const [updated] = await db
@@ -89,6 +90,9 @@ export async function PATCH(request: Request) {
       ...(razorpayFeePercent !== undefined && { razorpayFeePercent: razorpayFeePercent.toFixed(2) }),
       ...(delhiveryCostPerShipment !== undefined && {
         delhiveryCostPerShipment: delhiveryCostPerShipment.toFixed(2),
+      }),
+      ...(pickupAndPayCheckoutFeePercent !== undefined && {
+        pickupAndPayCheckoutFeePercent: pickupAndPayCheckoutFeePercent.toFixed(2),
       }),
       updatedAt: new Date(),
     })

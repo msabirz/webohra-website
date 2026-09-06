@@ -46,6 +46,8 @@ type Settings = {
   razorpayFeePercent: string;
   delhiveryCostPerShipment: string;
   settlementBufferDays: number;
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06).
+  pickupAndPayCheckoutFeePercent: string;
 };
 
 const CONTACT_MODE_LABEL: Record<ContactMode, string> = {
@@ -262,6 +264,9 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   const [razorpayFeePercent, setRazorpayFeePercent] = useState(settings.razorpayFeePercent);
   const [delhiveryCostPerShipment, setDelhiveryCostPerShipment] = useState(settings.delhiveryCostPerShipment);
   const [settlementBufferDays, setSettlementBufferDays] = useState(String(settings.settlementBufferDays));
+  const [pickupAndPayCheckoutFeePercent, setPickupAndPayCheckoutFeePercent] = useState(
+    settings.pickupAndPayCheckoutFeePercent,
+  );
   const [razorpayxPayoutsEnabled, setRazorpayxPayoutsEnabled] = useState(settings.razorpayxPayoutsEnabled);
   const [couponsEnabled, setCouponsEnabled] = useState(settings.couponsEnabled);
   const [couponsSaving, setCouponsSaving] = useState(false);
@@ -289,6 +294,7 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
           razorpayFeePercent: Number(razorpayFeePercent),
           delhiveryCostPerShipment: Number(delhiveryCostPerShipment),
           settlementBufferDays: Number(settlementBufferDays),
+          pickupAndPayCheckoutFeePercent: Number(pickupAndPayCheckoutFeePercent),
         }),
       });
       setSaved(true);
@@ -472,6 +478,20 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
             step="1"
             value={settlementBufferDays}
             onChange={(e) => setSettlementBufferDays(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">
+            Pickup &amp; Pay checkout fee (% of total commission)
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="0.5"
+            value={pickupAndPayCheckoutFeePercent}
+            onChange={(e) => setPickupAndPayCheckoutFeePercent(e.target.value)}
             className={inputStyles}
           />
         </label>

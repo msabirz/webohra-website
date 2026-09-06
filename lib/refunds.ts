@@ -73,7 +73,12 @@ export async function refundOrder(
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!order) return { ok: false, error: 'Order not found' };
   if (order.paymentMethod !== 'online') {
-    return { ok: false, error: 'Only online-paid orders can be refunded here — there is no Razorpay payment to refund on a COD order.' };
+    // Generic wording — was "...on a COD order" until Pickup & Pay
+    // (Tier 4, item 22, 2026-09-06) added a second non-online method
+    // this same refusal applies to; a pickup_and_pay order has no
+    // Razorpay payment to refund either (the 6% checkout fee is
+    // deliberately non-refundable, framed as a lead-generation cost).
+    return { ok: false, error: 'Only online-paid orders can be refunded here — there is no Razorpay payment to refund on this order.' };
   }
   if (order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded') {
     return { ok: false, error: `This order's payment status is '${order.paymentStatus ?? 'pending'}' — only a paid order can be refunded.` };

@@ -19,6 +19,7 @@ import { isForwardMove, isOrderItemStage } from '@/lib/order-item-status';
 import { notifyShipmentStatusChanged } from '@/lib/notifications/triggers';
 import { getRefundedAmount, getOrderPayoutWarning } from '@/lib/refunds';
 import { computeOrderTotalRupees } from '@/lib/order-total';
+import { completePickupAndPay } from '@/lib/settlement';
 
 /**
  * GET /api/admin/orders/[orderNumber] — the "whole transaction" view Admin
@@ -232,6 +233,20 @@ export async function PATCH(
     .set({ status, statusUpdatedAt: new Date() })
     .where(eq(orderItems.id, itemId))
     .returning();
+
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — same
+  // trigger as the seller's own status-advance route (see its own
+  // comment) — this is Customer Support nudging it forward on her
+  // behalf, the same event, not a separate kind of update.
+  if (updated.status === 'delivered' && order.paymentMethod === 'pickup_and_pay') {
+    await completePickupAndPay({
+      sellerId: item.sellerId,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      orderItemId: updated.id,
+      itemPriceRupees: Number(updated.unitPrice) * updated.quantity,
+    });
+  }
 
   // Notifications infrastructure (Tier 3, item 20, 2026-09-06) — same
   // trigger as the seller's own status-advance route, since this is the

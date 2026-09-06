@@ -78,6 +78,11 @@ export default function ListingDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
   const [pickupModalOpen, setPickupModalOpen] = useState(false);
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — null for
+  // the simple-listing case (PickupExclusiveCallout's own branch, no
+  // variant to speak of); set from ProductVariantPicker's callback when
+  // she orders a specific swatch.
+  const [pickupVariantId, setPickupVariantId] = useState<number | undefined>(undefined);
   const [buyerCity, setBuyerCity] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -224,7 +229,10 @@ export default function ListingDetailPage() {
                       pickupCity: listing.pickupCity,
                       buyerCity,
                       eligible: pickupEligible,
-                      onOrderNow: () => setPickupModalOpen(true),
+                      onOrderNow: (variantId: number) => {
+                        setPickupVariantId(variantId);
+                        setPickupModalOpen(true);
+                      },
                     }
                   : undefined
               }
@@ -289,10 +297,14 @@ export default function ListingDetailPage() {
       {pickupModalOpen && (
         <PickupRequestModal
           listingId={listing.id}
+          variantId={pickupVariantId}
           pickupCity={listing.pickupCity}
           pickupAddress={listing.pickupAddress}
           pickupLeadTimeHours={listing.pickupLeadTimeHours}
-          onClose={() => setPickupModalOpen(false)}
+          onClose={() => {
+            setPickupModalOpen(false);
+            setPickupVariantId(undefined);
+          }}
         />
       )}
 

@@ -12,7 +12,12 @@ type PickupInfo = {
   pickupCity: string | null;
   buyerCity: string | undefined;
   eligible: boolean;
-  onOrderNow: () => void;
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — carries
+  // which variant was actually selected when she tapped "Order Now,"
+  // since the pickup-order endpoint needs a real variantId to resolve a
+  // price from (the parent page has no other way to know which swatch
+  // was showing here).
+  onOrderNow: (variantId: number) => void;
 };
 
 /**
@@ -105,7 +110,7 @@ export function ProductVariantPicker({
           pickupCity={pickup.pickupCity}
           buyerCity={pickup.buyerCity}
           eligible={pickup.eligible}
-          onOrderNow={pickup.onOrderNow}
+          onOrderNow={() => pickup.onOrderNow(variant.id)}
         />
       )}
 

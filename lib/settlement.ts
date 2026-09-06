@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lte, ne } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { orderItems, orders, shipments, payouts, payoutCategories, subscriptionSettings } from '@/db/schema';
 import { deductWalletForCommission } from '@/lib/wallet';
@@ -56,11 +56,22 @@ export async function runWeeklySettlement(): Promise<SettlementRunResult> {
       quantity: orderItems.quantity,
     })
     .from(orderItems)
+    // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) —
+    // pickup_and_pay orders are EXPLICITLY excluded here, belt-and-
+    // suspenders on top of them always getting settledAt set the
+    // instant their own two-stage commission completes (see
+    // completePickupAndPay below). Without this, a bug in that
+    // separate code path could let a pickup_and_pay item fall through
+    // to this generic batch and get charged NORMAL settlement math a
+    // second time — this join+filter makes that structurally
+    // impossible regardless.
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
     .where(
       and(
         eq(orderItems.status, 'delivered'),
         isNull(orderItems.settledAt),
         lte(orderItems.statusUpdatedAt, cutoff),
+        ne(orders.paymentMethod, 'pickup_and_pay'),
       ),
     );
 
@@ -164,4 +175,75 @@ export async function runWeeklySettlement(): Promise<SettlementRunResult> {
   }
 
   return result;
+}
+
+/**
+ * Pickup & Pay's FIRST commission stage (Tier 4, item 22, 2026-09-06) —
+ * charged immediately at checkout confirmation, never through the
+ * weekly batch. Non-refundable by design (she's already got the buyer's
+ * contact info for retargeting even if the sale falls through), so this
+ * always allows negative — there's nothing to block once the booking
+ * itself has happened. Called once, from the pickup-order creation
+ * route, right after the order/item/shipment rows exist.
+ */
+export async function chargePickupAndPayCheckoutFee(params: {
+  sellerId: number;
+  orderId: number;
+  orderNumber: string;
+  itemPriceRupees: number;
+}): Promise<number> {
+  const [settings] = await db.select().from(subscriptionSettings).limit(1);
+  const feePercent = Number(settings?.pickupAndPayCheckoutFeePercent ?? '6.00');
+  const amount = (params.itemPriceRupees * feePercent) / 100;
+  if (amount <= 0) return 0;
+
+  await deductWalletForCommission({
+    sellerId: params.sellerId,
+    amountRupees: amount,
+    orderId: params.orderId,
+    reason: `Pickup & Pay — checkout confirmation fee, order #${params.orderNumber}`,
+    allowNegative: true,
+  });
+  return amount;
+}
+
+/**
+ * Pickup & Pay's SECOND commission stage — fired the instant the seller
+ * confirms the buyer actually collected it (app/api/sellers/orders/
+ * [orderNumber]'s own PATCH route calls this, never the weekly batch).
+ * Always exactly `orderCommissionPercent - pickupAndPayCheckoutFeePercent`
+ * of the item price — derived, not its own configurable number, so the
+ * two stages can never drift from summing to the real total commission
+ * rate. Sets `orderItems.settledAt` in the SAME call, unconditionally —
+ * this is what keeps this item permanently out of runWeeklySettlement's
+ * reach (on top of that function's own explicit pickup_and_pay
+ * exclusion), and it must never be skipped even if the amount happens to
+ * be zero or negative (a misconfigured settings row shouldn't leave an
+ * item eligible for the generic batch to double-charge later).
+ */
+export async function completePickupAndPay(params: {
+  sellerId: number;
+  orderId: number;
+  orderNumber: string;
+  orderItemId: number;
+  itemPriceRupees: number;
+}): Promise<number> {
+  const [settings] = await db.select().from(subscriptionSettings).limit(1);
+  const totalPercent = Number(settings?.orderCommissionPercent ?? '10.00');
+  const stage1Percent = Number(settings?.pickupAndPayCheckoutFeePercent ?? '6.00');
+  const stage2Percent = Math.max(totalPercent - stage1Percent, 0);
+  const amount = (params.itemPriceRupees * stage2Percent) / 100;
+
+  if (amount > 0) {
+    await deductWalletForCommission({
+      sellerId: params.sellerId,
+      amountRupees: amount,
+      orderId: params.orderId,
+      reason: `Pickup & Pay — pickup confirmed, order #${params.orderNumber}`,
+      allowNegative: true,
+    });
+  }
+
+  await db.update(orderItems).set({ settledAt: new Date() }).where(eq(orderItems.id, params.orderItemId));
+  return amount;
 }
