@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { whatsappMessages } from '@/db/schema';
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature';
+import { billConnectMessage } from '@/lib/whatsapp-connect';
 
 /**
  * GET /api/webhooks/whatsapp — Meta's one-time verification handshake,
@@ -73,20 +74,34 @@ export async function POST(request: Request) {
           ...(failureReason ? { failureReason } : {}),
         })
         .where(eq(whatsappMessages.waMessageId, waMessageId));
+
+      // WhatsApp Connect billing (Tier 3, item 19, 2026-09-06) — the ₹20
+      // charge fires here, the moment delivery/read is genuinely
+      // confirmed, never on send. billConnectMessage is a no-op for a
+      // message that isn't a Connect notification at all (e.g. the POC's
+      // hello_world sends have no sellerId) or one already billed.
+      if (newStatus === 'delivered' || newStatus === 'read') {
+        await billConnectMessage(waMessageId);
+      }
     }
 
     // A real reply — the recipient actually messaged back. Matched by
     // phone number since a reply carries no wamid pointing back to our
-    // original outbound message.
+    // original outbound message. Treated as an implicit "read" — see
+    // this route's own top comment — and billable the same way (fixed
+    // 2026-09-06 alongside the WhatsApp Connect billing wiring: this
+    // used to sort ascending and take the OLDEST message to that phone,
+    // not the most recent one, which would have both updated and billed
+    // the wrong row).
     for (const incoming of value.messages ?? []) {
       const fromPhone: string | undefined = incoming.from;
       if (!fromPhone) continue;
 
       const [mostRecent] = await db
-        .select({ id: whatsappMessages.id })
+        .select({ id: whatsappMessages.id, waMessageId: whatsappMessages.waMessageId })
         .from(whatsappMessages)
         .where(eq(whatsappMessages.toPhone, fromPhone))
-        .orderBy(whatsappMessages.createdAt)
+        .orderBy(desc(whatsappMessages.createdAt))
         .limit(1);
 
       if (mostRecent) {
@@ -94,6 +109,9 @@ export async function POST(request: Request) {
           .update(whatsappMessages)
           .set({ status: 'read', statusUpdatedAt: new Date() })
           .where(eq(whatsappMessages.id, mostRecent.id));
+        if (mostRecent.waMessageId) {
+          await billConnectMessage(mostRecent.waMessageId);
+        }
       }
     }
   }

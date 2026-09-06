@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { listings, enquiries, users, listingVariants } from '@/db/schema';
+import { listings, enquiries, users, listingVariants, subscriptionSettings } from '@/db/schema';
 import { consultationRequestSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { generateRequestNumber } from '@/lib/ids';
 import { getActivePlan } from '@/lib/subscriptions';
+import { deductWalletForCommission } from '@/lib/wallet';
 
 function resolveListingCondition(idOrSlug: string) {
   const asNumber = Number(idOrSlug);
@@ -105,6 +106,26 @@ export async function POST(
       status: 'initiated',
     })
     .returning();
+
+  // WhatsApp Lead — Meta Direct (Tier 3, item 19, 2026-09-06): ₹35,
+  // charged on submission — a plain wallet deduction, no WhatsApp API
+  // confirmation needed at all (this mechanism's accountability, a real
+  // DB record the seller can see in her Enquiries page, was never in
+  // question the way an untracked wa.me click was). Always billed
+  // (allowNegative: true) even from a guest submission — unlike WhatsApp
+  // Connect, refusing a buyer's genuine consultation request over the
+  // seller's own low wallet balance is a worse trade-off for a modest,
+  // once-off ₹35 fee; same "nothing left to block, so allow it" reasoning
+  // as a COD settlement discovered after delivery.
+  const [settings] = await db.select().from(subscriptionSettings).limit(1);
+  const leadFeeRupees = settings ? Number(settings.whatsappLeadFeeRupees) : 35;
+  await deductWalletForCommission({
+    sellerId: listing.sellerId,
+    amountRupees: leadFeeRupees,
+    orderId: null,
+    reason: `WhatsApp Lead — ${listing.title} (#${enquiry.requestNumber})`,
+    allowNegative: true,
+  });
 
   return NextResponse.json({ requestNumber: enquiry.requestNumber }, { status: 201 });
 }

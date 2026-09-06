@@ -148,13 +148,7 @@ export function ProductVariantPicker({
         )}
       </div>
 
-      <WhatsAppBuyButton
-        listingId={listingId}
-        variantId={variant.id}
-        variantName={variant.name}
-        size="lg"
-        label="Buy on WhatsApp"
-      />
+      <WhatsAppBuyButton listingId={listingId} variantId={variant.id} size="lg" label="Buy on WhatsApp" />
     </div>
   );
 }

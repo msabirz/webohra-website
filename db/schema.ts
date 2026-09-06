@@ -1082,8 +1082,19 @@ export const whatsappMessages = pgTable('whatsapp_messages', {
   id: serial('id').primaryKey(),
   listingId: integer('listing_id').references(() => listings.id, { onDelete: 'set null' }),
   sellerId: integer('seller_id').references(() => users.id, { onDelete: 'set null' }),
-  // The phone number the message was sent to — a POC test-recipient
-  // number for now, not a real buyer's registered number.
+  // WhatsApp Connect billing (Tier 3, item 19, 2026-09-06) — which buyer's
+  // click triggered this send. Null for the pre-existing POC rows (which
+  // predate this column and were never tied to a real buyer or listing at
+  // all — see toPhone's own comment) and stays that way; a real Connect
+  // send always sets it, since dedupe/rate-limiting are keyed on it.
+  buyerId: integer('buyer_id').references(() => users.id, { onDelete: 'set null' }),
+  // toPhone here is always the SELLER's number — this row is WE Bohra's
+  // business number notifying HER that a buyer connected, which is what
+  // makes the whole thing trackable at all (see this table's own comment
+  // above: a message to a personal, non-Business-API WhatsApp number
+  // can't be tracked). The buyer's own wa.me redirect to the seller's
+  // personal number happens entirely outside this table, exactly as it
+  // always did — unchanged, untracked, and free.
   toPhone: varchar('to_phone', { length: 20 }).notNull(),
   // Meta's own message id ("wamid...") — the join key every status
   // webhook event arrives keyed by. Nullable only for the brief window
@@ -1093,6 +1104,15 @@ export const whatsappMessages = pgTable('whatsapp_messages', {
   // Set only on a 'failed' status — Meta's own error code/message, so a
   // failure is debuggable instead of a silent dead row.
   failureReason: varchar('failure_reason', { length: 300 }),
+  // The ₹20 Connect fee is charged exactly once, only once Meta's webhook
+  // confirms this specific message reached delivered/read (or a genuine
+  // reply) — never on send, never twice. This flag is the idempotency
+  // gate itself (see lib/whatsapp-connect.ts's billConnectMessage): a
+  // conditional `WHERE billed = false` update claims the right to bill
+  // atomically, so a delivered event followed by a read event for the
+  // same message can never double-charge.
+  billed: boolean('billed').notNull().default(false),
+  billedAt: timestamp('billed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   statusUpdatedAt: timestamp('status_updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1341,6 +1361,25 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   // "deliberately off until a decision, not the presence of code" shape
   // as razorpayxPayoutsEnabled above.
   couponsEnabled: boolean('coupons_enabled').notNull().default(false),
+  // WhatsApp Connect & Lead — Meta Direct (Tier 3, item 19, 2026-09-06).
+  // Verified against Meta's own India rate card (₹0.115/utility message,
+  // no platform fee) — see [[webohra-fulfillment-subscriptions-phases]]
+  // for the full margin writeup. Admin-configurable rather than
+  // hardcoded, same principle as every other real-money number on this
+  // row.
+  whatsappConnectFeeRupees: numeric('whatsapp_connect_fee_rupees', { precision: 10, scale: 2 })
+    .notNull()
+    .default('20.00'),
+  whatsappLeadFeeRupees: numeric('whatsapp_lead_fee_rupees', { precision: 10, scale: 2 })
+    .notNull()
+    .default('35.00'),
+  // The rate-limit's own cap — the "must-do" safety guard the user called
+  // out explicitly: protects against wallet-drain AND against real Meta
+  // message-fee drain from a spam-clicked Connect. No specific number was
+  // ever decided beyond "rate-limit it" — 10/day is a reasonable starting
+  // point for a real buyer's genuine browsing session, tunable here
+  // without a deploy if it turns out wrong in practice.
+  whatsappConnectDailyLimitPerBuyer: integer('whatsapp_connect_daily_limit_per_buyer').notNull().default(10),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

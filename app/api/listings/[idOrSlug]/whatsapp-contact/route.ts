@@ -3,7 +3,9 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { listings, users, whatsappContacts, listingVariants, subcategories } from '@/db/schema';
 import { whatsappContactSchema } from '@/lib/validation';
+import { getSessionFromRequest } from '@/lib/auth';
 import { getActivePlan } from '@/lib/subscriptions';
+import { checkConnectEligibility, sendConnectNotification } from '@/lib/whatsapp-connect';
 
 function resolveListingCondition(idOrSlug: string) {
   const asNumber = Number(idOrSlug);
@@ -13,13 +15,21 @@ function resolveListingCondition(idOrSlug: string) {
 /**
  * POST /api/listings/[idOrSlug]/whatsapp-contact
  *
- * FR-5's real mechanism for a product: a direct, buyer-initiated WhatsApp
- * deep link to the seller's own number — no relay. The seller's phone is
- * only ever surfaced here, at the moment of this specific action (FR-37:
- * never as general browsable listing data — see the sellerPhone exclusion
- * on GET /api/listings/[idOrSlug]). Logs the click for the seller/
- * analytics; the actual conversation happens entirely in WhatsApp, outside
- * this platform's view.
+ * FR-5's buyer-initiated WhatsApp deep link — unchanged, still a direct,
+ * instant, form-free tap straight to the seller's own number, no relay
+ * (see components/whatsapp-buy-button.tsx). What changed underneath
+ * (WhatsApp Connect & Lead — Meta Direct, Tier 3 item 19, 2026-09-06):
+ * this is now the trackable, billable "Connect" event the finalized
+ * design describes — session-gated (registered-buyers-only, bringing
+ * this in line with the contact model's general rule — see
+ * webohra-site/CLAUDE.md), and it fires a separate, real WhatsApp
+ * Business Platform notification to the SELLER in the background (see
+ * lib/whatsapp-connect.ts's own top comment for why that's the billable
+ * message, not the buyer's own wa.me redirect). Dedupe/rate-limit/
+ * wallet-balance are all handled by checkConnectEligibility; only the
+ * insufficient-wallet case actually blocks this response — dedupe and
+ * rate-limit silently skip the paid notification while still letting the
+ * buyer's own redirect happen exactly as before.
  *
  * Also the Silver-tier mechanism for a SERVICE listing (service
  * contact-tiering, 2026-09-03 — see contactModeEnum's own comment in
@@ -34,6 +44,12 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ idOrSlug: string }> },
 ) {
+  const session = await getSessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: 'Sign in to contact a seller' }, { status: 401 });
+  }
+  const buyerId = Number(session.sub);
+
   const { idOrSlug } = await params;
 
   const body = await request.json().catch(() => null);
@@ -44,6 +60,9 @@ export async function POST(
       { status: 400 },
     );
   }
+
+  const [buyer] = await db.select({ name: users.name }).from(users).where(eq(users.id, buyerId));
+  const buyerName = buyer?.name?.trim() || 'A WE Bohra buyer';
 
   const [row] = await db
     .select({
@@ -83,18 +102,33 @@ export async function POST(
     variantName = variant.name;
   }
 
+  const eligibility = await checkConnectEligibility(buyerId, row.id, row.sellerId);
+  if (!eligibility.ok) {
+    return NextResponse.json({ error: eligibility.error }, { status: 409 });
+  }
+  if (eligibility.billable) {
+    await sendConnectNotification({
+      listingId: row.id,
+      sellerId: row.sellerId,
+      buyerId,
+      sellerPhone: row.sellerPhone,
+      buyerName,
+      listingTitle: row.title,
+    });
+  }
+
   await db.insert(whatsappContacts).values({
     listingId: row.id,
     sellerId: row.sellerId,
-    buyerName: parsed.data.buyerName,
+    buyerName,
   });
 
   const isService = row.listingType !== 'physical_product';
   const message = variantName
-    ? `Hi, ${parsed.data.buyerName} here — I'd like to ask about "${variantName}" for "${row.title}" on WE Bohra.`
+    ? `Hi, ${buyerName} here — I'd like to ask about "${variantName}" for "${row.title}" on WE Bohra.`
     : isService
-      ? `Hi, ${parsed.data.buyerName} here — I'd like to ask about "${row.title}" on WE Bohra.`
-      : `Hi, ${parsed.data.buyerName} here — I'd like to buy "${row.title}" from WE Bohra.`;
+      ? `Hi, ${buyerName} here — I'd like to ask about "${row.title}" on WE Bohra.`
+      : `Hi, ${buyerName} here — I'd like to buy "${row.title}" from WE Bohra.`;
 
   return NextResponse.json({ sellerPhone: row.sellerPhone, message });
 }

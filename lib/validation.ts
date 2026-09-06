@@ -371,8 +371,14 @@ export const pickupRequestSchema = z.object({
 });
 export type PickupRequestInput = z.infer<typeof pickupRequestSchema>;
 
+// WhatsApp Connect & Lead — Meta Direct (Tier 3, item 19, 2026-09-06):
+// buyerName is gone — the route now requires a real signed-in session
+// and reads her account name itself, never trusts a client-supplied one.
+// Registered-buyers-only for Connect brings this in line with the
+// contact model's general rule (webohra-site/CLAUDE.md) — Lead's
+// consultation-request flow stays its own documented, deliberate guest
+// exception, untouched by this change.
 export const whatsappContactSchema = z.object({
-  buyerName: nameField('Your name'),
   // Only ever sent for a variant-based listing — see the same pairing
   // on consultationRequestSchema below and listings.price's own comment
   // in db/schema.ts.
@@ -855,6 +861,10 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
   razorpayxPayoutsEnabled: z.boolean().optional(),
   // Toggle infrastructure only — no coupon logic exists yet to gate.
   couponsEnabled: z.boolean().optional(),
+  // WhatsApp Connect & Lead — Meta Direct (Tier 3, item 19, 2026-09-06).
+  whatsappConnectFeeRupees: z.number().nonnegative('Fee can’t be negative').optional(),
+  whatsappLeadFeeRupees: z.number().nonnegative('Fee can’t be negative').optional(),
+  whatsappConnectDailyLimitPerBuyer: z.number().int().positive('Must be at least 1').optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 
