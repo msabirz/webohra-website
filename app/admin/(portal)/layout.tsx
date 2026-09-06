@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard,
+  TrendingUp,
   ShieldCheck,
   Package,
   FolderTree,
@@ -45,6 +46,7 @@ type AdminNavEntry = AdminNavLeaf | AdminNavGroup;
 // below leaves it with at least one visible child.
 const NAV_ITEMS: AdminNavEntry[] = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['customer_support', 'admin', 'super_admin'] },
+  { href: '/admin/analytics', label: 'Analytics', icon: TrendingUp, roles: ['customer_support', 'admin', 'super_admin'] },
   { href: '/admin/sellers', label: 'Sellers', icon: ShieldCheck, roles: ['customer_support', 'admin', 'super_admin'] },
   { href: '/admin/customers', label: 'Customers', icon: User, roles: ['customer_support', 'admin', 'super_admin'] },
   {
