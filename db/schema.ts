@@ -938,6 +938,54 @@ export const disputeComments = pgTable('dispute_comments', {
 });
 
 /**
+ * Reviews & Ratings (Tier 3, item 17 — 2026-09-06). Genuinely absent
+ * before this: `components/listing-card.tsx` used to carry a comment
+ * stating outright "this marketplace doesn't have reviews ... to back
+ * [a star rating] with." One review per purchased item, not per listing
+ * or per buyer — `orderItemId` unique enforces that at the DB level, and
+ * it's what ties a review back to proof of a real, delivered purchase
+ * (see the eligibility check in POST /api/account/reviews: item.status
+ * must be 'delivered'). Requires a real buyer account — there's no
+ * guest-review path, unlike disputes/pickup-requests above, since a
+ * review's whole value is being attributable to someone. `sellerId` is
+ * denormalized from the listing at write time (same reasoning as
+ * order_items.sellerId — lets admin/seller tooling query "my reviews"
+ * without joining through listings every time). `buyerName` is a
+ * snapshot too, taken from her account name at submission time, so
+ * display never needs a join back to `users` and stays stable even if
+ * she later renames her account.
+ */
+export const reviews = pgTable('reviews', {
+  id: serial('id').primaryKey(),
+  orderItemId: integer('order_item_id')
+    .notNull()
+    .unique()
+    .references(() => orderItems.id, { onDelete: 'cascade' }),
+  listingId: integer('listing_id')
+    .notNull()
+    .references(() => listings.id, { onDelete: 'cascade' }),
+  sellerId: integer('seller_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  buyerId: integer('buyer_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  buyerName: varchar('buyer_name', { length: 150 }).notNull(),
+  // 1-5, enforced at the app layer (lib/validation.ts) — same convention
+  // as every other numeric constraint in this schema (wallet/payout
+  // amounts are app-validated too, no DB check constraints anywhere).
+  rating: integer('rating').notNull(),
+  comment: varchar('comment', { length: 1000 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Null until she edits it — she can revise her own review later (PATCH
+  // /api/account/reviews/[id]), same "audit trail, don't just silently
+  // overwrite" instinct as everywhere else, just via a plain nullable
+  // timestamp rather than a full history table — a review edit isn't
+  // money-adjacent the way a wallet/payout change is.
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+});
+
+/**
  * Pickup & Pay request (SRS §3.8a-adjacent contingency, reshaped at the
  * requester's direction into a booking-style ask rather than the QR/mark-
  * paid flow this replaced): buyer picks a date + place, seller follows up

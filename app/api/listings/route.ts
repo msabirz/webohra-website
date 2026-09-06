@@ -16,6 +16,7 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { slugifyTitle, withUniqueSuffix } from '@/lib/ids';
 import { validateFieldValues, saveFieldValues, checkShippingEstimate } from '@/lib/listing-fields';
 import { getActivePlan } from '@/lib/subscriptions';
+import { getListingRatingSummaries } from '@/lib/reviews';
 
 /**
  * GET /api/listings
@@ -174,6 +175,10 @@ export async function GET(request: Request) {
     }),
   );
 
+  // Reviews & Ratings (Tier 3, item 17, 2026-09-06) — one grouped query for
+  // every listing on the page, not one round trip per card.
+  const ratingByListingId = await getListingRatingSummaries(rows.map((row) => row.id));
+
   return NextResponse.json({
     listings: rows.map((row) => {
       const { sellerPhoneRaw, ...publicRow } = row;
@@ -185,6 +190,7 @@ export async function GET(request: Request) {
         imageUrls: imagesByListingId.get(row.id) ?? [],
         contactMode,
         sellerPhone: contactMode === 'whatsapp_number' ? sellerPhoneRaw : null,
+        rating: ratingByListingId.get(row.id) ?? null,
       };
     }),
   });

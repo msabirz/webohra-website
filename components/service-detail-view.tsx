@@ -9,6 +9,8 @@ import { VariantMenu, type Variant } from '@/components/variant-menu';
 import { categoryColor } from '@/lib/category-color';
 import { WishlistButton } from '@/components/wishlist-button';
 import { ShareButton } from '@/components/share-button';
+import { StarRating } from '@/components/star-rating';
+import { ReviewsSection } from '@/components/reviews-section';
 
 // Fulfillment & Subscriptions redesign, Phase 6 — her past-work showcase,
 // fetched by the API alongside everything else on a service listing (see
@@ -43,6 +45,9 @@ type ServiceListing = {
   contactMode: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
   sellerPhone: string | null;
   sellerEmail: string | null;
+  // Reviews & Ratings (Tier 3, item 17, 2026-09-06) — null means nobody's
+  // reviewed this listing yet, not a 0 rating.
+  rating: { average: number; count: number } | null;
 };
 
 // Icons deliberately mirror the ones used at each matching moment elsewhere
@@ -118,9 +123,19 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
           {listing.subcategoryName}
         </p>
         <h1 className="max-w-xl font-heading text-3xl font-semibold text-ink">{listing.title}</h1>
-        {listing.businessName && (
-          <p className="font-body text-sm text-ink-soft">by {listing.businessName}</p>
-        )}
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          {listing.businessName && (
+            <p className="font-body text-sm text-ink-soft">by {listing.businessName}</p>
+          )}
+          {listing.rating && (
+            <span className="flex items-center gap-1">
+              <StarRating rating={listing.rating.average} className="text-gold" />
+              <span className="font-body text-xs text-ink-soft">
+                {listing.rating.average.toFixed(1)} ({listing.rating.count})
+              </span>
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <ShareButton title={listing.title} />
           <WishlistButton
@@ -245,6 +260,8 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
               </div>
             </section>
           )}
+
+          <ReviewsSection listingId={listing.id} />
         </div>
 
         <aside className="flex flex-col gap-4">

@@ -7,6 +7,7 @@ import { User, Package, LogOut, KeyRound, MessageCircle, MapPin, Plus, Star, Tra
 import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton, RowListSkeleton } from '@/components/skeleton';
+import { StarRating, StarRatingInput } from '@/components/star-rating';
 
 type OrderSummary = {
   orderNumber: string;
@@ -312,6 +313,8 @@ export default function AccountPage() {
         )}
       </div>
 
+      <MyReviews />
+
       <div id="requests" className="flex flex-col gap-4">
         <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-ink">
           <MessageCircle className="h-5 w-5 text-ink-soft" strokeWidth={1.75} />
@@ -346,6 +349,221 @@ export default function AccountPage() {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+type EligibleReviewItem = {
+  orderItemId: number;
+  orderNumber: string;
+  listingId: number;
+  listingTitle: string;
+  businessName: string | null;
+  variantName: string | null;
+  quantity: number;
+};
+
+type SubmittedReview = {
+  id: number;
+  orderItemId: number;
+  listingId: number;
+  listingTitle: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+};
+
+/**
+ * Reviews & Ratings (Tier 3, item 17, 2026-09-06) — "rate your delivered
+ * purchases" plus her own past reviews, editable. Only ever offers
+ * delivered items from an order placed while signed in — see
+ * getEligibleOrderItemsForReview's own comment in lib/reviews.ts for why
+ * a guest order can't feed this at all.
+ */
+function MyReviews() {
+  const [eligible, setEligible] = useState<EligibleReviewItem[] | null>(null);
+  const [submitted, setSubmitted] = useState<SubmittedReview[]>([]);
+  // A single open form at a time, keyed 'new-<orderItemId>' or
+  // 'edit-<reviewId>' — simpler than tracking two separate open-ids when
+  // only one form is ever meaningfully open at once.
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  function load() {
+    authFetch('/api/account/reviews')
+      .then((res) => (res.ok ? res.json() : { eligible: [], submitted: [] }))
+      .then((data) => {
+        setEligible(data.eligible ?? []);
+        setSubmitted(data.submitted ?? []);
+      });
+  }
+  useEffect(load, []);
+
+  function openNew(orderItemId: number) {
+    setOpenKey(`new-${orderItemId}`);
+    setRating(5);
+    setComment('');
+    setFormError(null);
+  }
+
+  function openEdit(review: SubmittedReview) {
+    setOpenKey(`edit-${review.id}`);
+    setRating(review.rating);
+    setComment(review.comment ?? '');
+    setFormError(null);
+  }
+
+  async function submitNew(orderItemId: number) {
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const res = await authFetch('/api/account/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderItemId, rating, comment }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFormError(data.error ?? 'Could not submit this review.');
+        return;
+      }
+      setOpenKey(null);
+      load();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitEdit(reviewId: number) {
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      const res = await authFetch(`/api/account/reviews/${reviewId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating, comment }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFormError(data.error ?? 'Could not save your changes.');
+        return;
+      }
+      setOpenKey(null);
+      load();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (eligible === null) return <RowListSkeleton count={1} withIcon={false} />;
+  if (eligible.length === 0 && submitted.length === 0) return null;
+
+  return (
+    <div id="reviews" className="flex flex-col gap-4">
+      <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-ink">
+        <Star className="h-5 w-5 text-ink-soft" strokeWidth={1.75} />
+        My reviews
+      </h2>
+
+      {eligible.map((item) => (
+        <div key={item.orderItemId} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-body text-sm font-medium text-ink">
+                {item.listingTitle}
+                {item.variantName && ` — ${item.variantName}`}
+              </p>
+              <p className="font-body text-xs text-ink-soft">
+                {item.businessName} · Order #{item.orderNumber}
+              </p>
+            </div>
+            {openKey !== `new-${item.orderItemId}` && (
+              <button onClick={() => openNew(item.orderItemId)} className={buttonStyles('accent', 'sm')}>
+                Rate this
+              </button>
+            )}
+          </div>
+          {openKey === `new-${item.orderItemId}` && (
+            <div className="mt-3 flex flex-col gap-2 border-t border-ink-soft/10 pt-3">
+              <StarRatingInput value={rating} onChange={setRating} />
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Share your experience (optional)"
+                rows={2}
+                className={inputStyles}
+              />
+              {formError && <p className="font-body text-xs text-red-700">{formError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => submitNew(item.orderItemId)}
+                  disabled={submitting}
+                  className={buttonStyles('primary', 'sm')}
+                >
+                  {submitting ? 'Submitting…' : 'Submit review'}
+                </button>
+                <button onClick={() => setOpenKey(null)} className={buttonStyles('secondary', 'sm')}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {submitted.map((review) => (
+        <div key={review.id} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-body text-sm font-medium text-ink">{review.listingTitle}</p>
+              <div className="mt-0.5 flex items-center gap-2">
+                <StarRating rating={review.rating} className="text-gold" />
+                {review.comment && (
+                  <p className="truncate font-body text-xs text-ink-soft">{review.comment}</p>
+                )}
+              </div>
+            </div>
+            {openKey !== `edit-${review.id}` && (
+              <button
+                onClick={() => openEdit(review)}
+                className="flex shrink-0 items-center gap-1 font-body text-xs text-ink-soft underline underline-offset-2 hover:text-ink"
+              >
+                <Pencil className="h-3 w-3" strokeWidth={2} />
+                Edit
+              </button>
+            )}
+          </div>
+          {openKey === `edit-${review.id}` && (
+            <div className="mt-3 flex flex-col gap-2 border-t border-ink-soft/10 pt-3">
+              <StarRatingInput value={rating} onChange={setRating} />
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Share your experience (optional)"
+                rows={2}
+                className={inputStyles}
+              />
+              {formError && <p className="font-body text-xs text-red-700">{formError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => submitEdit(review.id)}
+                  disabled={submitting}
+                  className={buttonStyles('primary', 'sm')}
+                >
+                  {submitting ? 'Saving…' : 'Save changes'}
+                </button>
+                <button onClick={() => setOpenKey(null)} className={buttonStyles('secondary', 'sm')}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

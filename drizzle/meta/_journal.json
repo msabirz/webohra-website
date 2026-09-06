@@ -281,6 +281,13 @@
       "when": 1788708943156,
       "tag": "0039_military_taskmaster",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788711573347,
+      "tag": "0040_hard_guardsmen",
+      "breakpoints": true
     }
   ]
 }
