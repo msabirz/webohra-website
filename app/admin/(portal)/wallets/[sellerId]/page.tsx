@@ -12,7 +12,7 @@ import { useAdminPortal } from '@/lib/admin-context';
 type SellerMeta = { name: string | null; email: string | null; phone: string; businessName: string | null };
 type WalletTransaction = {
   id: number;
-  type: 'topup' | 'commission_deduction' | 'admin_adjustment';
+  type: 'topup' | 'commission_deduction' | 'admin_adjustment' | 'commission_reversal';
   amount: string;
   balanceAfter: string;
   orderId: number | null;
@@ -26,6 +26,7 @@ const TYPE_LABEL: Record<WalletTransaction['type'], string> = {
   topup: 'Top-up',
   commission_deduction: 'Commission',
   admin_adjustment: 'Admin adjustment',
+  commission_reversal: 'Return credit',
 };
 
 /**

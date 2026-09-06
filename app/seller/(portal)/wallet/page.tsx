@@ -10,7 +10,7 @@ import { loadRazorpayScript } from '@/lib/razorpay-client';
 
 type WalletTransaction = {
   id: number;
-  type: 'topup' | 'commission_deduction' | 'admin_adjustment';
+  type: 'topup' | 'commission_deduction' | 'admin_adjustment' | 'commission_reversal';
   amount: string;
   balanceAfter: string;
   orderId: number | null;
@@ -28,6 +28,7 @@ const TYPE_LABEL: Record<WalletTransaction['type'], string> = {
   topup: 'Top-up',
   commission_deduction: 'Commission',
   admin_adjustment: 'Admin adjustment',
+  commission_reversal: 'Return credit',
 };
 
 const PRESET_AMOUNTS = [500, 1000, 2000, 5000];
@@ -248,7 +249,10 @@ export default function SellerWalletPage() {
               </thead>
               <tbody>
                 {transactions.map((t) => {
-                  const isCredit = t.type === 'topup' || (t.type === 'admin_adjustment' && Number(t.amount) >= 0);
+                  const isCredit =
+                    t.type === 'topup' ||
+                    t.type === 'commission_reversal' ||
+                    (t.type === 'admin_adjustment' && Number(t.amount) >= 0);
                   return (
                     <tr key={t.id} className="border-b border-ink-soft/5 last:border-0">
                       <td className="whitespace-nowrap px-4 py-3 text-ink-soft">
