@@ -31,6 +31,7 @@ type Plan = {
 type Settings = {
   id: number;
   walletMinThreshold: string;
+  walletMinTopup: string;
   rechargeDefaultPlanId: number | null;
   bonusListingCommissionPercent: string;
   // Fulfillment & Subscriptions redesign, Phase 5c.
@@ -240,6 +241,7 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   const canApprovePayouts = me.staffRole === 'super_admin';
 
   const [walletMinThreshold, setWalletMinThreshold] = useState(settings.walletMinThreshold);
+  const [walletMinTopup, setWalletMinTopup] = useState(settings.walletMinTopup);
   const [rechargeDefaultPlanId, setRechargeDefaultPlanId] = useState(settings.rechargeDefaultPlanId ?? '');
   const [bonusListingCommissionPercent, setBonusListingCommissionPercent] = useState(settings.bonusListingCommissionPercent);
   const [orderCommissionPercent, setOrderCommissionPercent] = useState(settings.orderCommissionPercent);
@@ -258,6 +260,7 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           walletMinThreshold: Number(walletMinThreshold),
+          walletMinTopup: Number(walletMinTopup),
           rechargeDefaultPlanId: rechargeDefaultPlanId ? Number(rechargeDefaultPlanId) : null,
           bonusListingCommissionPercent: Number(bonusListingCommissionPercent),
           orderCommissionPercent: Number(orderCommissionPercent),
@@ -300,7 +303,7 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   return (
     <div className="rounded-2xl bg-ivory-deep/60 p-5">
       <p className="mb-3 font-heading text-sm font-semibold text-ink">Global settings — recharge model &amp; payouts</p>
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-5">
         <label className="flex flex-col gap-1">
           <span className="font-body text-xs font-medium text-ink-soft">Min wallet balance (₹)</span>
           <input
@@ -308,6 +311,16 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
             min={0}
             value={walletMinThreshold}
             onChange={(e) => setWalletMinThreshold(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">Min top-up amount (₹)</span>
+          <input
+            type="number"
+            min={1}
+            value={walletMinTopup}
+            onChange={(e) => setWalletMinTopup(e.target.value)}
             className={inputStyles}
           />
         </label>

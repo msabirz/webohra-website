@@ -67,7 +67,9 @@ const emptyForm: ProductFormValues = {
   fieldValues: {},
   selfShipCharge: '',
   pickupEnabled: false,
-  pickupAddressSource: '',
+  // Default to her own address, not a forced blank choice — Office stays
+  // opt-in (2026-09-06). She can still switch it once the dropdown shows.
+  pickupAddressSource: 'seller',
   pickupLeadTimeHours: '',
   showAddressOnPdp: false,
   weight: '',

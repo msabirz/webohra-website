@@ -5,10 +5,14 @@ export default function ShippingReturnsPage() {
   return (
     <StaticPage title="Shipping & Returns" icon={Truck}>
       <p>
-        Sellers ship in one of two ways: self-managed (she updates status herself, no live
-        tracking) or via Delhivery (real, automatic tracking).
+        Most sellers ship self-managed today — she arranges her own courier and updates the
+        order status herself. WE Bohra&apos;s own managed Delhivery courier account is being
+        rolled out to eligible plans.
       </p>
-      <p>Returns and refunds are arranged directly with the seller — WE Bohra doesn&apos;t process payments today, so there&apos;s nothing to refund on our side yet.</p>
+      <p>
+        If you paid online, a refund is processed by WE Bohra back to your original payment
+        method. If you paid Cash on Delivery, any return is arranged directly with the seller.
+      </p>
       <p className="italic">This page is a placeholder — a full policy is coming soon.</p>
     </StaticPage>
   );
