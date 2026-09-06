@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { Layers, Plus, Archive, ArchiveRestore, X, ShieldAlert, Lock } from 'lucide-react';
+import { Layers, Plus, Archive, ArchiveRestore, X, ShieldAlert, Lock, Tag } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton } from '@/components/skeleton';
@@ -37,6 +37,7 @@ type Settings = {
   // Fulfillment & Subscriptions redesign, Phase 5c.
   orderCommissionPercent: string;
   razorpayxPayoutsEnabled: boolean;
+  couponsEnabled: boolean;
 };
 
 const CONTACT_MODE_LABEL: Record<ContactMode, string> = {
@@ -246,6 +247,8 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   const [bonusListingCommissionPercent, setBonusListingCommissionPercent] = useState(settings.bonusListingCommissionPercent);
   const [orderCommissionPercent, setOrderCommissionPercent] = useState(settings.orderCommissionPercent);
   const [razorpayxPayoutsEnabled, setRazorpayxPayoutsEnabled] = useState(settings.razorpayxPayoutsEnabled);
+  const [couponsEnabled, setCouponsEnabled] = useState(settings.couponsEnabled);
+  const [couponsSaving, setCouponsSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [approvalSaving, setApprovalSaving] = useState(false);
@@ -297,6 +300,26 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
       onSaved();
     } finally {
       setApprovalSaving(false);
+    }
+  }
+
+  // Same "its own instant action" reasoning as toggleApproval — flipping
+  // whether coupons are live shouldn't ride along with an unrelated edit.
+  async function toggleCoupons() {
+    setCouponsSaving(true);
+    try {
+      const next = !couponsEnabled;
+      const res = await authFetch('/api/admin/subscription-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ couponsEnabled: next }),
+      });
+      if (res.ok) {
+        setCouponsEnabled(next);
+        onSaved();
+      }
+    } finally {
+      setCouponsSaving(false);
     }
   }
 
@@ -406,6 +429,27 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
         ) : (
           <p className="font-body text-xs italic text-ink-soft">Only a super admin can change this.</p>
         )}
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 rounded-xl border border-teal/30 bg-teal/5 p-4">
+        <div className="flex items-center gap-2">
+          <Tag className="h-4 w-4 text-teal-deep" strokeWidth={2} />
+          <p className="font-heading text-sm font-semibold text-ink">Coupons &amp; discounts</p>
+          <span
+            className={`rounded-full px-2.5 py-0.5 font-body text-xs font-semibold ${
+              couponsEnabled ? 'bg-teal/15 text-teal-deep' : 'bg-ink-soft/10 text-ink-soft'
+            }`}
+          >
+            {couponsEnabled ? 'ENABLED' : 'OFF'}
+          </span>
+        </div>
+        <p className="font-body text-xs text-ink-soft">
+          Toggle infrastructure only, for now — no coupon codes or discount rules exist to gate yet. Off by default;
+          flip this on once that build actually ships.
+        </p>
+        <button onClick={toggleCoupons} disabled={couponsSaving} className={buttonStyles('secondary', 'sm', 'w-fit')}>
+          {couponsSaving ? 'Saving…' : couponsEnabled ? 'Disable coupons' : 'Enable coupons'}
+        </button>
       </div>
     </div>
   );

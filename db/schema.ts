@@ -1135,6 +1135,13 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   // RazorpayX call while this is false, regardless of anything else being
   // ready.
   razorpayxPayoutsEnabled: boolean('razorpayx_payouts_enabled').notNull().default(false),
+  // Toggle infrastructure only (2026-09-06) — the actual coupon/discount
+  // mechanism (codes, rules, checkout wiring) is a separate, later build;
+  // this just exists so that build ships behind a real off-by-default
+  // switch instead of going live the moment its code merges. Same
+  // "deliberately off until a decision, not the presence of code" shape
+  // as razorpayxPayoutsEnabled above.
+  couponsEnabled: boolean('coupons_enabled').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1187,11 +1194,36 @@ export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
  * Actually sending the money (the real RazorpayX payout call) is a
  * separate, explicit step — see status.
  */
+
+/**
+ * Admin-manageable payout categories (2026-09-06) — added so a payout
+ * outside the normal weekly settlement flow (e.g. releasing a held
+ * amount manually after a dispute's 7-day window closes) is tagged and
+ * traceable/reportable, not indistinguishable from a routine one. Same
+ * "plain columns, archive via active, never delete" pattern as
+ * subscriptionPlans/webohraOffices — `key` is the stable machine value
+ * code reads (e.g. checking for 'regular_settlement'), `name` is what
+ * admin actually sees and can rename freely.
+ */
+export const payoutCategories = pgTable('payout_categories', {
+  id: serial('id').primaryKey(),
+  key: varchar('key', { length: 50 }).notNull().unique(),
+  name: varchar('name', { length: 100 }).notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const payouts = pgTable('payouts', {
   id: serial('id').primaryKey(),
   orderId: integer('order_id')
     .notNull()
     .references(() => orders.id, { onDelete: 'restrict' }),
+  // Defaults every new payout to 'regular_settlement' at creation
+  // (lib/payouts.ts's createPayoutsForOrder) — nullable + set null on
+  // delete so removing a category from the admin list never blocks or
+  // corrupts a historical payout row, it just goes uncategorized.
+  categoryId: integer('category_id').references(() => payoutCategories.id, { onDelete: 'set null' }),
   sellerId: integer('seller_id')
     .notNull()
     .references(() => users.id, { onDelete: 'restrict' }),

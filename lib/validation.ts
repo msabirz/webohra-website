@@ -630,6 +630,40 @@ export const adminWebohraOfficeUpdateSchema = z.object({
 });
 export type AdminWebohraOfficeUpdateInput = z.infer<typeof adminWebohraOfficeUpdateSchema>;
 
+// Payout categories (2026-09-06) — `key` is the stable, code-facing slug
+// ('regular_settlement', 'miscellaneous', ...), same discipline as
+// tierKey below; `name` is the free-editable admin-facing label.
+const payoutCategoryKeyField = () =>
+  z
+    .string()
+    .trim()
+    .min(2, 'Key must be at least 2 characters')
+    .max(50)
+    .regex(/^[a-z0-9_]+$/, 'Key must be lowercase letters, numbers, and underscores only');
+
+export const adminPayoutCategoryCreateSchema = z.object({
+  key: payoutCategoryKeyField(),
+  name: nameField('Category name'),
+  sortOrder: z.number().int().min(0).optional(),
+});
+export type AdminPayoutCategoryCreateInput = z.infer<typeof adminPayoutCategoryCreateSchema>;
+
+export const adminPayoutCategoryUpdateSchema = z.object({
+  name: nameField('Category name').optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  active: z.boolean().optional(),
+});
+export type AdminPayoutCategoryUpdateInput = z.infer<typeof adminPayoutCategoryUpdateSchema>;
+
+// A payout being re-tagged with a category, and/or (when marking paid
+// manually) the reference note — split from the category so the two
+// concerns (why vs. how) never get conflated the way manualNote alone
+// used to carry both.
+export const adminPayoutCategorizeSchema = z.object({
+  categoryId: z.number().int().positive().nullable(),
+});
+export type AdminPayoutCategorizeInput = z.infer<typeof adminPayoutCategorizeSchema>;
+
 const sellerTypeValue = z.enum(['product', 'service']);
 const contactModeValue = z.enum(['whatsapp_number', 'direct_whatsapp', 'masked_relay']);
 
@@ -707,6 +741,8 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
   // specifically (not just isAdmin, unlike every other field in this
   // object) to actually change it.
   razorpayxPayoutsEnabled: z.boolean().optional(),
+  // Toggle infrastructure only — no coupon logic exists yet to gate.
+  couponsEnabled: z.boolean().optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 

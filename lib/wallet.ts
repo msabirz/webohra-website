@@ -1,6 +1,6 @@
 import { eq, sql, desc } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { sellerWallets, walletTransactions } from '@/db/schema';
+import { sellerWallets, walletTransactions, orders } from '@/db/schema';
 
 /** Her wallet row, created lazily at ₹0 the first time anything needs it —
  *  same "never a not-configured-yet state" pattern as subscription_settings'
@@ -89,16 +89,84 @@ export async function creditWalletTopup(params: {
 /** Her wallet balance + recent transaction history, newest first — the
  *  whole audit trail a seller can see for herself on /seller/wallet, and
  *  what Admin sees too (app/api/admin/wallets/[sellerId]), just with a
- *  higher limit there. */
+ *  higher limit there. Joins to orders for a real order number rather
+ *  than a bare orderId — 2026-09-06, the whole point of this join is to
+ *  make a commission_deduction row explainable, not just "Commission / —".
+ */
 export async function getWalletWithHistory(sellerId: number, limit = 50) {
   const wallet = await getOrCreateWallet(sellerId);
   const transactions = await db
-    .select()
+    .select({
+      id: walletTransactions.id,
+      type: walletTransactions.type,
+      amount: walletTransactions.amount,
+      orderId: walletTransactions.orderId,
+      orderNumber: orders.orderNumber,
+      gatewayPaymentId: walletTransactions.gatewayPaymentId,
+      reason: walletTransactions.reason,
+      balanceAfter: walletTransactions.balanceAfter,
+      createdAt: walletTransactions.createdAt,
+    })
     .from(walletTransactions)
+    .leftJoin(orders, eq(orders.id, walletTransactions.orderId))
     .where(eq(walletTransactions.sellerId, sellerId))
     .orderBy(desc(walletTransactions.createdAt))
     .limit(limit);
   return { wallet, transactions };
+}
+
+export type DeductCommissionResult =
+  | { ok: true; balance: string }
+  | { ok: false; error: string };
+
+/**
+ * The wallet-debit side of commission — the piece that's genuinely wired
+ * up now (2026-09-06); the callers that will actually use it (COD
+ * settlement, Pickup & Pay's two-stage cut) are separate, bigger builds
+ * still ahead. Exists now so those land on solid ground instead of each
+ * reinventing wallet-writing and getting the audit trail wrong the way
+ * `commission_deduction` sat unused for so long.
+ *
+ * `orderId` and `reason` are both required, not optional — an
+ * unexplained commission line is exactly the "Commission / —" gap this
+ * was built to close. `allowNegative` is the caller's call, not this
+ * function's: a known-cost, pre-checkable action (a WhatsApp Connect,
+ * Pickup & Pay's checkout-time cut) should block instead of ever going
+ * negative; a COD settlement discovered after delivery has nothing left
+ * to block, so it's allowed to go negative and rely on the separate
+ * OOS-pause mechanism instead. Same atomic-batch discipline as every
+ * other wallet mutation here.
+ */
+export async function deductWalletForCommission(params: {
+  sellerId: number;
+  amountRupees: number;
+  orderId: number;
+  reason: string;
+  allowNegative: boolean;
+}): Promise<DeductCommissionResult> {
+  const wallet = await getOrCreateWallet(params.sellerId);
+  const projectedBalance = Number(wallet.balance) - params.amountRupees;
+
+  if (!params.allowNegative && projectedBalance < 0) {
+    return { ok: false, error: 'Insufficient wallet balance — top up to continue.' };
+  }
+
+  await db.batch([
+    db
+      .update(sellerWallets)
+      .set({ balance: sql`${sellerWallets.balance} - ${params.amountRupees.toFixed(2)}` })
+      .where(eq(sellerWallets.sellerId, params.sellerId)),
+    db.insert(walletTransactions).values({
+      sellerId: params.sellerId,
+      type: 'commission_deduction',
+      amount: (-params.amountRupees).toFixed(2),
+      orderId: params.orderId,
+      reason: params.reason,
+      balanceAfter: projectedBalance.toFixed(2),
+    }),
+  ]);
+
+  return { ok: true, balance: projectedBalance.toFixed(2) };
 }
 
 /**

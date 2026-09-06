@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { payouts, orders, users, sellerProfiles } from '@/db/schema';
+import { payouts, orders, users, sellerProfiles, payoutCategories } from '@/db/schema';
 import { getSessionFromRequest, isStaff } from '@/lib/auth';
 
 /**
@@ -20,9 +20,13 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const status = url.searchParams.get('status');
+  const categoryId = url.searchParams.get('categoryId');
   const conditions = [];
   if (status) {
     conditions.push(eq(payouts.status, status as 'pending' | 'processing' | 'processed' | 'failed' | 'reversed'));
+  }
+  if (categoryId) {
+    conditions.push(eq(payouts.categoryId, Number(categoryId)));
   }
 
   const rows = await db
@@ -42,11 +46,14 @@ export async function GET(request: Request) {
       manualNote: payouts.manualNote,
       processedAt: payouts.processedAt,
       createdAt: payouts.createdAt,
+      categoryId: payouts.categoryId,
+      categoryName: payoutCategories.name,
     })
     .from(payouts)
     .innerJoin(orders, eq(payouts.orderId, orders.id))
     .innerJoin(users, eq(payouts.sellerId, users.id))
     .leftJoin(sellerProfiles, eq(sellerProfiles.userId, payouts.sellerId))
+    .leftJoin(payoutCategories, eq(payoutCategories.id, payouts.categoryId))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(payouts.createdAt));
 

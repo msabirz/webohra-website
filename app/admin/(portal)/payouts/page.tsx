@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Landmark, CheckCircle2, Clock, XCircle, RefreshCw, Store, Wallet2, HandCoins } from 'lucide-react';
+import { Landmark, CheckCircle2, Clock, XCircle, RefreshCw, Store, Wallet2, HandCoins, Tag, Plus } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { TableSkeleton, RowListSkeleton } from '@/components/skeleton';
@@ -26,6 +26,7 @@ const RAZORPAYX_UI_ENABLED = false;
 
 type PayoutStatus = 'pending' | 'processing' | 'processed' | 'failed' | 'reversed';
 type PayoutChannel = 'razorpayx' | 'manual' | null;
+type PayoutCategory = { id: number; key: string; name: string; active: boolean };
 type Payout = {
   id: number;
   orderNumber: string;
@@ -41,6 +42,8 @@ type Payout = {
   manualNote: string | null;
   processedAt: string | null;
   createdAt: string;
+  categoryId: number | null;
+  categoryName: string | null;
   // True when this order also had other sellers in it — 2026-09-03,
   // messaging-only tracking (matches her own /seller/payouts page's note).
   isMultiSeller: boolean;
@@ -119,24 +122,48 @@ export default function AdminPayoutsPage() {
 
   const [view, setView] = useState<'orders' | 'sellers'>('orders');
   const [payouts, setPayouts] = useState<Payout[] | null>(null);
+  const [categories, setCategories] = useState<PayoutCategory[]>([]);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [manualTarget, setManualTarget] = useState<ManualTarget | null>(null);
   const [manualNote, setManualNote] = useState('');
 
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
+
   const load = useCallback(async () => {
     setPayouts(null);
     const params = new URLSearchParams();
     if (filter !== 'all') params.set('status', filter);
+    if (categoryFilter) params.set('categoryId', categoryFilter);
     const res = await authFetch(`/api/admin/payouts?${params}`);
     const data = await res.json();
     setPayouts(data.payouts ?? []);
-  }, [filter]);
+  }, [filter, categoryFilter]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    authFetch('/api/admin/payout-categories')
+      .then((res) => res.json())
+      .then((data) => setCategories(data.categories ?? []));
+  }, []);
+
+  async function changeCategory(payoutId: number, categoryId: number | null) {
+    setBusyKey(`categorize-${payoutId}`);
+    try {
+      await authFetch(`/api/admin/payouts/${payoutId}/categorize`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryId }),
+      });
+      await load();
+    } finally {
+      setBusyKey(null);
+    }
+  }
 
   async function sendOne(id: number) {
     setBusyKey(`send-${id}`);
@@ -242,6 +269,10 @@ export default function AdminPayoutsPage() {
         </p>
       </div>
 
+      {canSend && (
+        <CategoryManager categories={categories} onChanged={() => authFetch('/api/admin/payout-categories').then((r) => r.json()).then((d) => setCategories(d.categories ?? []))} />
+      )}
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-1.5 rounded-full bg-white p-1.5 shadow-sm ring-1 ring-ink-soft/5 w-fit">
           {FILTERS.map((f) => (
@@ -256,6 +287,18 @@ export default function AdminPayoutsPage() {
             </button>
           ))}
         </div>
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="rounded-full border border-ink-soft/15 bg-white px-4 py-1.5 font-body text-sm text-ink-soft focus:border-navy focus:outline-none"
+        >
+          <option value="">All categories</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
         <div className="flex gap-1.5 rounded-full bg-ivory-deep p-1.5 w-fit">
           {(['orders', 'sellers'] as const).map((v) => (
             <button
@@ -392,6 +435,7 @@ export default function AdminPayoutsPage() {
                 <th className="px-2 py-3">Commission</th>
                 <th className="px-2 py-3">Net</th>
                 <th className="px-2 py-3">Status</th>
+                <th className="px-2 py-3">Category</th>
                 <th className="px-2 py-3"></th>
               </tr>
             </thead>
@@ -432,6 +476,27 @@ export default function AdminPayoutsPage() {
                       )}
                     </td>
                     <td className="px-2 py-3">
+                      {canSend ? (
+                        <select
+                          value={p.categoryId ?? ''}
+                          onChange={(e) => changeCategory(p.id, e.target.value ? Number(e.target.value) : null)}
+                          disabled={busyKey === `categorize-${p.id}`}
+                          className="rounded-lg border border-ink-soft/15 bg-white px-2 py-1 font-body text-xs text-ink focus:border-navy focus:outline-none"
+                        >
+                          <option value="">Uncategorized</option>
+                          {categories
+                            .filter((c) => c.active || c.id === p.categoryId)
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                        </select>
+                      ) : (
+                        <span className="font-body text-xs text-ink-soft">{p.categoryName ?? '—'}</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-3">
                       {canSend && actionable && (
                         <div className="flex flex-wrap items-center gap-1.5">
                           {RAZORPAYX_UI_ENABLED && (
@@ -464,6 +529,113 @@ export default function AdminPayoutsPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Inline category admin — kept lightweight since this is a small, flat
+ * lookup list (see payoutCategories' own comment in db/schema.ts), not
+ * worth its own /admin page. `key` is set once at creation and never
+ * editable after — it's the stable value code checks against
+ * ('regular_settlement'); only `name` and `active` change post-creation.
+ */
+function CategoryManager({ categories, onChanged }: { categories: PayoutCategory[]; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState('');
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function addCategory() {
+    if (!key.trim() || !name.trim()) {
+      setError('Both a key and a name are required.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/admin/payout-categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key.trim(), name: name.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.issues?.key?.[0] ?? data.error ?? 'Could not add this category.');
+        return;
+      }
+      setKey('');
+      setName('');
+      onChanged();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleActive(cat: PayoutCategory) {
+    await authFetch(`/api/admin/payout-categories/${cat.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: !cat.active }),
+    });
+    onChanged();
+  }
+
+  return (
+    <div className="rounded-2xl bg-ivory-deep/60 p-4">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-2 font-body text-sm font-semibold text-ink"
+      >
+        <Tag className="h-4 w-4 text-navy" strokeWidth={2} />
+        Payout categories ({categories.length})
+        <span className="font-body text-xs font-normal text-ink-soft">{open ? '— hide' : '— manage'}</span>
+      </button>
+
+      {open && (
+        <div className="mt-3 flex flex-col gap-3">
+          <div className="flex flex-wrap gap-2">
+            {categories.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => toggleActive(c)}
+                title={c.active ? 'Click to archive' : 'Click to restore'}
+                className={`rounded-full px-3 py-1 font-body text-xs font-medium transition ${
+                  c.active ? 'bg-teal/10 text-teal-deep' : 'bg-ink-soft/10 text-ink-soft line-through'
+                }`}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="font-body text-xs font-medium text-ink-soft">Key (fixed once created)</span>
+              <input
+                value={key}
+                onChange={(e) => setKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))}
+                placeholder="e.g. dispute_hold_release"
+                className={`${inputStyles} w-52`}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="font-body text-xs font-medium text-ink-soft">Display name</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Dispute Hold Release"
+                className={`${inputStyles} w-52`}
+              />
+            </label>
+            <button onClick={addCategory} disabled={saving} className={buttonStyles('secondary', 'sm')}>
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+              {saving ? 'Adding…' : 'Add category'}
+            </button>
+          </div>
+          {error && <p className="font-body text-xs text-red-700">{error}</p>}
         </div>
       )}
     </div>
