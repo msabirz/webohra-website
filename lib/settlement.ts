@@ -245,5 +245,17 @@ export async function completePickupAndPay(params: {
   }
 
   await db.update(orderItems).set({ settledAt: new Date() }).where(eq(orderItems.id, params.orderItemId));
+
+  // Real bug caught by background verification (2026-09-07): this was
+  // never actually written anywhere, so a buyer's order page kept
+  // showing "Pay the seller in person at pickup" forever, even after
+  // she'd confirmed pickup and been charged commission on it. This is
+  // the one place that confirmation genuinely happens — set it here,
+  // not as a separate step a caller could forget.
+  await db
+    .update(shipments)
+    .set({ pickupCompletedAt: new Date() })
+    .where(and(eq(shipments.orderId, params.orderId), eq(shipments.sellerId, params.sellerId)));
+
   return amount;
 }
