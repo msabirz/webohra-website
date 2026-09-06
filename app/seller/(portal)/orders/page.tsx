@@ -7,6 +7,7 @@ import { TableSkeleton } from '@/components/skeleton';
 import {
   ORDER_ITEM_STATUS_LABEL,
   nextStage,
+  canMarkReturned,
   type OrderItemStatus,
 } from '@/lib/order-item-status';
 
@@ -79,6 +80,10 @@ export default function SellerOrdersPage() {
     if (res.ok) openOrder(selected.order.orderNumber);
   }
 
+  async function refreshSelected() {
+    if (selected) await openOrder(selected.order.orderNumber);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -135,7 +140,7 @@ export default function SellerOrdersPage() {
       )}
 
       {selected && (
-        <OrderDetailModal detail={selected} onClose={() => setSelected(null)} onAdvance={advanceStatus} />
+        <OrderDetailModal detail={selected} onClose={() => setSelected(null)} onAdvance={advanceStatus} onReturned={refreshSelected} />
       )}
     </div>
   );
@@ -147,19 +152,54 @@ const ITEM_STATUS_CLASS: Record<OrderItemStatus, string> = {
   shipped: 'bg-navy/10 text-navy',
   delivered: 'bg-teal/15 text-teal-deep',
   cancelled: 'bg-red-50 text-red-600',
+  returned: 'bg-red-50 text-red-600',
 };
 
 function OrderDetailModal({
   detail,
   onClose,
   onAdvance,
+  onReturned,
 }: {
   detail: OrderDetail;
   onClose: () => void;
   onAdvance: (itemId: number, status: OrderItemStatus) => void;
+  onReturned: () => void;
 }) {
   const total = detail.items.reduce((sum, item) => sum + Number(item.unitPrice) * item.quantity, 0);
   const cancelled = detail.order.status === 'cancelled';
+  const isCod = detail.order.paymentMethod === 'cod';
+  const [returnFormOpenFor, setReturnFormOpenFor] = useState<number | null>(null);
+  const [returnReason, setReturnReason] = useState('');
+  const [returnError, setReturnError] = useState<string | null>(null);
+  const [returnBusy, setReturnBusy] = useState(false);
+
+  async function submitReturn(itemId: number) {
+    if (returnReason.trim().length < 10) {
+      setReturnError('Tell us a bit more — at least 10 characters.');
+      return;
+    }
+    setReturnBusy(true);
+    setReturnError(null);
+    try {
+      const res = await authFetch(`/api/sellers/order-items/${itemId}/return`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: returnReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReturnError(data.error ?? 'Could not flag this item as returned.');
+        return;
+      }
+      setReturnFormOpenFor(null);
+      setReturnReason('');
+      onReturned();
+    } finally {
+      setReturnBusy(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4 backdrop-blur-sm">
       <button aria-hidden="true" tabIndex={-1} onClick={onClose} className="absolute inset-0" />
@@ -213,7 +253,51 @@ function OrderDetailModal({
                       Mark as {ORDER_ITEM_STATUS_LABEL[next]}
                     </button>
                   )}
+                  {!cancelled && isCod && canMarkReturned(item.status) && (
+                    <button
+                      onClick={() => setReturnFormOpenFor(returnFormOpenFor === item.id ? null : item.id)}
+                      className="rounded-full border border-red-200 px-3 py-1.5 font-body text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                    >
+                      Mark as returned
+                    </button>
+                  )}
                 </div>
+
+                {returnFormOpenFor === item.id && (
+                  <div className="flex flex-col gap-2 rounded-lg bg-white p-3 ring-1 ring-red-100">
+                    <p className="font-body text-xs text-ink-soft">
+                      This opens a dispute so admin can verify with the buyer and credit your wallet back for this
+                      item&apos;s commission — a CoD delivery can&apos;t be refunded like an online payment.
+                    </p>
+                    <input
+                      value={returnReason}
+                      onChange={(e) => setReturnReason(e.target.value)}
+                      placeholder="What happened? (min. 10 characters)"
+                      className="w-full rounded-lg border border-ink-soft/15 px-3 py-1.5 font-body text-xs text-ink placeholder:text-ink-soft/60 focus:border-navy/40 focus:outline-none"
+                    />
+                    {returnError && <p className="font-body text-xs text-red-600">{returnError}</p>}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => submitReturn(item.id)}
+                        disabled={returnBusy}
+                        className="rounded-full bg-red-600 px-3 py-1.5 font-body text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Confirm return
+                      </button>
+                      <button
+                        onClick={() => {
+                          setReturnFormOpenFor(null);
+                          setReturnReason('');
+                          setReturnError(null);
+                        }}
+                        disabled={returnBusy}
+                        className="rounded-full border border-ink-soft/15 px-3 py-1.5 font-body text-xs font-semibold text-ink-soft transition hover:bg-ivory-deep"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

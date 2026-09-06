@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { disputes, disputeComments } from '@/db/schema';
+import { creditWalletReversal } from '@/lib/wallet';
 
 export type OpenDisputeResult = { ok: true; dispute: typeof disputes.$inferSelect } | { ok: false; error: string };
 
@@ -135,5 +136,81 @@ export async function openDisputeAsBuyer(
 
   const [dispute] = await db.insert(disputes).values({ orderId, reason, createdByBuyerId: buyerId, sellerId }).returning();
   await db.insert(disputeComments).values({ disputeId: dispute.id, buyerId, note: reason, statusChangedTo: 'open' });
+  return { ok: true, dispute };
+}
+
+/**
+ * The COD return flow's other half (2026-09-06) — she raises this
+ * herself on her own order, after marking the specific item 'returned'
+ * (see app/api/sellers/order-items/[itemId]/return/route.ts, which calls
+ * this right after that status change). `sellerId` here is always her
+ * own id, both as the creator and as disputes.sellerId — there's no
+ * ambiguity about which seller it's about the way a buyer-raised
+ * multi-seller dispute has.
+ */
+export async function openDisputeAsSeller(orderId: number, sellerId: number, reason: string): Promise<OpenDisputeResult> {
+  const [existingActive] = await db
+    .select()
+    .from(disputes)
+    .where(and(eq(disputes.orderId, orderId), inArray(disputes.status, ['open', 'investigating'])));
+  if (existingActive) {
+    return { ok: false, error: 'This order already has an active dispute.' };
+  }
+
+  const [dispute] = await db
+    .insert(disputes)
+    .values({ orderId, reason, createdBySellerId: sellerId, sellerId })
+    .returning();
+  // No buyerId/staffId on this row either — same "exactly one creator
+  // column set" rule as the buyer/staff paths, just the third option.
+  await db.insert(disputeComments).values({ disputeId: dispute.id, note: reason, statusChangedTo: 'open' });
+  return { ok: true, dispute };
+}
+
+export type ResolveWithCreditResult = { ok: true; dispute: typeof disputes.$inferSelect } | { ok: false; error: string };
+
+/**
+ * Resolves a dispute AND credits the seller's wallet in one action — the
+ * COD return flow's actual money-moving step (2026-09-06). Always a
+ * wallet credit, never a bank transfer, per the user's own explicit
+ * decision — there is deliberately no "resolve without crediting"
+ * variant of this specific action; use the plain status-update path
+ * (updateDispute above) for a dispute that doesn't need money to move.
+ * `sellerId` must be passed explicitly rather than read off the dispute
+ * row — a staff-created dispute may have no sellerId set at all, and
+ * this is the one place a real amount has to land on a real wallet, so
+ * guessing wrong here is worse than requiring the caller to be sure.
+ */
+export async function resolveDisputeWithCredit(
+  disputeId: number,
+  staffId: number,
+  sellerId: number,
+  amountRupees: number,
+  note: string,
+): Promise<ResolveWithCreditResult> {
+  const [existing] = await db.select().from(disputes).where(eq(disputes.id, disputeId));
+  if (!existing) return { ok: false, error: 'Dispute not found' };
+  if (existing.status === 'resolved') return { ok: false, error: 'This dispute is already resolved.' };
+
+  await creditWalletReversal({
+    sellerId,
+    amountRupees,
+    orderId: existing.orderId,
+    reason: note,
+  });
+
+  const [dispute] = await db
+    .update(disputes)
+    .set({ status: 'resolved', amount: amountRupees.toFixed(2), resolvedAt: new Date(), updatedAt: new Date() })
+    .where(eq(disputes.id, disputeId))
+    .returning();
+
+  await db.insert(disputeComments).values({
+    disputeId,
+    staffId,
+    note: `${note} — ₹${amountRupees.toLocaleString('en-IN')} credited to her wallet.`,
+    statusChangedTo: 'resolved',
+  });
+
   return { ok: true, dispute };
 }

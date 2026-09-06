@@ -207,3 +207,41 @@ export async function adjustWalletBalance(params: {
 
   return { balance: projectedBalance };
 }
+
+/**
+ * The COD return flow's money-moving step (2026-09-06) — always a
+ * wallet credit, never a bank transfer, per the user's own explicit
+ * decision. Distinct from adjustWalletBalance's generic
+ * 'admin_adjustment' type specifically so this shows up in her
+ * transaction history as what it actually is (reversing a commission
+ * she was charged, not an arbitrary correction) — real traceability,
+ * not a note buried in free text. Called from
+ * lib/disputes.ts's resolveDisputeWithCredit, never directly from a
+ * route.
+ */
+export async function creditWalletReversal(params: {
+  sellerId: number;
+  amountRupees: number;
+  orderId: number;
+  reason: string;
+}): Promise<{ balance: string }> {
+  const wallet = await getOrCreateWallet(params.sellerId);
+  const projectedBalance = (Number(wallet.balance) + params.amountRupees).toFixed(2);
+
+  await db.batch([
+    db
+      .update(sellerWallets)
+      .set({ balance: sql`${sellerWallets.balance} + ${params.amountRupees.toFixed(2)}` })
+      .where(eq(sellerWallets.sellerId, params.sellerId)),
+    db.insert(walletTransactions).values({
+      sellerId: params.sellerId,
+      type: 'commission_reversal',
+      amount: params.amountRupees.toFixed(2),
+      orderId: params.orderId,
+      reason: params.reason,
+      balanceAfter: projectedBalance,
+    }),
+  ]);
+
+  return { balance: projectedBalance };
+}

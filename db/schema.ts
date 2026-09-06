@@ -139,6 +139,12 @@ export const walletTransactionTypeEnum = pgEnum('wallet_transaction_type', [
   'topup',
   'commission_deduction',
   'admin_adjustment',
+  // The COD return flow (2026-09-06) — always a wallet credit, never a
+  // bank transfer, per the user's own explicit decision. Fired only
+  // after staff verifies a return directly with the buyer and resolves
+  // the dispute that triggered it — see lib/disputes.ts's
+  // resolveCodReturnDispute.
+  'commission_reversal',
 ]);
 
 /** How a seller receives a payout. Fulfillment & Subscriptions redesign,
@@ -586,6 +592,14 @@ export const orderItemStatusEnum = pgEnum('order_item_status', [
   'shipped',
   'delivered',
   'cancelled',
+  // The COD return flow (2026-09-06) — a delivered COD item had no way
+  // to ever be unwound before this (the plain refund tool explicitly
+  // refuses COD, and 'cancelled' is unreachable from 'delivered' by
+  // design, see above). Reachable ONLY from 'delivered', another
+  // terminal side-branch like 'cancelled' — set by the seller herself
+  // raising a dispute on her own order (lib/disputes.ts's
+  // openDisputeAsSeller), never advanced further once reached.
+  'returned',
 ]);
 
 /**
@@ -882,6 +896,18 @@ export const disputes = pgTable('disputes', {
   // order/dispute is fine; the seller-visibility query falls back to "any
   // order she's part of" in that case, same as it always has.
   sellerId: integer('seller_id').references(() => users.id, { onDelete: 'set null' }),
+  // The COD return flow's own creator (2026-09-06) — she raised this on
+  // her own order (see lib/disputes.ts's openDisputeAsSeller), distinct
+  // from createdByBuyerId/createdByStaffId above. Exactly one of the
+  // three creator columns is ever set.
+  createdBySellerId: integer('created_by_seller_id').references(() => users.id, { onDelete: 'set null' }),
+  // How much was actually credited back to her wallet on resolution —
+  // null until resolved-with-credit (lib/disputes.ts's
+  // resolveDisputeWithCredit). The real traceability record: which
+  // wallet_transactions row this produced is found via that row's own
+  // orderId + type: 'commission_reversal', but this column is what lets
+  // the dispute itself show "how much," not just "resolved."
+  amount: numeric('amount', { precision: 10, scale: 2 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
