@@ -8,6 +8,7 @@ import { AddToCartButton } from '@/components/add-to-cart-button';
 import { WhatsAppBuyButton } from '@/components/whatsapp-buy-button';
 import { ServiceContactAction } from '@/components/service-contact-action';
 import { WishlistButton } from '@/components/wishlist-button';
+import { StarRating } from '@/components/star-rating';
 
 export type ListingCardData = {
   id: number;
@@ -40,6 +41,10 @@ export type ListingCardData = {
    *  tile's "Call Now" button for that tier (2026-09-05 — previously that
    *  tier's tile had no action at all). */
   sellerPhone?: string | null;
+  /** Reviews & Ratings (Tier 3, item 17, 2026-09-06) — undefined for an
+   *  older caller that hasn't been updated, null for a listing genuinely
+   *  reviewed zero times; either way, no badge renders. */
+  rating?: { average: number; count: number } | null;
 };
 
 const AUTO_CYCLE_MS = 2800;
@@ -147,13 +152,21 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
       <div className="flex flex-1 flex-col gap-0.5 p-4">
         {/* Seller name reads first and bold — the "brand" line — with the
          *  product title itself as the lighter, secondary line beneath it.
-         *  Only real fields: no star rating or struck-through MRP here,
-         *  since this marketplace doesn't have reviews or list-price data
-         *  to back either of those with. */}
+         *  No struck-through MRP — still no list-price data to back that
+         *  with. The star rating (2026-09-06) is real now: Reviews &
+         *  Ratings shipped, see listing.rating's own comment above. */}
         {listing.businessName && (
           <p className="truncate font-body text-sm font-bold text-ink">{listing.businessName}</p>
         )}
         <p className="truncate font-body text-sm text-ink-soft">{listing.title}</p>
+        {listing.rating && (
+          <span className="flex items-center gap-1">
+            <StarRating rating={listing.rating.average} className="text-gold" />
+            <span className="font-body text-[11px] text-ink-soft">
+              {listing.rating.average.toFixed(1)} ({listing.rating.count})
+            </span>
+          </span>
+        )}
         <p className="mt-1 font-heading text-lg font-semibold text-navy">
           {isService || hasVariants ? 'Starting at ' : ''}
           ₹{Number(listing.displayPrice).toLocaleString('en-IN')}

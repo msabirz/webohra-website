@@ -22,6 +22,7 @@ import {
 } from '@/lib/listing-fields';
 import { resolvePickupLocation } from '@/lib/pickup';
 import { checkPublishGate, getActivePlan } from '@/lib/subscriptions';
+import { getListingRatingSummaries } from '@/lib/reviews';
 
 /**
  * Accepts either the internal numeric id (used by the seller dashboard,
@@ -215,6 +216,10 @@ export async function GET(
   // tier.
   const { sellerPhone: rawSellerPhone, sellerEmail: rawSellerEmail, ...publicListing } = row;
   const exposeContactDirectly = contactMode === 'whatsapp_number';
+  // Reviews & Ratings (Tier 3, item 17, 2026-09-06) — null when nobody's
+  // reviewed this listing yet, not {average: 0, count: 0}, so the PDP/SDP
+  // can tell "no rating" apart from a genuine low score.
+  const rating = (await getListingRatingSummaries([row.id])).get(row.id) ?? null;
   return NextResponse.json({
     listing: {
       ...publicListing,
@@ -227,6 +232,7 @@ export async function GET(
       contactMode,
       sellerPhone: exposeContactDirectly ? rawSellerPhone : null,
       sellerEmail: exposeContactDirectly ? rawSellerEmail : null,
+      rating,
     },
   });
 }

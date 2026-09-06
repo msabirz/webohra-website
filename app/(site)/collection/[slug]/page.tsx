@@ -20,6 +20,8 @@ import type { Variant } from '@/components/variant-menu';
 import type { PortfolioItem } from '@/components/service-detail-view';
 import { WishlistButton } from '@/components/wishlist-button';
 import { ShareButton } from '@/components/share-button';
+import { StarRating } from '@/components/star-rating';
+import { ReviewsSection } from '@/components/reviews-section';
 
 type ListingDetail = {
   id: number;
@@ -62,6 +64,9 @@ type ListingDetail = {
   contactMode: 'whatsapp_number' | 'direct_whatsapp' | 'masked_relay' | null;
   sellerPhone: string | null;
   sellerEmail: string | null;
+  // Reviews & Ratings (Tier 3, item 17, 2026-09-06) — null means nobody's
+  // reviewed this listing yet, not a 0 rating.
+  rating: { average: number; count: number } | null;
 };
 
 export default function ListingDetailPage() {
@@ -181,9 +186,19 @@ export default function ListingDetailPage() {
               </div>
             </div>
             <h1 className="font-heading text-2xl font-semibold text-ink md:text-3xl">{listing.title}</h1>
-            {listing.businessName && (
-              <p className="mt-1.5 font-body text-sm text-ink-soft">by {listing.businessName}</p>
-            )}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {listing.businessName && (
+                <p className="font-body text-sm text-ink-soft">by {listing.businessName}</p>
+              )}
+              {listing.rating && (
+                <span className="flex items-center gap-1">
+                  <StarRating rating={listing.rating.average} className="text-gold" />
+                  <span className="font-body text-xs text-ink-soft">
+                    {listing.rating.average.toFixed(1)} ({listing.rating.count})
+                  </span>
+                </span>
+              )}
+            </div>
           </div>
 
           <p className="whitespace-pre-wrap font-body text-sm leading-relaxed text-ink-soft">
@@ -280,6 +295,8 @@ export default function ListingDetailPage() {
           onClose={() => setPickupModalOpen(false)}
         />
       )}
+
+      <ReviewsSection listingId={listing.id} />
     </div>
   );
 }

@@ -643,6 +643,20 @@ export const resolveDisputeWithCreditSchema = z.object({
 });
 export type ResolveDisputeWithCreditInput = z.infer<typeof resolveDisputeWithCreditSchema>;
 
+// Reviews & Ratings (Tier 3, item 17, 2026-09-06).
+export const submitReviewSchema = z.object({
+  orderItemId: z.number().int().positive(),
+  rating: z.number().int().min(1, 'Pick a rating').max(5, 'Pick a rating between 1 and 5'),
+  comment: z.string().trim().max(1000).optional().or(z.literal('')),
+});
+export type SubmitReviewInput = z.infer<typeof submitReviewSchema>;
+
+export const editReviewSchema = z.object({
+  rating: z.number().int().min(1, 'Pick a rating').max(5, 'Pick a rating between 1 and 5'),
+  comment: z.string().trim().max(1000).optional().or(z.literal('')),
+});
+export type EditReviewInput = z.infer<typeof editReviewSchema>;
+
 // Buyer-raised order disputes (2026-09-06) — sellerId is only required
 // server-side when the order actually has more than one seller; optional
 // here so a single-seller order's simple case doesn't force her to pick
