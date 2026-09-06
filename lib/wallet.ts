@@ -127,20 +127,23 @@ export type DeductCommissionResult =
  * reinventing wallet-writing and getting the audit trail wrong the way
  * `commission_deduction` sat unused for so long.
  *
- * `orderId` and `reason` are both required, not optional — an
- * unexplained commission line is exactly the "Commission / —" gap this
- * was built to close. `allowNegative` is the caller's call, not this
- * function's: a known-cost, pre-checkable action (a WhatsApp Connect,
- * Pickup & Pay's checkout-time cut) should block instead of ever going
- * negative; a COD settlement discovered after delivery has nothing left
- * to block, so it's allowed to go negative and rely on the separate
- * OOS-pause mechanism instead. Same atomic-batch discipline as every
- * other wallet mutation here.
+ * `reason` is required, not optional — an unexplained commission line is
+ * exactly the "Commission / —" gap this was built to close. `orderId` is
+ * nullable — most callers are order-tied (COD settlement, Pickup & Pay's
+ * checkout-time cut) but WhatsApp Connect (2026-09-06) genuinely isn't
+ * tied to any order at all, and `reason` alone carries the "why" for
+ * those. `allowNegative` is the caller's call, not this function's: a
+ * known-cost, pre-checkable action (a WhatsApp Connect send, Pickup &
+ * Pay's checkout-time cut) should block instead of ever going negative;
+ * a COD settlement discovered after delivery has nothing left to block,
+ * so it's allowed to go negative and rely on the separate OOS-pause
+ * mechanism instead. Same atomic-batch discipline as every other wallet
+ * mutation here.
  */
 export async function deductWalletForCommission(params: {
   sellerId: number;
   amountRupees: number;
-  orderId: number;
+  orderId: number | null;
   reason: string;
   allowNegative: boolean;
 }): Promise<DeductCommissionResult> {

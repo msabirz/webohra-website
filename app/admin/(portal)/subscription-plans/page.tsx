@@ -38,6 +38,10 @@ type Settings = {
   orderCommissionPercent: string;
   razorpayxPayoutsEnabled: boolean;
   couponsEnabled: boolean;
+  // WhatsApp Connect & Lead — Meta Direct (Tier 3, item 19, 2026-09-06).
+  whatsappConnectFeeRupees: string;
+  whatsappLeadFeeRupees: string;
+  whatsappConnectDailyLimitPerBuyer: number;
 };
 
 const CONTACT_MODE_LABEL: Record<ContactMode, string> = {
@@ -246,6 +250,11 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   const [rechargeDefaultPlanId, setRechargeDefaultPlanId] = useState(settings.rechargeDefaultPlanId ?? '');
   const [bonusListingCommissionPercent, setBonusListingCommissionPercent] = useState(settings.bonusListingCommissionPercent);
   const [orderCommissionPercent, setOrderCommissionPercent] = useState(settings.orderCommissionPercent);
+  const [whatsappConnectFeeRupees, setWhatsappConnectFeeRupees] = useState(settings.whatsappConnectFeeRupees);
+  const [whatsappLeadFeeRupees, setWhatsappLeadFeeRupees] = useState(settings.whatsappLeadFeeRupees);
+  const [whatsappConnectDailyLimitPerBuyer, setWhatsappConnectDailyLimitPerBuyer] = useState(
+    String(settings.whatsappConnectDailyLimitPerBuyer),
+  );
   const [razorpayxPayoutsEnabled, setRazorpayxPayoutsEnabled] = useState(settings.razorpayxPayoutsEnabled);
   const [couponsEnabled, setCouponsEnabled] = useState(settings.couponsEnabled);
   const [couponsSaving, setCouponsSaving] = useState(false);
@@ -267,6 +276,9 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
           rechargeDefaultPlanId: rechargeDefaultPlanId ? Number(rechargeDefaultPlanId) : null,
           bonusListingCommissionPercent: Number(bonusListingCommissionPercent),
           orderCommissionPercent: Number(orderCommissionPercent),
+          whatsappConnectFeeRupees: Number(whatsappConnectFeeRupees),
+          whatsappLeadFeeRupees: Number(whatsappLeadFeeRupees),
+          whatsappConnectDailyLimitPerBuyer: Number(whatsappConnectDailyLimitPerBuyer),
         }),
       });
       setSaved(true);
@@ -383,6 +395,39 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
             step="0.5"
             value={orderCommissionPercent}
             onChange={(e) => setOrderCommissionPercent(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">WhatsApp Connect fee (₹)</span>
+          <input
+            type="number"
+            min={0}
+            step="0.5"
+            value={whatsappConnectFeeRupees}
+            onChange={(e) => setWhatsappConnectFeeRupees(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">WhatsApp Lead fee (₹)</span>
+          <input
+            type="number"
+            min={0}
+            step="0.5"
+            value={whatsappLeadFeeRupees}
+            onChange={(e) => setWhatsappLeadFeeRupees(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">Connect daily limit / buyer</span>
+          <input
+            type="number"
+            min={1}
+            step="1"
+            value={whatsappConnectDailyLimitPerBuyer}
+            onChange={(e) => setWhatsappConnectDailyLimitPerBuyer(e.target.value)}
             className={inputStyles}
           />
         </label>

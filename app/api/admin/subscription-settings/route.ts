@@ -59,8 +59,15 @@ export async function PATCH(request: Request) {
   }
 
   const current = await getOrCreateSettingsRow();
-  const { walletMinThreshold, walletMinTopup, bonusListingCommissionPercent, orderCommissionPercent, ...rest } =
-    parsed.data;
+  const {
+    walletMinThreshold,
+    walletMinTopup,
+    bonusListingCommissionPercent,
+    orderCommissionPercent,
+    whatsappConnectFeeRupees,
+    whatsappLeadFeeRupees,
+    ...rest
+  } = parsed.data;
   const [updated] = await db
     .update(subscriptionSettings)
     .set({
@@ -73,6 +80,10 @@ export async function PATCH(request: Request) {
       ...(orderCommissionPercent !== undefined && {
         orderCommissionPercent: orderCommissionPercent.toFixed(2),
       }),
+      ...(whatsappConnectFeeRupees !== undefined && {
+        whatsappConnectFeeRupees: whatsappConnectFeeRupees.toFixed(2),
+      }),
+      ...(whatsappLeadFeeRupees !== undefined && { whatsappLeadFeeRupees: whatsappLeadFeeRupees.toFixed(2) }),
       updatedAt: new Date(),
     })
     .where(eq(subscriptionSettings.id, current.id))

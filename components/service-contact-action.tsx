@@ -88,7 +88,6 @@ export function ServiceContactAction({
       <WhatsAppBuyButton
         listingId={listingId}
         variantId={variantId}
-        variantName={variantName}
         size={size}
         label={label ?? 'Contact via WhatsApp'}
         width={width}

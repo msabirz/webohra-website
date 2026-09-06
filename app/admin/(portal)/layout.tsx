@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   LayoutDashboard,
   TrendingUp,
+  MessageCircle,
   ShieldCheck,
   Package,
   FolderTree,
@@ -66,6 +67,7 @@ const NAV_ITEMS: AdminNavEntry[] = [
       { href: '/admin/enquiries', label: 'Enquiries', icon: MessageSquare, roles: ['customer_support', 'admin', 'super_admin'] },
       { href: '/admin/pickups', label: 'Pickups', icon: Truck, roles: ['customer_support', 'admin', 'super_admin'] },
       { href: '/admin/support-tickets', label: 'Support Tickets', icon: MessageSquare, roles: ['customer_support', 'admin', 'super_admin'] },
+      { href: '/admin/whatsapp', label: 'WhatsApp Connect & Lead', icon: MessageCircle, roles: ['customer_support', 'admin', 'super_admin'] },
     ],
   },
   {
