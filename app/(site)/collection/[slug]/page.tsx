@@ -18,6 +18,8 @@ import { authFetch } from '@/lib/session-client';
 import { ListingDetailFields, type ListingFieldValue } from '@/components/listing-detail-fields';
 import type { Variant } from '@/components/variant-menu';
 import type { PortfolioItem } from '@/components/service-detail-view';
+import { WishlistButton } from '@/components/wishlist-button';
+import { ShareButton } from '@/components/share-button';
 
 type ListingDetail = {
   id: number;
@@ -166,9 +168,18 @@ export default function ListingDetailPage() {
 
         <div className="flex flex-col gap-5">
           <div>
-            <p className="mb-2 inline-flex w-fit items-center rounded-full bg-teal/10 px-2.5 py-1 font-body text-[11px] font-bold uppercase tracking-wide text-teal-deep">
-              {listing.subcategoryName}
-            </p>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="inline-flex w-fit items-center rounded-full bg-teal/10 px-2.5 py-1 font-body text-[11px] font-bold uppercase tracking-wide text-teal-deep">
+                {listing.subcategoryName}
+              </p>
+              <div className="flex items-center gap-2">
+                <ShareButton title={listing.title} />
+                <WishlistButton
+                  listingId={listing.id}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-ivory-deep transition"
+                />
+              </div>
+            </div>
             <h1 className="font-heading text-2xl font-semibold text-ink md:text-3xl">{listing.title}</h1>
             {listing.businessName && (
               <p className="mt-1.5 font-body text-sm text-ink-soft">by {listing.businessName}</p>

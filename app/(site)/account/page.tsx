@@ -3,7 +3,7 @@
 import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Package, LogOut, KeyRound, MessageCircle } from 'lucide-react';
+import { User, Package, LogOut, KeyRound, MessageCircle, MapPin, Plus, Star, Trash2, Pencil, Heart } from 'lucide-react';
 import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton, RowListSkeleton } from '@/components/skeleton';
@@ -257,6 +257,10 @@ export default function AccountPage() {
         </button>
       </form>
 
+      <AddressBook />
+
+      <SavedListings />
+
       <div id="orders" className="flex flex-col gap-4">
         <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-ink">
           <Package className="h-5 w-5 text-ink-soft" strokeWidth={1.75} />
@@ -342,6 +346,331 @@ export default function AccountPage() {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+type SavedAddress = {
+  id: number;
+  label: string;
+  recipientName: string;
+  recipientPhone: string;
+  addressLine1: string;
+  addressLine2: string | null;
+  city: string;
+  state: string;
+  pincode: string;
+  isDefault: boolean;
+};
+
+const emptyAddressForm = {
+  label: '',
+  recipientName: '',
+  recipientPhone: '',
+  addressLine1: '',
+  addressLine2: '',
+  city: '',
+  state: '',
+  pincode: '',
+};
+
+/** Marketplace-completeness scan (2026-09-06) — checkout used to
+ *  re-collect a full address fresh every single time, nothing ever
+ *  saved. This is the account-side half; checkout's own picker is a
+ *  separate change. */
+function AddressBook() {
+  const [addresses, setAddresses] = useState<SavedAddress[] | null>(null);
+  const [editing, setEditing] = useState<number | 'new' | null>(null);
+  const [form, setForm] = useState(emptyAddressForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function load() {
+    authFetch('/api/account/addresses')
+      .then((res) => (res.ok ? res.json() : { addresses: [] }))
+      .then((data) => setAddresses(data.addresses ?? []));
+  }
+  useEffect(load, []);
+
+  function startEdit(addr?: SavedAddress) {
+    setError(null);
+    if (addr) {
+      setEditing(addr.id);
+      setForm({ ...addr, addressLine2: addr.addressLine2 ?? '' });
+    } else {
+      setEditing('new');
+      setForm(emptyAddressForm);
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const url = editing === 'new' ? '/api/account/addresses' : `/api/account/addresses/${editing}`;
+      const res = await authFetch(url, {
+        method: editing === 'new' ? 'POST' : 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const firstIssue = data.issues && Object.values(data.issues)[0];
+        setError((Array.isArray(firstIssue) ? firstIssue[0] : undefined) ?? data.error ?? 'Could not save this address.');
+        return;
+      }
+      setEditing(null);
+      load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: number) {
+    await authFetch(`/api/account/addresses/${id}`, { method: 'DELETE' });
+    load();
+  }
+
+  async function makeDefault(id: number) {
+    await authFetch(`/api/account/addresses/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isDefault: true }),
+    });
+    load();
+  }
+
+  return (
+    <div id="addresses" className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-ink">
+          <MapPin className="h-5 w-5 text-ink-soft" strokeWidth={1.75} />
+          Addresses
+        </h2>
+        {editing === null && (
+          <button
+            onClick={() => startEdit()}
+            className="flex items-center gap-1 font-body text-sm font-medium text-navy hover:text-navy-deep"
+          >
+            <Plus className="h-4 w-4" strokeWidth={2} />
+            Add address
+          </button>
+        )}
+      </div>
+
+      {editing !== null && (
+        <div className="flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              placeholder="Label (e.g. Home)"
+              value={form.label}
+              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              className={inputStyles}
+            />
+            <input
+              placeholder="Recipient name"
+              value={form.recipientName}
+              onChange={(e) => setForm((f) => ({ ...f, recipientName: e.target.value }))}
+              className={inputStyles}
+            />
+          </div>
+          <input
+            placeholder="Recipient phone"
+            value={form.recipientPhone}
+            onChange={(e) => setForm((f) => ({ ...f, recipientPhone: e.target.value }))}
+            className={inputStyles}
+          />
+          <input
+            placeholder="Address line 1"
+            value={form.addressLine1}
+            onChange={(e) => setForm((f) => ({ ...f, addressLine1: e.target.value }))}
+            className={inputStyles}
+          />
+          <input
+            placeholder="Address line 2 (optional)"
+            value={form.addressLine2}
+            onChange={(e) => setForm((f) => ({ ...f, addressLine2: e.target.value }))}
+            className={inputStyles}
+          />
+          <div className="grid grid-cols-3 gap-3">
+            <input
+              placeholder="City"
+              value={form.city}
+              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+              className={inputStyles}
+            />
+            <input
+              placeholder="State"
+              value={form.state}
+              onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
+              className={inputStyles}
+            />
+            <input
+              placeholder="Pincode"
+              value={form.pincode}
+              onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+              className={inputStyles}
+              inputMode="numeric"
+            />
+          </div>
+          {error && <p className="font-body text-xs text-red-700">{error}</p>}
+          <div className="flex gap-2">
+            <button onClick={save} disabled={saving} className={buttonStyles('primary', 'sm')}>
+              {saving ? 'Saving…' : 'Save address'}
+            </button>
+            <button onClick={() => setEditing(null)} className={buttonStyles('secondary', 'sm')}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {addresses === null ? (
+        <RowListSkeleton count={2} withIcon={false} />
+      ) : addresses.length === 0 && editing === null ? (
+        <p className="rounded-2xl bg-white p-6 text-center font-body text-sm text-ink-soft shadow-sm ring-1 ring-ink-soft/5">
+          No saved addresses yet — add one to skip re-entering it at checkout.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {addresses.map((addr) => (
+            <li
+              key={addr.id}
+              className="flex items-start justify-between gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5"
+            >
+              <div>
+                <p className="flex items-center gap-2 font-body text-sm font-semibold text-ink">
+                  {addr.label}
+                  {addr.isDefault && (
+                    <span className="rounded-full bg-teal/10 px-2 py-0.5 font-body text-[10px] font-semibold text-teal-deep">
+                      Default
+                    </span>
+                  )}
+                </p>
+                <p className="mt-0.5 font-body text-xs text-ink-soft">
+                  {addr.recipientName} · {addr.recipientPhone}
+                </p>
+                <p className="font-body text-xs text-ink-soft">
+                  {addr.addressLine1}
+                  {addr.addressLine2 ? `, ${addr.addressLine2}` : ''}, {addr.city}, {addr.state} {addr.pincode}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {!addr.isDefault && (
+                  <button
+                    onClick={() => makeDefault(addr.id)}
+                    title="Set as default"
+                    className="rounded-lg p-1.5 text-ink-soft transition hover:bg-ivory-deep hover:text-ink"
+                  >
+                    <Star className="h-4 w-4" strokeWidth={2} />
+                  </button>
+                )}
+                <button
+                  onClick={() => startEdit(addr)}
+                  title="Edit"
+                  className="rounded-lg p-1.5 text-ink-soft transition hover:bg-ivory-deep hover:text-ink"
+                >
+                  <Pencil className="h-4 w-4" strokeWidth={2} />
+                </button>
+                <button
+                  onClick={() => remove(addr.id)}
+                  title="Delete"
+                  className="rounded-lg p-1.5 text-ink-soft transition hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={2} />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+type SavedListing = {
+  id: number;
+  slug: string;
+  title: string;
+  price: string | null;
+  businessName: string | null;
+  images: { url: string }[];
+};
+
+/** Marketplace-completeness scan (2026-09-06) — didn't exist at all
+ *  before this. Fetches each saved listing's own detail individually
+ *  (same per-id pattern checkout already uses for cart lines) rather
+ *  than duplicating the browse feed's pricing/contact-mode resolution
+ *  logic just to embed a light card here. */
+function SavedListings() {
+  const [listings, setListings] = useState<SavedListing[] | null>(null);
+
+  function load() {
+    authFetch('/api/account/wishlist')
+      .then((res) => (res.ok ? res.json() : { listingIds: [] }))
+      .then((data: { listingIds: number[] }) =>
+        Promise.all(
+          data.listingIds.map((id) =>
+            fetch(`/api/listings/${id}`)
+              .then((res) => (res.ok ? res.json() : null))
+              .then((d) => d?.listing as SavedListing | undefined),
+          ),
+        ),
+      )
+      .then((results) => setListings(results.filter((l): l is SavedListing => Boolean(l))));
+  }
+  useEffect(load, []);
+
+  async function remove(id: number) {
+    await authFetch(`/api/account/wishlist/${id}`, { method: 'DELETE' });
+    setListings((prev) => prev?.filter((l) => l.id !== id) ?? null);
+  }
+
+  return (
+    <div id="saved" className="flex flex-col gap-4">
+      <h2 className="flex items-center gap-2 font-heading text-lg font-semibold text-ink">
+        <Heart className="h-5 w-5 text-ink-soft" strokeWidth={1.75} />
+        Saved
+      </h2>
+      {listings === null ? (
+        <RowListSkeleton count={2} withIcon={false} />
+      ) : listings.length === 0 ? (
+        <p className="rounded-2xl bg-white p-6 text-center font-body text-sm text-ink-soft shadow-sm ring-1 ring-ink-soft/5">
+          Nothing saved yet — tap the heart on a listing to keep it here.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {listings.map((listing) => (
+            <li
+              key={listing.id}
+              className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-ink-soft/5"
+            >
+              <Link href={`/collection/${listing.slug}`} className="flex flex-1 items-center gap-3 min-w-0">
+                <span className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-ivory-deep">
+                  {listing.images[0] && (
+                    // eslint-disable-next-line @next/next/no-img-element -- seller-uploaded R2 URL, host not known at build time
+                    <img src={listing.images[0].url} alt="" className="h-full w-full object-cover" />
+                  )}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate font-body text-sm font-medium text-ink">{listing.title}</p>
+                  <p className="truncate font-body text-xs text-ink-soft">
+                    {listing.businessName}
+                    {listing.price && ` · ₹${Number(listing.price).toLocaleString('en-IN')}`}
+                  </p>
+                </div>
+              </Link>
+              <button
+                onClick={() => remove(listing.id)}
+                title="Remove from saved"
+                className="shrink-0 rounded-lg p-1.5 text-ink-soft transition hover:bg-red-50 hover:text-red-600"
+              >
+                <Trash2 className="h-4 w-4" strokeWidth={2} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

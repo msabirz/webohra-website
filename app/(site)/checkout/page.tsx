@@ -13,6 +13,19 @@ import { loadRazorpayScript } from '@/lib/razorpay-client';
 
 type ListingSnapshot = CartListingSnapshot;
 
+type SavedAddress = {
+  id: number;
+  label: string;
+  recipientName: string;
+  recipientPhone: string;
+  addressLine1: string;
+  addressLine2: string | null;
+  city: string;
+  state: string;
+  pincode: string;
+  isDefault: boolean;
+};
+
 type FormState = {
   buyerName: string;
   buyerPhone: string;
@@ -53,6 +66,37 @@ export default function CheckoutPage() {
   useEffect(() => {
     setIsGuest(!getAuthToken());
   }, []);
+
+  // Saved addresses (2026-09-06) — only ever fetched for a logged-in
+  // buyer; guest checkout stays exactly as it was, full re-entry every
+  // time, since there's no account to have saved one against.
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<number | 'new'>('new');
+  const [saveThisAddress, setSaveThisAddress] = useState(false);
+  useEffect(() => {
+    if (!getAuthToken()) return;
+    authFetch('/api/account/addresses')
+      .then((res) => (res.ok ? res.json() : { addresses: [] }))
+      .then((data: { addresses: SavedAddress[] }) => {
+        setSavedAddresses(data.addresses ?? []);
+        const def = data.addresses?.find((a) => a.isDefault);
+        if (def) applyAddress(def);
+      });
+  }, []);
+
+  function applyAddress(addr: SavedAddress) {
+    setSelectedAddressId(addr.id);
+    setForm((prev) => ({
+      ...prev,
+      buyerName: addr.recipientName,
+      buyerPhone: addr.recipientPhone,
+      addressLine1: addr.addressLine1,
+      addressLine2: addr.addressLine2 ?? '',
+      city: addr.city,
+      state: addr.state,
+      pincode: addr.pincode,
+    }));
+  }
 
   const ids = useMemo(() => items.map((i) => i.listingId), [items]);
 
@@ -106,6 +150,10 @@ export default function CheckoutPage() {
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    // Manually editing any field means she's no longer using a saved
+    // address as-is — back to "new", so the save-this-address checkbox
+    // (and not silently re-saving over a picked one) makes sense again.
+    setSelectedAddressId('new');
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -135,6 +183,25 @@ export default function CheckoutPage() {
         }),
       });
       const data = await res.json();
+      if (res.ok && selectedAddressId === 'new' && saveThisAddress && !isGuest) {
+        // Fire-and-forget — a failure here shouldn't block or confuse an
+        // otherwise-successful order; she just won't have it saved for
+        // next time, exactly as if she'd unchecked the box.
+        authFetch('/api/account/addresses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            label: 'Address',
+            recipientName: form.buyerName,
+            recipientPhone: form.buyerPhone,
+            addressLine1: form.addressLine1,
+            addressLine2: form.addressLine2,
+            city: form.city,
+            state: form.state,
+            pincode: form.pincode,
+          }),
+        }).catch(() => {});
+      }
       if (!res.ok) {
         if (data.issues) {
           const errs: Record<string, string> = {};
@@ -296,6 +363,36 @@ export default function CheckoutPage() {
         </FormSection>
 
         <FormSection icon={MapPinned} title="Shipping address">
+          {savedAddresses.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <label className="font-body text-sm font-medium text-ink">Use a saved address</label>
+              <div className="flex flex-wrap gap-2">
+                {savedAddresses.map((addr) => (
+                  <button
+                    key={addr.id}
+                    type="button"
+                    onClick={() => applyAddress(addr)}
+                    className={`rounded-full px-3.5 py-1.5 font-body text-sm font-medium transition ${
+                      selectedAddressId === addr.id
+                        ? 'bg-navy text-ivory'
+                        : 'bg-ivory-deep text-ink-soft hover:bg-ivory'
+                    }`}
+                  >
+                    {addr.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setSelectedAddressId('new')}
+                  className={`rounded-full px-3.5 py-1.5 font-body text-sm font-medium transition ${
+                    selectedAddressId === 'new' ? 'bg-navy text-ivory' : 'bg-ivory-deep text-ink-soft hover:bg-ivory'
+                  }`}
+                >
+                  New address
+                </button>
+              </div>
+            </div>
+          )}
           <TextField
             label="Address line 1"
             value={form.addressLine1}
@@ -333,6 +430,17 @@ export default function CheckoutPage() {
             inputMode="numeric"
             required
           />
+          {!isGuest && selectedAddressId === 'new' && (
+            <label className="flex items-center gap-2 font-body text-sm text-ink-soft">
+              <input
+                type="checkbox"
+                checked={saveThisAddress}
+                onChange={(e) => setSaveThisAddress(e.target.checked)}
+                className="h-4 w-4 rounded border-ink-soft/30 text-navy focus:ring-navy/30"
+              />
+              Save this address for next time
+            </label>
+          )}
         </FormSection>
 
         <FormSection icon={Wallet} title="Payment">

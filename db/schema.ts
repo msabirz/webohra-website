@@ -589,6 +589,56 @@ export const orderItemStatusEnum = pgEnum('order_item_status', [
 ]);
 
 /**
+ * A logged-in buyer's saved/favorited listings (2026-09-06, marketplace-
+ * completeness scan — didn't exist at all before this). Guest browsing is
+ * unaffected; saving requires an account, same reasoning as
+ * buyerAddresses below.
+ */
+export const wishlistItems = pgTable(
+  'wishlist_items',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    listingId: integer('listing_id')
+      .notNull()
+      .references(() => listings.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('wishlist_items_user_listing_unique').on(table.userId, table.listingId)],
+);
+
+/**
+ * A logged-in buyer's saved addresses (2026-09-06) — the marketplace-
+ * completeness scan found checkout re-collects a full address fresh
+ * every single time, nothing ever saved. Deliberately its own table, not
+ * fields bolted onto `users` — a buyer can have several. Guest checkout
+ * is unaffected; this only ever applies to an authenticated buyer.
+ */
+export const buyerAddresses = pgTable('buyer_addresses', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  label: varchar('label', { length: 50 }).notNull(),
+  recipientName: varchar('recipient_name', { length: 150 }).notNull(),
+  recipientPhone: varchar('recipient_phone', { length: 20 }).notNull(),
+  addressLine1: varchar('address_line1', { length: 200 }).notNull(),
+  addressLine2: varchar('address_line2', { length: 200 }),
+  city: varchar('city', { length: 100 }).notNull(),
+  state: varchar('state', { length: 100 }).notNull(),
+  pincode: varchar('pincode', { length: 10 }).notNull(),
+  // Exactly one true per user, enforced in application code (the insert/
+  // update routes), not a DB constraint — a partial unique index would
+  // need a raw SQL migration this schema-first setup doesn't otherwise
+  // use elsewhere, and the enforcement here is simple enough (unset the
+  // old default in the same batch as setting the new one) not to need it.
+  isDefault: boolean('is_default').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * Orders/order_items are the SRS §8 "data model layer not yet built" for
  * Buy Now/Add to Cart + Checkout — named there specifically so it wouldn't
  * be discovered mid-build. Records genuine buyer intent and a real shipping

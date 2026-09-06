@@ -7,6 +7,7 @@ import { categoryColor } from '@/lib/category-color';
 import { AddToCartButton } from '@/components/add-to-cart-button';
 import { WhatsAppBuyButton } from '@/components/whatsapp-buy-button';
 import { ServiceContactAction } from '@/components/service-contact-action';
+import { WishlistButton } from '@/components/wishlist-button';
 
 export type ListingCardData = {
   id: number;
@@ -105,6 +106,9 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
         onMouseEnter={stopCycle}
         onMouseLeave={startCycle}
       >
+        <div className="absolute right-2 top-2 z-10">
+          <WishlistButton listingId={listing.id} />
+        </div>
         {images.length > 0 ? (
           // eslint-disable-next-line @next/next/no-img-element -- seller-uploaded R2 URL, host not known at build time
           <img src={images[activeImage]} alt="" className="h-full w-full object-cover" />

@@ -630,6 +630,29 @@ export const adminWebohraOfficeUpdateSchema = z.object({
 });
 export type AdminWebohraOfficeUpdateInput = z.infer<typeof adminWebohraOfficeUpdateSchema>;
 
+// Wishlist / favorites (2026-09-06).
+export const wishlistAddSchema = z.object({
+  listingId: z.number().int().positive(),
+});
+export type WishlistAddInput = z.infer<typeof wishlistAddSchema>;
+
+// Buyer address book (2026-09-06).
+export const buyerAddressCreateSchema = z.object({
+  label: z.string().trim().min(1, 'Give this address a label').max(50),
+  recipientName: nameField('Recipient name'),
+  recipientPhone: phoneField(),
+  addressLine1: z.string().trim().min(3, 'Address must be at least 3 characters').max(200),
+  addressLine2: z.string().trim().max(200).optional(),
+  city: nameField('City'),
+  state: nameField('State'),
+  pincode: pincodeField(),
+  isDefault: z.boolean().optional(),
+});
+export type BuyerAddressCreateInput = z.infer<typeof buyerAddressCreateSchema>;
+
+export const buyerAddressUpdateSchema = buyerAddressCreateSchema.partial();
+export type BuyerAddressUpdateInput = z.infer<typeof buyerAddressUpdateSchema>;
+
 // Payout categories (2026-09-06) — `key` is the stable, code-facing slug
 // ('regular_settlement', 'miscellaneous', ...), same discipline as
 // tierKey below; `name` is the free-editable admin-facing label.
