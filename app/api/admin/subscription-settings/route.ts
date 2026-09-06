@@ -59,12 +59,14 @@ export async function PATCH(request: Request) {
   }
 
   const current = await getOrCreateSettingsRow();
-  const { walletMinThreshold, bonusListingCommissionPercent, orderCommissionPercent, ...rest } = parsed.data;
+  const { walletMinThreshold, walletMinTopup, bonusListingCommissionPercent, orderCommissionPercent, ...rest } =
+    parsed.data;
   const [updated] = await db
     .update(subscriptionSettings)
     .set({
       ...rest,
       ...(walletMinThreshold !== undefined && { walletMinThreshold: walletMinThreshold.toFixed(2) }),
+      ...(walletMinTopup !== undefined && { walletMinTopup: walletMinTopup.toFixed(2) }),
       ...(bonusListingCommissionPercent !== undefined && {
         bonusListingCommissionPercent: bonusListingCommissionPercent.toFixed(2),
       }),

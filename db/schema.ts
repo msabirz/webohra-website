@@ -344,7 +344,12 @@ export const listings = pgTable('listings', {
   // to this. Defaults off so no existing listing silently gains Pickup &
   // Pay the moment this column exists.
   pickupEnabled: boolean('pickup_enabled').notNull().default(false),
-  pickupAddressSource: pickupAddressSourceEnum('pickup_address_source'),
+  // Stays nullable — genuinely null (not 'seller') when pickupEnabled is
+  // false, per the API routes' explicit `pickupEnabled ? (source ?? null)
+  // : null` write. The default below only matters when pickupEnabled is
+  // true and nothing else was chosen: 'seller' (her own address), never a
+  // forced blank choice — Office pickup stays opt-in (2026-09-06).
+  pickupAddressSource: pickupAddressSourceEnum('pickup_address_source').default('seller'),
   delhiveryPickupSource: pickupAddressSourceEnum('delhivery_pickup_source'),
   // Minimum hours' notice before a buyer's Pickup & Pay slot picker allows
   // a date/time to be selected.
@@ -1092,7 +1097,14 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   id: serial('id').primaryKey(),
   // Below this wallet balance, a recharge seller's listings show as Out of
   // Stock (visible, not purchasable) rather than being delisted.
-  walletMinThreshold: numeric('wallet_min_threshold', { precision: 10, scale: 2 }).notNull().default('0'),
+  walletMinThreshold: numeric('wallet_min_threshold', { precision: 10, scale: 2 }).notNull().default('100.00'),
+  // The floor on a single top-up transaction — was hardcoded at ₹100 in
+  // walletTopupOrderSchema (lib/validation.ts) until 2026-09-06; made
+  // admin-configurable here instead, same principle as every other
+  // "don't hardcode it" fix this session (payout categories, dispute
+  // categories, legal pages). Read dynamically by the topup-order route,
+  // not baked into the Zod schema at build time.
+  walletMinTopup: numeric('wallet_min_topup', { precision: 10, scale: 2 }).notNull().default('500.00'),
   // Which plan's feature set a recharge-mode seller gets by default —
   // admin-configurable rather than hardcoded to Basic (planning doc item 8).
   rechargeDefaultPlanId: integer('recharge_default_plan_id').references(() => subscriptionPlans.id, {

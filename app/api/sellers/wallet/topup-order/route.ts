@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { db } from '@/db/index';
+import { subscriptionSettings } from '@/db/schema';
 import { getSessionFromRequest } from '@/lib/auth';
 import { walletTopupOrderSchema } from '@/lib/validation';
 import { createRazorpayOrder, getRazorpayKeyId } from '@/lib/razorpay';
@@ -25,6 +27,19 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Invalid input', issues: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    );
+  }
+
+  // The real minimum lives in subscriptionSettings, admin-editable — not a
+  // static number in the Zod schema above (that only guards against a
+  // nonsense amount). ₹500 as of 2026-09-06, but this reads whatever's
+  // actually configured, so an admin change takes effect immediately.
+  const [settings] = await db.select().from(subscriptionSettings).limit(1);
+  const minTopup = settings ? Number(settings.walletMinTopup) : 500;
+  if (parsed.data.amountRupees < minTopup) {
+    return NextResponse.json(
+      { error: `Minimum top-up is ₹${minTopup.toLocaleString('en-IN')}` },
       { status: 400 },
     );
   }

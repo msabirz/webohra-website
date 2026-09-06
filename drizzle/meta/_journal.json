@@ -211,6 +211,20 @@
       "when": 1788616966233,
       "tag": "0029_demonic_domino",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788691120553,
+      "tag": "0030_lucky_wonder_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788691337984,
+      "tag": "0031_swift_scarlet_witch",
+      "breakpoints": true
     }
   ]
 }

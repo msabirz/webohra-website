@@ -685,6 +685,10 @@ export type AdminSubscriptionPlanUpdateInput = z.infer<typeof adminSubscriptionP
 
 export const adminSubscriptionSettingsUpdateSchema = z.object({
   walletMinThreshold: z.number().nonnegative('Threshold can’t be negative').optional(),
+  // The floor on a single top-up — was hardcoded in walletTopupOrderSchema
+  // below until 2026-09-06, moved here so it's admin-editable like every
+  // other platform-wide number in this object.
+  walletMinTopup: z.number().positive('Minimum top-up must be a positive amount').optional(),
   rechargeDefaultPlanId: z.number().int().positive().nullable().optional(),
   bonusListingCommissionPercent: z
     .number()
@@ -724,16 +728,17 @@ export const sellerSubscriptionChooseSchema = z.discriminatedUnion('billingMode'
 export type SellerSubscriptionChooseInput = z.infer<typeof sellerSubscriptionChooseSchema>;
 
 // Fulfillment & Subscriptions redesign, Phase 5 — a seller topping up her
-// recharge wallet via Razorpay. Bounds match the planning doc's sandbox
-// strategy (real payments, small real amounts) rather than an arbitrary
-// guess: ₹100 floor keeps a top-up meaningfully above Razorpay's own
-// minimum-order rules, ₹25,000 ceiling is just a sane guard against a
-// fat-fingered amount, not a business rule — Admin can always adjust a
-// wallet manually for anything genuinely larger.
+// recharge wallet via Razorpay. The real minimum (₹500 as of 2026-09-06,
+// admin-editable via subscriptionSettings.walletMinTopup) is enforced
+// dynamically in the topup-order route, not here — this schema only
+// guards against a nonsense amount (zero, negative) before that DB check
+// runs. ₹25,000 ceiling is just a sane guard against a fat-fingered
+// amount, not a business rule — Admin can always adjust a wallet manually
+// for anything genuinely larger.
 export const walletTopupOrderSchema = z.object({
   amountRupees: z
     .number()
-    .min(100, 'Minimum top-up is ₹100')
+    .positive('Amount must be positive')
     .max(25000, 'For amounts over ₹25,000, contact WeBohra support directly'),
 });
 export type WalletTopupOrderInput = z.infer<typeof walletTopupOrderSchema>;

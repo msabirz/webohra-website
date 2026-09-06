@@ -1,0 +1,2 @@
+ALTER TABLE "subscription_settings" ALTER COLUMN "wallet_min_threshold" SET DEFAULT '100.00';--> statement-breakpoint
+ALTER TABLE "subscription_settings" ADD COLUMN "wallet_min_topup" numeric(10, 2) DEFAULT '500.00' NOT NULL;

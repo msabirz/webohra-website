@@ -20,13 +20,15 @@ type WalletTransaction = {
 
 type Wallet = { balance: string };
 
+const DEFAULT_MIN_TOPUP = 500;
+
 const TYPE_LABEL: Record<WalletTransaction['type'], string> = {
   topup: 'Top-up',
   commission_deduction: 'Commission',
   admin_adjustment: 'Admin adjustment',
 };
 
-const PRESET_AMOUNTS = [200, 500, 1000, 2000];
+const PRESET_AMOUNTS = [500, 1000, 2000, 5000];
 
 /**
  * /seller/wallet — Fulfillment & Subscriptions redesign, Phase 5. Real
@@ -41,7 +43,8 @@ export default function SellerWalletPage() {
   const { me } = useSellerPortal();
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [transactions, setTransactions] = useState<WalletTransaction[] | null>(null);
-  const [amount, setAmount] = useState<number | ''>(500);
+  const [minTopup, setMinTopup] = useState(DEFAULT_MIN_TOPUP);
+  const [amount, setAmount] = useState<number | ''>(DEFAULT_MIN_TOPUP);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justCredited, setJustCredited] = useState<string | null>(null);
@@ -52,6 +55,9 @@ export default function SellerWalletPage() {
     const data = await res.json();
     setWallet(data.wallet);
     setTransactions(data.transactions);
+    const realMin = Math.round(Number(data.minTopup ?? DEFAULT_MIN_TOPUP));
+    setMinTopup(realMin);
+    setAmount((current) => (current === DEFAULT_MIN_TOPUP ? realMin : current));
   }
 
   useEffect(() => {
@@ -59,8 +65,8 @@ export default function SellerWalletPage() {
   }, []);
 
   async function topUp() {
-    if (!amount || amount < 100) {
-      setError('Minimum top-up is ₹100');
+    if (!amount || amount < minTopup) {
+      setError(`Minimum top-up is ₹${minTopup.toLocaleString('en-IN')}`);
       return;
     }
     if (amount > 25000) {
@@ -79,9 +85,9 @@ export default function SellerWalletPage() {
       const orderData = await orderRes.json();
       if (!orderRes.ok) {
         // A validation failure here only ever has one possible field
-        // (amount) — surface Zod's own specific message ("Minimum top-up
-        // is ₹100" / "For amounts over ₹25,000...") instead of the generic
-        // "Invalid input" the route returns as its top-level error.
+        // (amount) — surface the route's own specific message ("Minimum
+        // top-up is ₹..." / "For amounts over ₹25,000...") instead of the
+        // generic "Invalid input" fallback.
         setError(orderData.issues?.amountRupees?.[0] ?? orderData.error ?? 'Could not start the payment.');
         setPaying(false);
         return;
@@ -189,12 +195,12 @@ export default function SellerWalletPage() {
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="topup-amount" className="font-body text-xs font-medium text-ink-soft">
-            Or enter an amount (₹100 – ₹25,000)
+            Or enter an amount (₹{minTopup.toLocaleString('en-IN')} – ₹25,000)
           </label>
           <input
             id="topup-amount"
             type="number"
-            min={100}
+            min={minTopup}
             max={25000}
             value={amount}
             onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))}

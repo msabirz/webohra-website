@@ -1,0 +1,1 @@
+ALTER TABLE "listings" ALTER COLUMN "pickup_address_source" SET DEFAULT 'seller';

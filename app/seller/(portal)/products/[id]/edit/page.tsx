@@ -47,7 +47,9 @@ export default function EditProductPage() {
           // Fulfillment & Subscriptions redesign, Phase 2.
           selfShipCharge: l.selfShipCharge ?? '',
           pickupEnabled: l.pickupEnabled ?? false,
-          pickupAddressSource: l.pickupAddressSource ?? '',
+          // Default to her own address, not a forced blank choice, if an
+          // older listing somehow has pickup on with no source set yet.
+          pickupAddressSource: l.pickupAddressSource ?? 'seller',
           pickupLeadTimeHours: l.pickupLeadTimeHours != null ? String(l.pickupLeadTimeHours) : '',
           showAddressOnPdp: l.showAddressOnPdp ?? false,
           weight: l.weight ?? '',
