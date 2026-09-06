@@ -1459,19 +1459,22 @@ export const sellerPayoutAccounts = pgTable('seller_payout_accounts', {
 });
 
 /**
- * One row per (order, seller) — her share of one paid online order, and
- * the record of actually paying it out to her. Fulfillment &
- * Subscriptions redesign, Phase 5c. Created the moment an order's
- * paymentStatus becomes 'paid' (see lib/payouts.ts's createPayoutsForOrder)
- * — one row per seller represented in that order, whether it's one seller
- * or several; the split logic here has never depended on Route, which is
- * exactly what makes it work the same regardless of how many sellers are
- * in the order. `grossAmount`/`commissionAmount`/`netAmount` are computed
- * and frozen at that moment, same snapshot-at-write-time discipline as
- * order_items.unitPrice — a later change to the commission rate or her
- * listings never rewrites a payout that's already been recorded.
- * Actually sending the money (the real RazorpayX payout call) is a
- * separate, explicit step — see status.
+ * One row per (order, seller) — her share of settled online-order
+ * earnings, and the record of actually paying it out to her. Originally
+ * created the instant an order's paymentStatus became 'paid'
+ * (Fulfillment & Subscriptions redesign, Phase 5c); the full payout
+ * redesign (Tier 4, item 21, 2026-09-06) moved creation to
+ * lib/settlement.ts's runWeeklySettlement instead — delivery + a
+ * buffer, never payment alone. Not strictly one row per whole order
+ * anymore either: settlement runs per order ITEM, so a multi-item order
+ * can produce more than one payout row for the same (order, seller) pair
+ * across separate weekly runs, as each item individually clears the
+ * buffer. `grossAmount`/`commissionAmount`/`netAmount` are computed and
+ * frozen at settlement time, same snapshot-at-write-time discipline as
+ * order_items.unitPrice — a later change to the commission rate never
+ * rewrites a payout that's already been recorded. Actually sending the
+ * money (the real RazorpayX payout call) is a separate, explicit step —
+ * see status.
  */
 
 /**
@@ -1499,7 +1502,7 @@ export const payouts = pgTable('payouts', {
     .notNull()
     .references(() => orders.id, { onDelete: 'restrict' }),
   // Defaults every new payout to 'regular_settlement' at creation
-  // (lib/payouts.ts's createPayoutsForOrder) — nullable + set null on
+  // (lib/settlement.ts's runWeeklySettlement) — nullable + set null on
   // delete so removing a category from the admin list never blocks or
   // corrupts a historical payout row, it just goes uncategorized.
   categoryId: integer('category_id').references(() => payoutCategories.id, { onDelete: 'set null' }),

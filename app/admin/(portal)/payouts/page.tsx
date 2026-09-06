@@ -96,8 +96,11 @@ type ManualTarget =
 
 /**
  * /admin/payouts — Fulfillment & Subscriptions redesign, Phase 5c. Every
- * payout row, computed automatically the moment an online order is paid
- * (see lib/payouts.ts's createPayoutsForOrder).
+ * payout row, computed automatically by the weekly settlement batch once
+ * an item is delivered and past the settlement buffer — not the moment
+ * an order is paid (full payout redesign, Tier 4 item 21, 2026-09-06 —
+ * see lib/settlement.ts's runWeeklySettlement, triggered here via the
+ * "Run settlement now" button below or Vercel Cron every Saturday).
  *
  * As of the 2026-09-03 payout redesign, Admin pays each seller directly
  * against whichever method she registered (UPI, bank details, or an
