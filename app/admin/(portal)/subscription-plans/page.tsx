@@ -42,6 +42,10 @@ type Settings = {
   whatsappConnectFeeRupees: string;
   whatsappLeadFeeRupees: string;
   whatsappConnectDailyLimitPerBuyer: number;
+  // Full payout redesign (Tier 4, item 21, 2026-09-06).
+  razorpayFeePercent: string;
+  delhiveryCostPerShipment: string;
+  settlementBufferDays: number;
 };
 
 const CONTACT_MODE_LABEL: Record<ContactMode, string> = {
@@ -255,6 +259,9 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   const [whatsappConnectDailyLimitPerBuyer, setWhatsappConnectDailyLimitPerBuyer] = useState(
     String(settings.whatsappConnectDailyLimitPerBuyer),
   );
+  const [razorpayFeePercent, setRazorpayFeePercent] = useState(settings.razorpayFeePercent);
+  const [delhiveryCostPerShipment, setDelhiveryCostPerShipment] = useState(settings.delhiveryCostPerShipment);
+  const [settlementBufferDays, setSettlementBufferDays] = useState(String(settings.settlementBufferDays));
   const [razorpayxPayoutsEnabled, setRazorpayxPayoutsEnabled] = useState(settings.razorpayxPayoutsEnabled);
   const [couponsEnabled, setCouponsEnabled] = useState(settings.couponsEnabled);
   const [couponsSaving, setCouponsSaving] = useState(false);
@@ -279,6 +286,9 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
           whatsappConnectFeeRupees: Number(whatsappConnectFeeRupees),
           whatsappLeadFeeRupees: Number(whatsappLeadFeeRupees),
           whatsappConnectDailyLimitPerBuyer: Number(whatsappConnectDailyLimitPerBuyer),
+          razorpayFeePercent: Number(razorpayFeePercent),
+          delhiveryCostPerShipment: Number(delhiveryCostPerShipment),
+          settlementBufferDays: Number(settlementBufferDays),
         }),
       });
       setSaved(true);
@@ -428,6 +438,40 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
             step="1"
             value={whatsappConnectDailyLimitPerBuyer}
             onChange={(e) => setWhatsappConnectDailyLimitPerBuyer(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">Razorpay fee share (%)</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="0.01"
+            value={razorpayFeePercent}
+            onChange={(e) => setRazorpayFeePercent(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">Delhivery cost / shipment (₹)</span>
+          <input
+            type="number"
+            min={0}
+            step="0.5"
+            value={delhiveryCostPerShipment}
+            onChange={(e) => setDelhiveryCostPerShipment(e.target.value)}
+            className={inputStyles}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="font-body text-xs font-medium text-ink-soft">Settlement buffer (days past delivery)</span>
+          <input
+            type="number"
+            min={0}
+            step="1"
+            value={settlementBufferDays}
+            onChange={(e) => setSettlementBufferDays(e.target.value)}
             className={inputStyles}
           />
         </label>

@@ -131,6 +131,9 @@ export default function AdminPayoutsPage() {
 
   const [categoryFilter, setCategoryFilter] = useState<string>('');
 
+  const [settling, setSettling] = useState(false);
+  const [settleResult, setSettleResult] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setPayouts(null);
     const params = new URLSearchParams();
@@ -150,6 +153,33 @@ export default function AdminPayoutsPage() {
       .then((res) => res.json())
       .then((data) => setCategories(data.categories ?? []));
   }, []);
+
+  /** Full payout redesign (Tier 4, item 21, 2026-09-06) — manual trigger
+   *  for the weekly settlement batch, same "Run sweep now" pattern
+   *  already used on /admin/enquiries. Vercel Cron also calls this same
+   *  endpoint automatically every Saturday (see vercel.json) once
+   *  CRON_SECRET is configured — this button exists so admin never has
+   *  to wait for Saturday to see it work, or to test it at all locally. */
+  async function runSettlement() {
+    setSettling(true);
+    setSettleResult(null);
+    try {
+      const res = await authFetch('/api/admin/payouts/settle', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setSettleResult(data.error ?? 'Could not run settlement.');
+        return;
+      }
+      setSettleResult(
+        data.itemsSettled === 0
+          ? 'Nothing was ready to settle yet.'
+          : `Settled ${data.itemsSettled} item(s) — ${data.payoutsCreated} payout(s) created (₹${data.payoutAmount.toLocaleString('en-IN')}), ${data.walletDeductions} wallet deduction(s) (₹${data.walletAmount.toLocaleString('en-IN')}).`,
+      );
+      await load();
+    } finally {
+      setSettling(false);
+    }
+  }
 
   async function changeCategory(payoutId: number, categoryId: number | null) {
     setBusyKey(`categorize-${payoutId}`);
@@ -262,11 +292,24 @@ export default function AdminPayoutsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="font-heading text-2xl font-semibold text-ink">Payouts</h1>
-        <p className="mt-1 font-body text-sm text-ink-soft">
-          Every seller&apos;s share of a paid online order, and what&apos;s actually been sent.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="font-heading text-2xl font-semibold text-ink">Payouts</h1>
+          <p className="mt-1 font-body text-sm text-ink-soft">
+            Every seller&apos;s share of a paid online order, and what&apos;s actually been sent.
+          </p>
+        </div>
+        {canSend && (
+          <div className="flex flex-col items-end gap-1.5">
+            <button onClick={runSettlement} disabled={settling} className={buttonStyles('secondary', 'sm')}>
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={2} />
+              {settling ? 'Running…' : 'Run settlement now'}
+            </button>
+            {settleResult && (
+              <p className="max-w-xs text-right font-body text-xs text-ink-soft">{settleResult}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {canSend && (

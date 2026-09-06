@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { disputes, disputeComments } from '@/db/schema';
+import { disputes, disputeComments, orderItems } from '@/db/schema';
 import { creditWalletReversal } from '@/lib/wallet';
 import { notifyDisputeOpened, notifyDisputeResolved } from '@/lib/notifications/triggers';
 
@@ -163,9 +163,18 @@ export async function openDisputeAsBuyer(
  * this right after that status change). `sellerId` here is always her
  * own id, both as the creator and as disputes.sellerId — there's no
  * ambiguity about which seller it's about the way a buyer-raised
- * multi-seller dispute has.
+ * multi-seller dispute has. `orderItemId` (added for the full payout
+ * redesign, Tier 4 item 21) is what lets resolveDisputeWithCredit check
+ * whether commission was ever actually charged for THIS item before
+ * crediting anything back — see disputes.orderItemId's own schema
+ * comment for why that check exists now.
  */
-export async function openDisputeAsSeller(orderId: number, sellerId: number, reason: string): Promise<OpenDisputeResult> {
+export async function openDisputeAsSeller(
+  orderId: number,
+  sellerId: number,
+  reason: string,
+  orderItemId: number,
+): Promise<OpenDisputeResult> {
   const [existingActive] = await db
     .select()
     .from(disputes)
@@ -176,7 +185,7 @@ export async function openDisputeAsSeller(orderId: number, sellerId: number, rea
 
   const [dispute] = await db
     .insert(disputes)
-    .values({ orderId, reason, createdBySellerId: sellerId, sellerId })
+    .values({ orderId, reason, createdBySellerId: sellerId, sellerId, orderItemId })
     .returning();
   // No buyerId/staffId on this row either — same "exactly one creator
   // column set" rule as the buyer/staff paths, just the third option.
@@ -208,6 +217,25 @@ export async function resolveDisputeWithCredit(
   const [existing] = await db.select().from(disputes).where(eq(disputes.id, disputeId));
   if (!existing) return { ok: false, error: 'Dispute not found' };
   if (existing.status === 'resolved') return { ok: false, error: 'This dispute is already resolved.' };
+
+  // Full payout redesign (Tier 4, item 21, 2026-09-06) — a return raised
+  // during the settlement buffer (delivered less than 7 days ago) means
+  // no commission was ever actually charged for this item yet; crediting
+  // a "reversal" would be a real double-credit, not a no-op. Only checked
+  // when this dispute is tied to a specific item at all (the COD return
+  // flow always sets one — see openDisputeAsSeller); a staff/buyer-raised
+  // dispute with no orderItemId skips this check entirely, same as
+  // before this column existed.
+  if (existing.orderItemId) {
+    const [item] = await db.select({ settledAt: orderItems.settledAt }).from(orderItems).where(eq(orderItems.id, existing.orderItemId));
+    if (item && !item.settledAt) {
+      return {
+        ok: false,
+        error:
+          'No commission has been charged for this item yet (still within the settlement buffer) — there\'s nothing to credit back. Use "Mark resolved" instead.',
+      };
+    }
+  }
 
   await creditWalletReversal({
     sellerId,
