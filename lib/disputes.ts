@@ -108,3 +108,32 @@ export async function getDisputeTimeline(disputeId: number) {
     .where(eq(disputeComments.disputeId, disputeId))
     .orderBy(desc(disputeComments.createdAt));
 }
+
+/**
+ * The buyer-facing counterpart to openDispute above (2026-09-06,
+ * marketplace-completeness scan) — she raises this herself from her own
+ * order page, no staff involved yet. `buyerId` is null for a guest
+ * checkout (no account to attribute it to; the order itself already
+ * carries her name/phone/email). `sellerId` should always be passed when
+ * the order has more than one seller — see the route's own comment on
+ * why (the precision fix: a multi-seller order shouldn't show the exact
+ * same dispute to a seller it isn't actually about).
+ */
+export async function openDisputeAsBuyer(
+  orderId: number,
+  buyerId: number | null,
+  sellerId: number | null,
+  reason: string,
+): Promise<OpenDisputeResult> {
+  const [existingActive] = await db
+    .select()
+    .from(disputes)
+    .where(and(eq(disputes.orderId, orderId), inArray(disputes.status, ['open', 'investigating'])));
+  if (existingActive) {
+    return { ok: false, error: 'You already have an open report on this order — no need to send another.' };
+  }
+
+  const [dispute] = await db.insert(disputes).values({ orderId, reason, createdByBuyerId: buyerId, sellerId }).returning();
+  await db.insert(disputeComments).values({ disputeId: dispute.id, buyerId, note: reason, statusChangedTo: 'open' });
+  return { ok: true, dispute };
+}

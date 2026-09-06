@@ -630,6 +630,68 @@ export const adminWebohraOfficeUpdateSchema = z.object({
 });
 export type AdminWebohraOfficeUpdateInput = z.infer<typeof adminWebohraOfficeUpdateSchema>;
 
+// Buyer-raised order disputes (2026-09-06) — sellerId is only required
+// server-side when the order actually has more than one seller; optional
+// here so a single-seller order's simple case doesn't force her to pick
+// from a list of one.
+export const buyerDisputeCreateSchema = z.object({
+  reason: z.string().trim().min(10, 'Tell us a bit more — at least 10 characters').max(500),
+  sellerId: z.number().int().positive().optional(),
+});
+export type BuyerDisputeCreateInput = z.infer<typeof buyerDisputeCreateSchema>;
+
+// General support tickets (2026-09-06) — either email or phone required
+// so admin has some way to actually follow up; both being optional
+// individually but never both missing is why this is a .refine, not two
+// plain optional fields.
+export const supportTicketCreateSchema = z
+  .object({
+    categoryId: z.number().int().positive().optional(),
+    name: nameField('Name'),
+    email: z.string().trim().email('Enter a valid email').optional().or(z.literal('')),
+    phone: z.string().trim().min(10).max(15).optional().or(z.literal('')),
+    message: z.string().trim().min(10, 'Tell us a bit more — at least 10 characters').max(2000),
+  })
+  .refine((data) => Boolean(data.email) || Boolean(data.phone), {
+    message: 'Give us an email or phone number so we can get back to you',
+    path: ['email'],
+  });
+export type SupportTicketCreateInput = z.infer<typeof supportTicketCreateSchema>;
+
+export const adminSupportTicketCategoryCreateSchema = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(2, 'Key must be at least 2 characters')
+    .max(50)
+    .regex(/^[a-z0-9_]+$/, 'Key must be lowercase letters, numbers, and underscores only'),
+  name: nameField('Category name'),
+  sortOrder: z.number().int().min(0).optional(),
+});
+export type AdminSupportTicketCategoryCreateInput = z.infer<typeof adminSupportTicketCategoryCreateSchema>;
+
+export const adminSupportTicketCategoryUpdateSchema = z.object({
+  name: nameField('Category name').optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  active: z.boolean().optional(),
+});
+export type AdminSupportTicketCategoryUpdateInput = z.infer<typeof adminSupportTicketCategoryUpdateSchema>;
+
+export const adminSupportTicketUpdateSchema = z.object({
+  status: z.enum(['open', 'investigating', 'resolved']).optional(),
+  assignedToStaffId: z.number().int().positive().nullable().optional(),
+  staffNote: z.string().trim().max(1000).optional(),
+});
+export type AdminSupportTicketUpdateInput = z.infer<typeof adminSupportTicketUpdateSchema>;
+
+// Legal pages (2026-09-06) — slug is fixed at seed time, never editable
+// through the API; only title/content change.
+export const legalPageUpdateSchema = z.object({
+  title: nameField('Title'),
+  content: z.string().trim().min(10, 'Content must be at least 10 characters'),
+});
+export type LegalPageUpdateInput = z.infer<typeof legalPageUpdateSchema>;
+
 // Wishlist / favorites (2026-09-06).
 export const wishlistAddSchema = z.object({
   listingId: z.number().int().positive(),

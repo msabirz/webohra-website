@@ -589,6 +589,68 @@ export const orderItemStatusEnum = pgEnum('order_item_status', [
 ]);
 
 /**
+ * Admin-manageable support-ticket categories (2026-09-06) — same "plain
+ * columns, archive via active, never delete" pattern as payoutCategories.
+ */
+export const supportTicketCategories = pgTable('support_ticket_categories', {
+  id: serial('id').primaryKey(),
+  key: varchar('key', { length: 50 }).notNull().unique(),
+  name: varchar('name', { length: 100 }).notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  active: boolean('active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const supportTicketStatusEnum = pgEnum('support_ticket_status', ['open', 'investigating', 'resolved']);
+
+/**
+ * A complaint or question with no order to attach it to — a seller
+ * behaving badly, a broken feature, a general site issue (2026-09-06,
+ * marketplace-completeness scan). Deliberately its own table, not
+ * `disputes` with a nullable orderId — that would blur what disputes was
+ * built to mean ("a dispute against an order"); this is what finally
+ * makes /contact real instead of a bare display email. Anyone can submit
+ * one (`createdByUserId` null for a guest, same "the order/ticket itself
+ * already carries her contact info" reasoning as buyerAddresses/
+ * disputes above) — no account required, matching how /contact never
+ * required one either.
+ */
+export const supportTickets = pgTable('support_tickets', {
+  id: serial('id').primaryKey(),
+  categoryId: integer('category_id').references(() => supportTicketCategories.id, { onDelete: 'set null' }),
+  createdByUserId: integer('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  name: varchar('name', { length: 150 }).notNull(),
+  email: varchar('email', { length: 200 }),
+  phone: varchar('phone', { length: 20 }),
+  message: varchar('message', { length: 2000 }).notNull(),
+  status: supportTicketStatusEnum('status').notNull().default('open'),
+  assignedToStaffId: integer('assigned_to_staff_id').references(() => users.id, { onDelete: 'set null' }),
+  staffNote: varchar('staff_note', { length: 1000 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+});
+
+/**
+ * Privacy / Terms / Shipping & Returns — real, admin-editable content
+ * (2026-09-06, marketplace-completeness scan) instead of hardcoded pages
+ * that need a deploy to change. `content` is deliberately plain text,
+ * paragraphs separated by a blank line — no rich text/HTML input from an
+ * admin textarea, since rendering that safely would need real
+ * sanitization this doesn't otherwise have infrastructure for; plain
+ * text covers everything the current placeholder pages already do.
+ * Seeded with today's placeholder copy so nothing regresses to blank.
+ */
+export const legalPages = pgTable('legal_pages', {
+  id: serial('id').primaryKey(),
+  slug: varchar('slug', { length: 50 }).notNull().unique(),
+  title: varchar('title', { length: 150 }).notNull(),
+  content: text('content').notNull(),
+  updatedByStaffId: integer('updated_by_staff_id').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
  * A logged-in buyer's saved/favorited listings (2026-09-06, marketplace-
  * completeness scan — didn't exist at all before this). Guest browsing is
  * unaffected; saving requires an account, same reasoning as
@@ -806,9 +868,20 @@ export const disputes = pgTable('disputes', {
   // The initial complaint/reason — required, same reasoning as refunds.reason.
   reason: varchar('reason', { length: 500 }).notNull(),
   assignedToStaffId: integer('assigned_to_staff_id').references(() => users.id, { onDelete: 'set null' }),
-  createdByStaffId: integer('created_by_staff_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'restrict' }),
+  // Nullable as of 2026-09-06 — a buyer-raised dispute (see
+  // createdByBuyerId below) has no staff creator. Exactly one of
+  // createdByStaffId/createdByBuyerId is set; never both, never neither.
+  createdByStaffId: integer('created_by_staff_id').references(() => users.id, { onDelete: 'restrict' }),
+  // Set only for a dispute she opened herself from her own order page
+  // (2026-09-06, marketplace-completeness scan) — null for a guest buyer
+  // (no account to attribute it to; the order itself already carries her
+  // name/phone/email) and for every staff-created dispute.
+  createdByBuyerId: integer('created_by_buyer_id').references(() => users.id, { onDelete: 'set null' }),
+  // Which seller this is actually about — required when the order has
+  // more than one (2026-09-06 precision fix). Null on a single-seller
+  // order/dispute is fine; the seller-visibility query falls back to "any
+  // order she's part of" in that case, same as it always has.
+  sellerId: integer('seller_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
@@ -828,9 +901,11 @@ export const disputeComments = pgTable('dispute_comments', {
   disputeId: integer('dispute_id')
     .notNull()
     .references(() => disputes.id, { onDelete: 'cascade' }),
-  staffId: integer('staff_id')
-    .notNull()
-    .references(() => users.id, { onDelete: 'restrict' }),
+  // Nullable as of 2026-09-06 — her own initial reason (or a guest's, with
+  // no user id at all) isn't authored by staff. Exactly one of
+  // staffId/buyerId set on a given row, or neither for a true guest.
+  staffId: integer('staff_id').references(() => users.id, { onDelete: 'restrict' }),
+  buyerId: integer('buyer_id').references(() => users.id, { onDelete: 'set null' }),
   note: varchar('note', { length: 1000 }),
   statusChangedTo: disputeStatusEnum('status_changed_to'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

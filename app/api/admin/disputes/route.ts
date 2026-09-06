@@ -43,6 +43,11 @@ export async function GET(request: Request) {
       assignedToStaffId: disputes.assignedToStaffId,
       assignedToName: users.name,
       assignedToEmail: users.email,
+      // 2026-09-06: staff-created disputes always set createdByStaffId —
+      // it's null only on the buyer-facing path (openDisputeAsBuyer), so
+      // this alone is enough for the UI to badge one as buyer-raised.
+      createdByStaffId: disputes.createdByStaffId,
+      sellerId: disputes.sellerId,
       createdAt: disputes.createdAt,
       updatedAt: disputes.updatedAt,
       resolvedAt: disputes.resolvedAt,

@@ -25,6 +25,7 @@ import {
   Sparkles,
   Menu,
   X,
+  ScrollText,
 } from 'lucide-react';
 import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { AdminPortalContext, type AdminMe } from '@/lib/admin-context';
@@ -62,6 +63,7 @@ const NAV_ITEMS: AdminNavEntry[] = [
       { href: '/admin/disputes', label: 'Disputes', icon: Flag, roles: ['customer_support', 'admin', 'super_admin'] },
       { href: '/admin/enquiries', label: 'Enquiries', icon: MessageSquare, roles: ['customer_support', 'admin', 'super_admin'] },
       { href: '/admin/pickups', label: 'Pickups', icon: Truck, roles: ['customer_support', 'admin', 'super_admin'] },
+      { href: '/admin/support-tickets', label: 'Support Tickets', icon: MessageSquare, roles: ['customer_support', 'admin', 'super_admin'] },
     ],
   },
   {
@@ -80,6 +82,7 @@ const NAV_ITEMS: AdminNavEntry[] = [
       { href: '/admin/banners', label: 'Banners', icon: ImageIcon, roles: ['admin', 'super_admin'] },
       { href: '/admin/jamaats', label: 'Jamaats', icon: MapPin, roles: ['admin', 'super_admin'] },
       { href: '/admin/webohra-offices', label: 'WeBohra Offices', icon: Building2, roles: ['admin', 'super_admin'] },
+      { href: '/admin/legal-pages', label: 'Legal Pages', icon: ScrollText, roles: ['admin', 'super_admin'] },
     ],
   },
   { href: '/admin/staff', label: 'Staff', icon: Users, roles: ['super_admin'] },

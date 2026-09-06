@@ -18,6 +18,10 @@ type Dispute = {
   assignedToStaffId: number | null;
   assignedToName: string | null;
   assignedToEmail: string | null;
+  // Null only on the buyer-raised path (openDisputeAsBuyer, 2026-09-06) —
+  // a staff-created dispute always sets this.
+  createdByStaffId: number | null;
+  sellerId: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -122,6 +126,11 @@ export default function AdminDisputesPage() {
                 <div className="min-w-0">
                   <p className="font-body text-sm font-semibold text-ink">
                     {d.orderNumber} <span className="font-normal text-ink-soft">— {d.buyerName}</span>
+                    {!d.createdByStaffId && (
+                      <span className="ml-2 inline-flex rounded-full bg-navy/10 px-2 py-0.5 align-middle font-body text-[10px] font-semibold text-navy">
+                        Buyer-raised
+                      </span>
+                    )}
                   </p>
                   <p className="truncate font-body text-xs text-ink-soft">{d.reason}</p>
                 </div>
