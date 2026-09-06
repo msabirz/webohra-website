@@ -630,6 +630,19 @@ export const adminWebohraOfficeUpdateSchema = z.object({
 });
 export type AdminWebohraOfficeUpdateInput = z.infer<typeof adminWebohraOfficeUpdateSchema>;
 
+// COD return flow (2026-09-06).
+export const sellerReturnItemSchema = z.object({
+  reason: z.string().trim().min(10, 'Tell us a bit more — at least 10 characters').max(500),
+});
+export type SellerReturnItemInput = z.infer<typeof sellerReturnItemSchema>;
+
+export const resolveDisputeWithCreditSchema = z.object({
+  sellerId: z.number().int().positive(),
+  amountRupees: z.number().positive('Amount must be a positive number'),
+  note: z.string().trim().min(5, 'Explain what you verified with the buyer').max(500),
+});
+export type ResolveDisputeWithCreditInput = z.infer<typeof resolveDisputeWithCreditSchema>;
+
 // Buyer-raised order disputes (2026-09-06) — sellerId is only required
 // server-side when the order actually has more than one seller; optional
 // here so a single-seller order's simple case doesn't force her to pick

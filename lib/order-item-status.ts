@@ -11,10 +11,13 @@
 export const ORDER_ITEM_STAGES = ['placed', 'packed', 'shipped', 'delivered'] as const;
 export type OrderItemStage = (typeof ORDER_ITEM_STAGES)[number];
 
-export type OrderItemStatus = OrderItemStage | 'cancelled';
+export type OrderItemStatus = OrderItemStage | 'cancelled' | 'returned';
 
 export function isOrderItemStatus(value: unknown): value is OrderItemStatus {
-  return typeof value === 'string' && ((ORDER_ITEM_STAGES as readonly string[]).includes(value) || value === 'cancelled');
+  return (
+    typeof value === 'string' &&
+    ((ORDER_ITEM_STAGES as readonly string[]).includes(value) || value === 'cancelled' || value === 'returned')
+  );
 }
 
 export function isOrderItemStage(status: OrderItemStatus): status is OrderItemStage {
@@ -41,7 +44,17 @@ export const ORDER_ITEM_STATUS_LABEL: Record<OrderItemStatus, string> = {
   shipped: 'Shipped',
   delivered: 'Delivered',
   cancelled: 'Cancelled',
+  returned: 'Returned',
 };
+
+/** Whether she can flag this specific item as returned right now — the
+ *  COD return flow (2026-09-06), reachable ONLY from 'delivered', same
+ *  "terminal side-branch" shape as canCancelItem/'cancelled' above but
+ *  the opposite direction: this is for something that already arrived
+ *  and then came back, not something stopped before it did. */
+export function canMarkReturned(status: OrderItemStatus): boolean {
+  return status === 'delivered';
+}
 
 /** The next stage after `current`, or null if it's already the last one —
  *  or already 'cancelled', which has no next stage at all. */

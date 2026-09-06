@@ -274,6 +274,13 @@
       "when": 1788701235372,
       "tag": "0038_perfect_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788708943156,
+      "tag": "0039_military_taskmaster",
+      "breakpoints": true
     }
   ]
 }

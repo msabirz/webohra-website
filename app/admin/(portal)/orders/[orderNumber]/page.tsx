@@ -77,6 +77,14 @@ type Dispute = {
   status: DisputeStatus;
   reason: string;
   assignedToStaffId: number | null;
+  // 2026-09-06 — the COD return flow. sellerId is who a "resolve with
+  // wallet credit" action would actually credit; createdBySellerId/
+  // createdByBuyerId distinguish who raised it (staff-raised has
+  // neither set) purely for display.
+  sellerId: number | null;
+  createdBySellerId: number | null;
+  createdByBuyerId: number | null;
+  amount: string | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
@@ -169,6 +177,9 @@ export default function AdminOrderDetailPage() {
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeNoteDrafts, setDisputeNoteDrafts] = useState<Record<number, string>>({});
+  const [creditFormOpenFor, setCreditFormOpenFor] = useState<number | null>(null);
+  const [creditAmount, setCreditAmount] = useState('');
+  const [creditNote, setCreditNote] = useState('');
 
   const [selectedForCancel, setSelectedForCancel] = useState<Set<number>>(new Set());
   const [cancelReason, setCancelReason] = useState('');
@@ -328,6 +339,42 @@ export default function AdminOrderDetailPage() {
         return;
       }
       setDisputeNoteDrafts((prev) => ({ ...prev, [disputeId]: '' }));
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The COD return flow's money-moving action (2026-09-06) — always a
+   *  wallet credit, never a bank transfer, per the user's own explicit
+   *  decision. Separate from the plain "Mark resolved" button above:
+   *  that's for a dispute that doesn't need money to move. */
+  async function resolveWithCredit(disputeId: number, sellerId: number) {
+    const amountRupees = Number(creditAmount);
+    if (!creditAmount || Number.isNaN(amountRupees) || amountRupees <= 0) {
+      setError('Enter a positive amount to credit.');
+      return;
+    }
+    if (creditNote.trim().length < 5) {
+      setError('Explain what you verified with the buyer.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await authFetch(`/api/admin/disputes/${disputeId}/resolve-with-credit`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sellerId, amountRupees, note: creditNote.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Could not resolve this.');
+        return;
+      }
+      setCreditFormOpenFor(null);
+      setCreditAmount('');
+      setCreditNote('');
       await load();
     } finally {
       setBusy(false);
@@ -661,6 +708,12 @@ export default function AdminOrderDetailPage() {
                   </span>
                 </div>
                 <p className="font-body text-sm text-ink">{d.reason}</p>
+                {d.createdBySellerId && (
+                  <p className="font-body text-xs font-medium text-teal">Seller-raised — likely a COD return.</p>
+                )}
+                {d.amount && (
+                  <p className="font-body text-xs font-medium text-teal">₹{Number(d.amount).toLocaleString('en-IN')} credited to her wallet.</p>
+                )}
 
                 {d.status !== 'resolved' && (
                   <div className="flex flex-wrap items-center gap-2 border-t border-ink-soft/10 pt-3">
@@ -682,6 +735,58 @@ export default function AdminOrderDetailPage() {
                     <button onClick={() => updateDispute(d.id, { status: 'resolved' })} disabled={busy} className={buttonStyles('secondary', 'sm')}>
                       Mark resolved
                     </button>
+                    {d.sellerId && (
+                      <button
+                        onClick={() => setCreditFormOpenFor(creditFormOpenFor === d.id ? null : d.id)}
+                        disabled={busy}
+                        className={buttonStyles('primary', 'sm')}
+                      >
+                        Resolve with wallet credit
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {creditFormOpenFor === d.id && d.sellerId && (
+                  <div className="flex flex-col gap-2 rounded-xl bg-ivory-deep p-3 ring-1 ring-ink-soft/10">
+                    <p className="font-body text-xs text-ink-soft">
+                      Verified with the buyer off-platform? This credits her wallet — never a bank transfer — and closes the dispute.
+                    </p>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={creditAmount}
+                      onChange={(e) => setCreditAmount(e.target.value)}
+                      placeholder="Amount to credit (₹)"
+                      className={`${inputStyles} text-xs`}
+                    />
+                    <input
+                      value={creditNote}
+                      onChange={(e) => setCreditNote(e.target.value)}
+                      placeholder="What did you verify with the buyer?"
+                      className={`${inputStyles} text-xs`}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => resolveWithCredit(d.id, d.sellerId as number)}
+                        disabled={busy}
+                        className={buttonStyles('primary', 'sm')}
+                      >
+                        Confirm credit &amp; resolve
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCreditFormOpenFor(null);
+                          setCreditAmount('');
+                          setCreditNote('');
+                        }}
+                        disabled={busy}
+                        className={buttonStyles('secondary', 'sm')}
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
 
