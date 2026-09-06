@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { disputes, disputeComments } from '@/db/schema';
 import { creditWalletReversal } from '@/lib/wallet';
+import { notifyDisputeOpened, notifyDisputeResolved } from '@/lib/notifications/triggers';
 
 export type OpenDisputeResult = { ok: true; dispute: typeof disputes.$inferSelect } | { ok: false; error: string };
 
@@ -26,6 +27,11 @@ export async function openDispute(orderId: number, staffId: number, reason: stri
     .values({ orderId, reason, createdByStaffId: staffId })
     .returning();
   await db.insert(disputeComments).values({ disputeId: dispute.id, staffId, note: reason, statusChangedTo: 'open' });
+  // Notifications infrastructure (Tier 3, item 20, 2026-09-06) — a no-op
+  // here whenever sellerId isn't set (this action never asks staff to
+  // pick one), a known, disclosed gap rather than a broken call — see
+  // notifyDisputeOpened's own comment.
+  await notifyDisputeOpened(dispute);
   return { ok: true, dispute };
 }
 
@@ -63,6 +69,15 @@ export async function updateDispute(
     note: changes.note ?? null,
     statusChangedTo: changes.status ?? null,
   });
+
+  // Notifications infrastructure (Tier 3, item 20, 2026-09-06) — only on
+  // a genuine transition TO resolved (this function doesn't check the
+  // prior status, but a caller only ever sends `status: 'resolved'` when
+  // she's actually resolving it, matching how this route is used
+  // everywhere it's called).
+  if (dispute && changes.status === 'resolved') {
+    await notifyDisputeResolved(dispute);
+  }
 
   return { ok: true, dispute };
 }
@@ -136,6 +151,8 @@ export async function openDisputeAsBuyer(
 
   const [dispute] = await db.insert(disputes).values({ orderId, reason, createdByBuyerId: buyerId, sellerId }).returning();
   await db.insert(disputeComments).values({ disputeId: dispute.id, buyerId, note: reason, statusChangedTo: 'open' });
+  // Notifications infrastructure (Tier 3, item 20, 2026-09-06).
+  await notifyDisputeOpened(dispute);
   return { ok: true, dispute };
 }
 
@@ -211,6 +228,11 @@ export async function resolveDisputeWithCredit(
     note: `${note} — ₹${amountRupees.toLocaleString('en-IN')} credited to her wallet.`,
     statusChangedTo: 'resolved',
   });
+
+  // Notifications infrastructure (Tier 3, item 20, 2026-09-06).
+  if (dispute) {
+    await notifyDisputeResolved(dispute);
+  }
 
   return { ok: true, dispute };
 }

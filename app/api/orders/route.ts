@@ -6,6 +6,7 @@ import { orderCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { generateOrderNumber } from '@/lib/ids';
 import { createRazorpayOrder, getRazorpayKeyId } from '@/lib/razorpay';
+import { notifyOrderConfirmed } from '@/lib/notifications/triggers';
 
 /**
  * POST /api/orders
@@ -196,6 +197,15 @@ export async function POST(request: Request) {
     : [];
 
   if (parsed.data.paymentMethod !== 'online') {
+    // Notifications infrastructure (Tier 3, item 20, 2026-09-06) — a COD
+    // order is real and final the instant it's placed, so this is the
+    // right moment for "order confirmed." An online order deliberately
+    // does NOT get this here — see lib/order-payment.ts's
+    // confirmOrderPayment, which sends the equivalent "payment received"
+    // notification only once she's genuinely paid, matching this
+    // codebase's standing "never treat an unpaid online order as real"
+    // rule (same one GMV/seller-visibility/admin-visibility all follow).
+    await notifyOrderConfirmed(order);
     return NextResponse.json({ order, items: insertedItems, shipments: insertedShipments }, { status: 201 });
   }
 

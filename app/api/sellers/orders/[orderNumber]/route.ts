@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { orders, orderItems, listings, subcategories, shipments } from '@/db/schema';
 import { getSessionFromRequest } from '@/lib/auth';
 import { isForwardMove, isOrderItemStage } from '@/lib/order-item-status';
+import { notifyShipmentStatusChanged } from '@/lib/notifications/triggers';
 
 /**
  * GET /api/sellers/orders/[orderNumber] — order detail, scoped to only the
@@ -148,6 +149,9 @@ export async function PATCH(
     .set({ status, statusUpdatedAt: new Date() })
     .where(eq(orderItems.id, itemId))
     .returning();
+
+  // Notifications infrastructure (Tier 3, item 20, 2026-09-06).
+  await notifyShipmentStatusChanged(updated.id, updated.status);
 
   return NextResponse.json({ item: updated });
 }
