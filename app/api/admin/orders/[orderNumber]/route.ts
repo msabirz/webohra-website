@@ -16,6 +16,7 @@ import {
 } from '@/db/schema';
 import { getSessionFromRequest, isStaff } from '@/lib/auth';
 import { isForwardMove, isOrderItemStage } from '@/lib/order-item-status';
+import { notifyShipmentStatusChanged } from '@/lib/notifications/triggers';
 import { getRefundedAmount, getOrderPayoutWarning } from '@/lib/refunds';
 import { computeOrderTotalRupees } from '@/lib/order-total';
 
@@ -231,6 +232,12 @@ export async function PATCH(
     .set({ status, statusUpdatedAt: new Date() })
     .where(eq(orderItems.id, itemId))
     .returning();
+
+  // Notifications infrastructure (Tier 3, item 20, 2026-09-06) — same
+  // trigger as the seller's own status-advance route, since this is the
+  // same event (admin/customer_support acting as an override on her
+  // behalf, not a separate kind of update).
+  await notifyShipmentStatusChanged(updated.id, updated.status);
 
   return NextResponse.json({ item: updated });
 }

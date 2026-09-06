@@ -1525,3 +1525,42 @@ export const portfolioItems = pgTable('portfolio_items', {
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const notificationChannelEnum = pgEnum('notification_channel', ['email', 'sms']);
+export const notificationStatusEnum = pgEnum('notification_status', ['sent', 'failed']);
+
+/**
+ * Notifications infrastructure (Tier 3, item 20, 2026-09-06) — confirmed
+ * zero infrastructure existed anywhere in this repo before this: buyers
+ * and sellers only ever found out about anything (a new dispute, a
+ * shipping update) by manually reloading a page. Same provider-
+ * abstraction pattern as lib/otp/ and lib/whatsapp/ — dev mode logs to
+ * the console, MSG91 (the same vendor already used for OTP, and already
+ * confirmed to cover WhatsApp too) is the intended real provider, a pure
+ * env-var swap away, no code change at any call site (see
+ * lib/notifications/index.ts).
+ *
+ * This table is the audit trail every real send (or attempt) writes to —
+ * one row per channel per event, not a single row covering "an email and
+ * an SMS went out." `event`+`relatedId` are a generic pointer (an order,
+ * a dispute, a shipment update — this fires from several different
+ * domains, so a single typed FK column per possible source would mean a
+ * pile of always-mostly-null columns instead), not a typed foreign key —
+ * same reasoning as several other "could point at more than one kind of
+ * thing" columns in this schema. A 'failed' row is never silently
+ * dropped — same "an unexplained event is never acceptable" instinct as
+ * wallet_transactions.reason.
+ */
+export const notifications = pgTable('notifications', {
+  id: serial('id').primaryKey(),
+  channel: notificationChannelEnum('channel').notNull(),
+  recipient: varchar('recipient', { length: 200 }).notNull(),
+  // Null for SMS — a subject line is an email-only concept.
+  subject: varchar('subject', { length: 200 }),
+  body: text('body').notNull(),
+  event: varchar('event', { length: 50 }).notNull(),
+  relatedId: integer('related_id'),
+  status: notificationStatusEnum('status').notNull(),
+  failureReason: varchar('failure_reason', { length: 300 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
