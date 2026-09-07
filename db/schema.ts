@@ -522,6 +522,13 @@ export const sellerProfiles = pgTable('seller_profiles', {
     .unique()
     .references(() => users.id, { onDelete: 'cascade' }),
   businessName: varchar('business_name', { length: 150 }).notNull(),
+  // Seller storefront (Tier 4, item 24, 2026-09-07) — the public URL for
+  // /business/[slug], generated from businessName at registration time,
+  // same slugifyTitle + withUniqueSuffix pattern as listings.slug.
+  // Nullable only for the transitional backfill window (existing sellers
+  // predate this column — see scripts/backfill-slugs-and-order-numbers.ts);
+  // a real registration always sets one going forward.
+  slug: varchar('slug', { length: 220 }).unique(),
   // Set only if she registered intending to use Delhivery-managed shipping
   // for at least one listing (FR-46). Null means self-managed shipping only.
   jamaatId: integer('jamaat_id').references(() => jamaats.id, { onDelete: 'set null' }),

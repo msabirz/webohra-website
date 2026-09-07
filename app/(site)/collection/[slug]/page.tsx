@@ -39,6 +39,9 @@ type ListingDetail = {
   subcategoryName: string;
   listingType: 'physical_product' | 'local_service' | 'remote_service';
   businessName: string | null;
+  // Seller storefront (Tier 4, item 24, 2026-09-07) — null for a seller
+  // who predates this column and hasn't been backfilled yet.
+  sellerSlug: string | null;
   jamaatCity: string | null;
   images: { id: number; url: string }[];
   fields: ListingFieldValue[];
@@ -193,7 +196,16 @@ export default function ListingDetailPage() {
             <h1 className="font-heading text-2xl font-semibold text-ink md:text-3xl">{listing.title}</h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
               {listing.businessName && (
-                <p className="font-body text-sm text-ink-soft">by {listing.businessName}</p>
+                <p className="font-body text-sm text-ink-soft">
+                  by{' '}
+                  {listing.sellerSlug ? (
+                    <Link href={`/business/${listing.sellerSlug}`} className="font-medium text-navy hover:underline">
+                      {listing.businessName}
+                    </Link>
+                  ) : (
+                    listing.businessName
+                  )}
+                </p>
               )}
               {listing.rating && (
                 <span className="flex items-center gap-1">

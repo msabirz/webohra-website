@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { users, sellerProfiles, jamaats } from '@/db/schema';
 import { sellerAttachSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
+import { slugifyTitle, withUniqueSuffix } from '@/lib/ids';
 
 /**
  * POST /api/sellers/register/attach
@@ -52,9 +53,16 @@ export async function POST(request: Request) {
   }
 
   await db.update(users).set({ itsId }).where(eq(users.id, userId));
+
+  // Seller storefront (Tier 4, item 24, 2026-09-07).
+  const baseSlug = slugifyTitle(businessName);
+  const [slugCollision] = await db.select().from(sellerProfiles).where(eq(sellerProfiles.slug, baseSlug));
+  const slug = slugCollision ? withUniqueSuffix(baseSlug) : baseSlug;
+
   await db.insert(sellerProfiles).values({
     userId,
     businessName,
+    slug,
     jamaatId: plansDelhiveryShipping ? jamaatId : null,
   });
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { MessageCircle, Phone, Mail, ShieldCheck, Clock, Send, CheckCircle2, Briefcase, ExternalLink } from 'lucide-react';
 import { ServiceContactAction } from '@/components/service-contact-action';
 import { MosaicGallery } from '@/components/mosaic-gallery';
@@ -36,6 +37,9 @@ type ServiceListing = {
   categorySlug: string;
   subcategoryName: string;
   businessName: string | null;
+  // Seller storefront (Tier 4, item 24, 2026-09-07) — null for a seller
+  // who predates this column and hasn't been backfilled yet.
+  sellerSlug: string | null;
   images: { id: number; url: string }[];
   fields: ListingFieldValue[];
   variants: Variant[];
@@ -267,7 +271,13 @@ export function ServiceDetailView({ listing }: { listing: ServiceListing }) {
         <aside className="flex flex-col gap-4">
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
             <p className="mb-3 font-heading text-sm font-semibold text-ink">
-              {listing.businessName ?? 'Service provider'}
+              {listing.businessName && listing.sellerSlug ? (
+                <Link href={`/business/${listing.sellerSlug}`} className="hover:underline">
+                  {listing.businessName}
+                </Link>
+              ) : (
+                (listing.businessName ?? 'Service provider')
+              )}
             </p>
             <ul className="flex flex-col gap-2.5 font-body text-xs text-ink-soft">
               <li className="flex items-center gap-2">

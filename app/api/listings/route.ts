@@ -40,6 +40,9 @@ export async function GET(request: Request) {
   const subcategorySlug = url.searchParams.get('subcategory');
   const q = url.searchParams.get('q');
   const nearCity = url.searchParams.get('nearCity');
+  // Seller storefront (Tier 4, item 24, 2026-09-07) — "everything this
+  // seller sells," reusing this same feed rather than a parallel route.
+  const sellerSlug = url.searchParams.get('sellerSlug');
   const sort = url.searchParams.get('sort') ?? 'newest';
   const limit = Math.min(Number(url.searchParams.get('limit')) || 24, 60);
   const offset = Number(url.searchParams.get('offset')) || 0;
@@ -66,6 +69,7 @@ export async function GET(request: Request) {
   if (categorySlug) conditions.push(eq(categories.slug, categorySlug));
   if (q) conditions.push(ilike(listings.title, `%${q}%`));
   if (nearCity) conditions.push(ilike(jamaats.city, nearCity));
+  if (sellerSlug) conditions.push(eq(sellerProfiles.slug, sellerSlug));
   if (minPrice && !Number.isNaN(Number(minPrice))) conditions.push(gte(displayPrice, minPrice));
   if (maxPrice && !Number.isNaN(Number(maxPrice))) conditions.push(lte(displayPrice, maxPrice));
   if (type === 'physical_product' || type === 'local_service' || type === 'remote_service') {

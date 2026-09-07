@@ -5,6 +5,7 @@ import { users, sellerProfiles, jamaats } from '@/db/schema';
 import { sellerRegisterSchema } from '@/lib/validation';
 import { hashPassword } from '@/lib/password';
 import { requestOtp } from '@/lib/otp/service';
+import { slugifyTitle, withUniqueSuffix } from '@/lib/ids';
 
 /**
  * POST /api/sellers/register
@@ -73,11 +74,20 @@ export async function POST(request: Request) {
       .set({ name, passwordHash: hashPassword(password), itsId })
       .where(eq(users.id, existing.id));
 
+    // Seller storefront (Tier 4, item 24, 2026-09-07) — only ever
+    // generated for a genuinely NEW profile; onConflictDoUpdate's `set`
+    // below deliberately omits `slug`, so a resumed/updated registration
+    // never regenerates or overwrites an existing seller's public URL.
+    const baseSlug = slugifyTitle(businessName);
+    const [slugCollision] = await db.select().from(sellerProfiles).where(eq(sellerProfiles.slug, baseSlug));
+    const slug = slugCollision ? withUniqueSuffix(baseSlug) : baseSlug;
+
     await db
       .insert(sellerProfiles)
       .values({
         userId: existing.id,
         businessName,
+        slug,
         jamaatId: plansDelhiveryShipping ? jamaatId : null,
       })
       .onConflictDoUpdate({
@@ -98,9 +108,14 @@ export async function POST(request: Request) {
       })
       .returning();
 
+    const baseSlug = slugifyTitle(businessName);
+    const [slugCollision] = await db.select().from(sellerProfiles).where(eq(sellerProfiles.slug, baseSlug));
+    const slug = slugCollision ? withUniqueSuffix(baseSlug) : baseSlug;
+
     await db.insert(sellerProfiles).values({
       userId: user.id,
       businessName,
+      slug,
       jamaatId: plansDelhiveryShipping ? jamaatId : null,
     });
   }
