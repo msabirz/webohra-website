@@ -154,6 +154,11 @@ export async function POST(request: Request) {
           orderNumber: generateOrderNumber(),
           userId: session ? Number(session.sub) : null,
           paymentStatus: parsed.data.paymentMethod === 'online' ? 'pending' : null,
+          // Item 28 (2026-09-07) — this route only ever handles cod/online,
+          // both real buyer delivery addresses. Explicit, not left to the
+          // schema default, so this stays correct even if that default
+          // ever changes.
+          addressType: 'buyer',
         })
         .returning();
     } catch (err) {
