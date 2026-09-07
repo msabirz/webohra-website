@@ -7,6 +7,7 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { resolvePickupLocation } from '@/lib/pickup';
 import { generateOrderNumber } from '@/lib/ids';
 import { chargePickupAndPayCheckoutFee } from '@/lib/settlement';
+import { isBlockedByLowWalletBalance } from '@/lib/subscriptions';
 
 function resolveListingCondition(idOrSlug: string) {
   const asNumber = Number(idOrSlug);
@@ -53,6 +54,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ idO
   }
   if (!listing.pickupEnabled) {
     return NextResponse.json({ error: 'Pickup & Pay isn’t available for this listing' }, { status: 403 });
+  }
+
+  // Low-wallet-balance availability (item 29, 2026-09-07) — same gate as
+  // the regular checkout route. Stage 1's fee below deducts with
+  // allowNegative: true, so without this check a recharge-mode seller
+  // already below threshold could keep booking pickups and going further
+  // negative — exactly what the threshold exists to prevent.
+  if (await isBlockedByLowWalletBalance(listing.sellerId, 'product')) {
+    return NextResponse.json(
+      { error: 'This listing isn’t available for purchase right now — try again shortly' },
+      { status: 409 },
+    );
   }
 
   const location = await resolvePickupLocation(listing.sellerId, listing.pickupAddressSource, {

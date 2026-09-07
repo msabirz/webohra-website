@@ -45,6 +45,13 @@ export type ListingCardData = {
    *  older caller that hasn't been updated, null for a listing genuinely
    *  reviewed zero times; either way, no badge renders. */
   rating?: { average: number; count: number } | null;
+  /** Low-wallet-balance availability (item 29, 2026-09-07) — only ever
+   *  true for a physical product whose seller is on recharge billing and
+   *  below the configured minimum balance (see lib/subscriptions.ts's
+   *  isBlockedByLowWalletBalance for the full reasoning). Undefined for
+   *  an older caller, always false for a service. The buyer never sees
+   *  why — no "seller's wallet is low" language, just "unavailable." */
+  unavailableLowBalance?: boolean;
 };
 
 const AUTO_CYCLE_MS = 2800;
@@ -114,6 +121,11 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
         <div className="absolute right-2 top-2 z-10">
           <WishlistButton listingId={listing.id} />
         </div>
+        {listing.unavailableLowBalance && (
+          <span className="absolute left-2 top-2 z-10 rounded-full bg-ink/80 px-2.5 py-1 font-body text-[11px] font-semibold text-white">
+            Unavailable
+          </span>
+        )}
         {images.length > 0 ? (
           // eslint-disable-next-line @next/next/no-img-element -- seller-uploaded R2 URL, host not known at build time
           <img src={images[activeImage]} alt="" className="h-full w-full object-cover" />
@@ -172,7 +184,11 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
           ₹{Number(listing.displayPrice).toLocaleString('en-IN')}
         </p>
         <div className="mt-auto flex flex-row gap-2 pt-2.5">
-          {hasVariants ? (
+          {listing.unavailableLowBalance ? (
+            <span className="flex w-full items-center justify-center rounded-xl bg-ivory-deep px-2 py-2 font-body text-xs font-semibold text-ink-soft">
+              Currently unavailable
+            </span>
+          ) : hasVariants ? (
             // No single type picked yet from the grid — the card's own Link
             // already goes to the PDP/SDP, this is just a visible affordance
             // rather than a real second click target.

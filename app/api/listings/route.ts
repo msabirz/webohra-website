@@ -15,7 +15,7 @@ import { listingCreateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 import { slugifyTitle, withUniqueSuffix } from '@/lib/ids';
 import { validateFieldValues, saveFieldValues, checkShippingEstimate } from '@/lib/listing-fields';
-import { getActivePlan } from '@/lib/subscriptions';
+import { getActivePlan, getLowWalletBalanceSellerKeys, sellerTypeForListingType } from '@/lib/subscriptions';
 import { getListingRatingSummaries } from '@/lib/reviews';
 
 /**
@@ -183,6 +183,11 @@ export async function GET(request: Request) {
   // every listing on the page, not one round trip per card.
   const ratingByListingId = await getListingRatingSummaries(rows.map((row) => row.id));
 
+  // Low-wallet-balance availability (item 29, 2026-09-07) — one query for
+  // every recharge-mode seller's balance on the page, same "resolved once,
+  // not once per row" reasoning as contactModeBySellerId above.
+  const lowBalanceSellerKeys = await getLowWalletBalanceSellerKeys();
+
   return NextResponse.json({
     listings: rows.map((row) => {
       const { sellerPhoneRaw, ...publicRow } = row;
@@ -195,6 +200,12 @@ export async function GET(request: Request) {
         contactMode,
         sellerPhone: contactMode === 'whatsapp_number' ? sellerPhoneRaw : null,
         rating: ratingByListingId.get(row.id) ?? null,
+        // Only meaningful for a physical product (see this field's own
+        // comment in lib/subscriptions.ts — services already have their
+        // own independent WhatsApp balance check).
+        unavailableLowBalance:
+          row.listingType === 'physical_product' &&
+          lowBalanceSellerKeys.has(`${row.sellerId}:${sellerTypeForListingType(row.listingType)}`),
       };
     }),
   });

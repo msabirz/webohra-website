@@ -5,6 +5,7 @@ import {
   subscriptionPlans,
   subscriptionSettings,
   subscriptionPayments,
+  sellerWallets,
   listings,
   subcategories,
 } from '@/db/schema';
@@ -76,6 +77,71 @@ export async function getActivePlan(sellerId: number, sellerType: SellerType) {
     .where(eq(subscriptionPlans.id, settings.rechargeDefaultPlanId));
   if (!plan || plan.sellerType !== sellerType) return null;
   return plan;
+}
+
+/**
+ * Low-wallet-balance availability (item 29, 2026-09-07) — found live, not
+ * theorized: the seller subscription page had always told a recharge-mode
+ * seller "Listings show as Out of Stock below a ₹X balance," but nothing
+ * anywhere actually checked that. Proven with a real order that went
+ * through cleanly against a real seller sitting well below the threshold.
+ *
+ * Deliberately scoped to `billingMode: 'recharge'` only — a `'plan'`
+ * seller already pays a fixed monthly fee regardless of balance, and her
+ * commission is allowed to go negative on purpose (see
+ * deductWalletForCommission's own `allowNegative` reasoning: there's
+ * nothing left to block once an item's already been delivered). A
+ * recharge seller has no fixed payment at all — her wallet balance is the
+ * ONLY thing funding her right to sell, so letting it run low without
+ * consequence defeats the entire pay-as-you-go model. Not applied to
+ * WhatsApp Connect/Lead, which already have their own independent
+ * balance check (checkConnectEligibility) — this is specifically about
+ * whether a PRODUCT listing can still be bought.
+ *
+ * `sellerType` matters because billing mode is tracked per (seller,
+ * sellerType) — a mixed seller could be on recharge for services while
+ * on a fixed plan for products, and this must never block the wrong side.
+ */
+export async function isBlockedByLowWalletBalance(sellerId: number, sellerType: SellerType): Promise<boolean> {
+  const [subscription] = await db
+    .select({ billingMode: sellerSubscriptions.billingMode })
+    .from(sellerSubscriptions)
+    .where(and(eq(sellerSubscriptions.sellerId, sellerId), eq(sellerSubscriptions.sellerType, sellerType)));
+  if (!subscription || subscription.billingMode !== 'recharge') return false;
+
+  const [wallet] = await db.select({ balance: sellerWallets.balance }).from(sellerWallets).where(eq(sellerWallets.sellerId, sellerId));
+  const balance = wallet ? Number(wallet.balance) : 0;
+  const [settings] = await db.select({ walletMinThreshold: subscriptionSettings.walletMinThreshold }).from(subscriptionSettings).limit(1);
+  const threshold = settings ? Number(settings.walletMinThreshold) : 100;
+  return balance < threshold;
+}
+
+/**
+ * Batched version for a listing feed — one query for every recharge-mode
+ * seller's wallet balance, instead of `isBlockedByLowWalletBalance` called
+ * once per row (which would be a real N+1 for a page of 60 listings).
+ * Keyed by `${sellerId}:${sellerType}` since the block is per (seller,
+ * sellerType), same reasoning as the single-lookup version above.
+ */
+export async function getLowWalletBalanceSellerKeys(): Promise<Set<string>> {
+  const [settings] = await db.select({ walletMinThreshold: subscriptionSettings.walletMinThreshold }).from(subscriptionSettings).limit(1);
+  const threshold = settings ? Number(settings.walletMinThreshold) : 100;
+
+  const rows = await db
+    .select({
+      sellerId: sellerSubscriptions.sellerId,
+      sellerType: sellerSubscriptions.sellerType,
+      balance: sellerWallets.balance,
+    })
+    .from(sellerSubscriptions)
+    .innerJoin(sellerWallets, eq(sellerWallets.sellerId, sellerSubscriptions.sellerId))
+    .where(eq(sellerSubscriptions.billingMode, 'recharge'));
+
+  const blocked = new Set<string>();
+  for (const row of rows) {
+    if (Number(row.balance) < threshold) blocked.add(`${row.sellerId}:${row.sellerType}`);
+  }
+  return blocked;
 }
 
 export type ActivateSubscriptionResult =

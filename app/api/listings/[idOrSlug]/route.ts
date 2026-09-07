@@ -21,7 +21,7 @@ import {
   checkShippingEstimate,
 } from '@/lib/listing-fields';
 import { resolvePickupLocation } from '@/lib/pickup';
-import { checkPublishGate, getActivePlan } from '@/lib/subscriptions';
+import { checkPublishGate, getActivePlan, isBlockedByLowWalletBalance, sellerTypeForListingType } from '@/lib/subscriptions';
 import { getListingRatingSummaries } from '@/lib/reviews';
 
 /**
@@ -238,6 +238,12 @@ export async function GET(
   // reviewed this listing yet, not {average: 0, count: 0}, so the PDP/SDP
   // can tell "no rating" apart from a genuine low score.
   const rating = (await getListingRatingSummaries([row.id])).get(row.id) ?? null;
+  // Low-wallet-balance availability (item 29, 2026-09-07) — only
+  // meaningful for a physical product, see this field's own comment in
+  // lib/subscriptions.ts.
+  const unavailableLowBalance =
+    row.listingType === 'physical_product' &&
+    (await isBlockedByLowWalletBalance(row.sellerId, sellerTypeForListingType(row.listingType)));
   return NextResponse.json({
     listing: {
       ...publicListing,
@@ -251,6 +257,7 @@ export async function GET(
       sellerPhone: exposeContactDirectly ? rawSellerPhone : null,
       sellerEmail: exposeContactDirectly ? rawSellerEmail : null,
       rating,
+      unavailableLowBalance,
     },
   });
 }
