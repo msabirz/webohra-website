@@ -967,6 +967,21 @@ export const walletTopupVerifySchema = z.object({
 });
 export type WalletTopupVerifyInput = z.infer<typeof walletTopupVerifySchema>;
 
+// Subscription-plan billing (item 27, 2026-09-07) — same two-step
+// order-then-verify shape as wallet top-up.
+export const subscriptionCheckoutOrderSchema = z.object({
+  sellerType: z.enum(['product', 'service']),
+  planId: z.number().int().positive(),
+});
+export type SubscriptionCheckoutOrderInput = z.infer<typeof subscriptionCheckoutOrderSchema>;
+
+export const subscriptionPurchaseVerifySchema = z.object({
+  razorpayOrderId: z.string().min(1),
+  razorpayPaymentId: z.string().min(1),
+  razorpaySignature: z.string().min(1),
+});
+export type SubscriptionPurchaseVerifyInput = z.infer<typeof subscriptionPurchaseVerifySchema>;
+
 // Admin manually correcting a seller's wallet balance — the one non-gateway
 // path into wallet_transactions (see lib/wallet.ts's adjustWalletBalance).
 // `reason` is required at the schema level, not just "nice to have" at the

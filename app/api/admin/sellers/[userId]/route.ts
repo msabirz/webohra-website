@@ -9,6 +9,8 @@ import {
   subcategories,
   sellerWallets,
   sellerSubscriptions,
+  subscriptionPayments,
+  subscriptionPlans,
   orders,
   orderItems,
   payouts,
@@ -83,6 +85,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
   const [
     [wallet],
     rawSubscriptions,
+    subscriptionPaymentRows,
     [orderStats],
     payoutTotals,
     topProducts,
@@ -91,6 +94,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
   ] = await Promise.all([
     db.select({ balance: sellerWallets.balance }).from(sellerWallets).where(eq(sellerWallets.sellerId, id)),
     db.select().from(sellerSubscriptions).where(eq(sellerSubscriptions.sellerId, id)),
+    // Real billing history for her subscription plan purchases (item 27,
+    // 2026-09-07) — same "each and every information should be easily
+    // traceable via admin" reasoning as payouts/wallet transactions.
+    db
+      .select({
+        id: subscriptionPayments.id,
+        sellerType: subscriptionPayments.sellerType,
+        planName: subscriptionPlans.name,
+        amount: subscriptionPayments.amount,
+        periodStart: subscriptionPayments.periodStart,
+        periodEnd: subscriptionPayments.periodEnd,
+        createdAt: subscriptionPayments.createdAt,
+      })
+      .from(subscriptionPayments)
+      .innerJoin(subscriptionPlans, eq(subscriptionPlans.id, subscriptionPayments.planId))
+      .where(eq(subscriptionPayments.sellerId, id))
+      .orderBy(desc(subscriptionPayments.createdAt)),
     db
       .select({
         orderCount: sql<number>`count(distinct ${orders.id})::int`,
@@ -172,6 +192,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
       sellerType: s.sellerType,
       billingMode: s.billingMode,
       status: s.status,
+      renewsAt: s.renewsAt,
       plan: await getActivePlan(id, s.sellerType as SellerType),
     })),
   );
@@ -186,6 +207,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
     listings: sellerListings,
     wallet: wallet ? { balance: wallet.balance } : null,
     subscriptions,
+    subscriptionPayments: subscriptionPaymentRows,
     orderStats: {
       orderCount: orderStats?.orderCount ?? 0,
       gmv: orderStats?.gmv ?? '0.00',

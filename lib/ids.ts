@@ -88,3 +88,15 @@ export function generateWalletTopupReceipt(): string {
   const dd = String(now.getDate()).padStart(2, '0');
   return `WT${yy}${mm}${dd}-${randomCode(5)}`;
 }
+
+/**
+ * Same idea, for a subscription-plan-purchase Razorpay order's `receipt`
+ * field (item 27, 2026-09-07). "SB" (WE Bohra Subscription Billing).
+ */
+export function generateSubscriptionReceipt(): string {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `SB${yy}${mm}${dd}-${randomCode(5)}`;
+}

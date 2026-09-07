@@ -330,6 +330,13 @@
       "when": 1788758624075,
       "tag": "0046_moaning_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1788776041593,
+      "tag": "0047_slimy_hydra",
+      "breakpoints": true
     }
   ]
 }
