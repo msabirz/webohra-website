@@ -7,6 +7,7 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { generateOrderNumber } from '@/lib/ids';
 import { createRazorpayOrder, getRazorpayKeyId } from '@/lib/razorpay';
 import { notifyOrderConfirmed } from '@/lib/notifications/triggers';
+import { isBlockedByLowWalletBalance } from '@/lib/subscriptions';
 
 /**
  * POST /api/orders
@@ -79,6 +80,20 @@ export async function POST(request: Request) {
     if (!listing || listing.status !== 'active') {
       return NextResponse.json(
         { error: `Listing #${item.listingId} is no longer available` },
+        { status: 409 },
+      );
+    }
+
+    // Low-wallet-balance availability (item 29, 2026-09-07) — the
+    // buyer-facing feed/detail already shows this listing as unavailable,
+    // but this is the real gate: never trust only the client-facing
+    // check, same discipline as every other publish/eligibility gate in
+    // this codebase. Every listing reachable via this cart-checkout route
+    // is a physical product, so 'product' is the right sellerType here
+    // without needing to re-derive it from a subcategory join.
+    if (await isBlockedByLowWalletBalance(listing.sellerId, 'product')) {
+      return NextResponse.json(
+        { error: `Listing #${item.listingId} isn't available for purchase right now — try again shortly` },
         { status: 409 },
       );
     }

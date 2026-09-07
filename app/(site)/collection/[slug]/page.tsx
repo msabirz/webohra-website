@@ -55,6 +55,9 @@ type ListingDetail = {
   pickupCity: string | null;
   pickupAddress: { line1: string; line2: string | null; city: string; state: string; pincode: string } | null;
   pickupLeadTimeHours: number | null;
+  // Low-wallet-balance availability (item 29, 2026-09-07) — see this
+  // field's own comment in components/listing-card.tsx.
+  unavailableLowBalance?: boolean;
   // Fulfillment & Subscriptions redesign, Phase 6 — only ever populated for
   // a service listing (see ServiceDetailView, the only consumer).
   portfolio: PortfolioItem[];
@@ -231,7 +234,17 @@ export default function ListingDetailPage() {
             </div>
           )}
 
-          {hasVariants ? (
+          {listing.unavailableLowBalance ? (
+            // Low-wallet-balance availability (item 29, 2026-09-07) — no
+            // "seller's wallet is low" language shown to a buyer, just
+            // that it's not purchasable right now. The real gate is
+            // server-side (POST /api/orders, .../pickup-order both
+            // refuse this regardless of what renders here) — this is
+            // just so she never gets that far only to hit an error.
+            <p className="rounded-xl bg-ivory-deep/60 px-4 py-3 font-body text-sm text-ink-soft">
+              This item isn&apos;t available for purchase right now — check back soon.
+            </p>
+          ) : hasVariants ? (
             <ProductVariantPicker
               listingId={listing.id}
               variants={listing.variants}
