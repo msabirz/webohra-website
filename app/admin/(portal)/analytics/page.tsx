@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { TrendingUp, ShoppingBag, IndianRupee, Users2, ShieldCheck, Download } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { StatGridSkeleton } from '@/components/skeleton';
+import { DailyBarChart } from '@/components/daily-bar-chart';
 
 type Daily = { date: string; orders: number; gmv: number };
 type TopSeller = { sellerId: number; businessName: string | null; orders: number; gmv: number };
@@ -221,40 +222,7 @@ function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label
   );
 }
 
-/** No charting library in this project — a small vertical bar chart built
- *  from plain divs, same "hand-rolled, no new dependency" style as the
- *  dashboard's existing "Products by category" bar list. Bars are simple
- *  height percentages of the window's max value; hover shows the exact
- *  figure via the title attribute since there's no tooltip component to
- *  reach for either. */
-function DailyBarChart({
-  title,
-  values,
-  format,
-}: {
-  title: string;
-  values: { label: string; value: number }[];
-  format?: (v: number) => string;
-}) {
-  const max = Math.max(...values.map((v) => v.value), 1);
-  const fmt = format ?? ((v: number) => v.toLocaleString('en-IN'));
-  return (
-    <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
-      <h2 className="mb-4 font-heading text-sm font-semibold text-ink">{title}</h2>
-      <div className="flex h-32 items-end gap-[2px]">
-        {values.map((v) => (
-          <div
-            key={v.label}
-            title={`${v.label}: ${fmt(v.value)}`}
-            className="flex-1 rounded-t bg-navy/70 transition hover:bg-navy"
-            style={{ height: `${Math.max((v.value / max) * 100, v.value > 0 ? 4 : 1)}%` }}
-          />
-        ))}
-      </div>
-      <div className="mt-2 flex justify-between font-body text-[10px] text-ink-soft">
-        <span>{values[0]?.label}</span>
-        <span>{values[values.length - 1]?.label}</span>
-      </div>
-    </div>
-  );
-}
+// DailyBarChart moved to components/daily-bar-chart.tsx (item 30,
+// 2026-09-07) — the seller dashboard needed the exact same chart, see
+// that file's own comment for why this is a shared component now,
+// not a second copy.

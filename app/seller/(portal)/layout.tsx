@@ -18,13 +18,12 @@ import {
   Sparkles,
   Menu,
   X,
-  ShieldCheck,
-  ShieldAlert,
   AlertTriangle,
 } from 'lucide-react';
 import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { SellerPortalContext, type SellerMe } from '@/lib/seller-context';
 import { NotificationBell } from '@/components/seller/notification-bell';
+import { SellerHeaderBadges } from '@/components/seller/header-badges';
 import { PortalShellSkeleton } from '@/components/skeleton';
 import { PortalNav, type NavEntry } from '@/components/portal-nav';
 import { ToastProvider } from '@/components/toast-context';
@@ -68,12 +67,25 @@ export default function SellerPortalLayout({ children }: { children: React.React
   const [loading, setLoading] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [unreadEnquiries, setUnreadEnquiries] = useState(0);
+  const [walletBalance, setWalletBalance] = useState<string | null>(null);
 
   const refreshUnread = useCallback(() => {
     authFetch('/api/sellers/enquiries/unread-count')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) setUnreadEnquiries(data.unread);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Item 30 (2026-09-07) — reuses the existing wallet route rather than a
+  // new endpoint; the header only needs the balance, the transactions
+  // list that comes along with it is simply ignored here.
+  const refreshWallet = useCallback(() => {
+    authFetch('/api/sellers/wallet')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setWalletBalance(data.wallet?.balance ?? '0.00');
       })
       .catch(() => {});
   }, []);
@@ -111,18 +123,25 @@ export default function SellerPortalLayout({ children }: { children: React.React
     // would double every request for no reason. One interval for the whole
     // portal, regardless of how many places display the badge.
     refreshUnread();
-    const interval = setInterval(refreshUnread, 15_000);
+    refreshWallet();
+    const interval = setInterval(() => {
+      refreshUnread();
+      refreshWallet();
+    }, 15_000);
     function onVisible() {
-      if (document.visibilityState === 'visible') refreshUnread();
+      if (document.visibilityState === 'visible') {
+        refreshUnread();
+        refreshWallet();
+      }
     }
     document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', refreshUnread);
+    window.addEventListener('focus', onVisible);
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', refreshUnread);
+      window.removeEventListener('focus', onVisible);
     };
-  }, [loading, refreshUnread]);
+  }, [loading, refreshUnread, refreshWallet]);
 
   function signOut() {
     clearAuthToken();
@@ -148,7 +167,9 @@ export default function SellerPortalLayout({ children }: { children: React.React
 
   return (
     <ToastProvider>
-    <SellerPortalContext.Provider value={{ me, refresh: load, unreadEnquiries, refreshUnread }}>
+    <SellerPortalContext.Provider
+      value={{ me, refresh: load, unreadEnquiries, refreshUnread, walletBalance, refreshWallet }}
+    >
       <div className="flex min-h-screen bg-ivory">
         {/* Mobile top bar */}
         <div className="fixed inset-x-0 top-0 z-30 flex items-center justify-between border-b border-ink-soft/10 bg-navy px-4 py-3 md:hidden">
@@ -156,8 +177,9 @@ export default function SellerPortalLayout({ children }: { children: React.React
             <Sparkles className="h-5 w-5 text-gold-soft" strokeWidth={2} />
             <span className="font-heading text-base font-semibold text-ivory">WE Bohra Seller</span>
           </Link>
-          <div className="flex items-center gap-1">
-            <NotificationBell />
+          <div className="flex items-center gap-2">
+            <SellerHeaderBadges dark />
+            <NotificationBell dark />
             <button
               onClick={() => setMobileNavOpen((v) => !v)}
               aria-label="Toggle menu"
@@ -174,29 +196,20 @@ export default function SellerPortalLayout({ children }: { children: React.React
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="hidden items-center justify-between border-b border-white/10 px-6 py-5 md:flex">
-            <div className="flex items-center gap-1.5">
-              <Sparkles className="h-5 w-5 text-gold-soft" strokeWidth={2} />
-              <span className="font-heading text-lg font-semibold text-ivory">WE Bohra Seller</span>
-            </div>
-            <NotificationBell />
+          <div className="hidden items-center gap-1.5 border-b border-white/10 px-6 py-5 md:flex">
+            <Sparkles className="h-5 w-5 text-gold-soft" strokeWidth={2} />
+            <span className="font-heading text-lg font-semibold text-ivory">WE Bohra Seller</span>
           </div>
 
           <div className="border-b border-white/10 px-6 py-4">
             <p className="truncate font-heading text-sm font-semibold text-ivory">
               {me.sellerProfile.businessName}
             </p>
-            {me.user.itsVerified ? (
-              <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-teal/20 px-2.5 py-1 font-body text-xs font-medium text-teal-deep">
-                <ShieldCheck className="h-3.5 w-3.5" strokeWidth={2} />
-                ITS verified
-              </span>
-            ) : (
-              <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-gold/20 px-2.5 py-1 font-body text-xs font-medium text-gold-soft">
-                <ShieldAlert className="h-3.5 w-3.5" strokeWidth={2} />
-                Verification pending
-              </span>
-            )}
+            {/* Verification badge + wallet balance moved into the portal
+             *  header itself (item 30, 2026-09-07) — mobile top bar above,
+             *  and the new desktop header bar below — rather than only
+             *  visible here, under the business name, where she'd have to
+             *  have the sidebar open to see either one. */}
           </div>
 
           <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
@@ -238,7 +251,18 @@ export default function SellerPortalLayout({ children }: { children: React.React
          *  whole page into horizontal scroll, defeating that content's own
          *  overflow-x-auto wrapper entirely. min-w-0 is what actually lets
          *  a deep child's own scroll container do its job. */}
-        <main className="min-w-0 flex-1 px-4 py-8 pt-20 md:ml-64 md:px-8 md:py-10 md:pt-10">{children}</main>
+        <div className="flex min-w-0 flex-1 flex-col md:ml-64">
+          {/* Desktop header bar (item 30, 2026-09-07) — this whole row
+           *  didn't exist before; the content area used to start straight
+           *  into page content with nothing above it. Mobile keeps its own
+           *  top bar (above) instead of this — no room for two headers on
+           *  a small screen. */}
+          <div className="sticky top-0 z-10 hidden items-center justify-end gap-3 border-b border-ink-soft/10 bg-white px-8 py-3 md:flex">
+            <SellerHeaderBadges />
+            <NotificationBell />
+          </div>
+          <main className="min-w-0 flex-1 px-4 py-8 pt-20 md:px-8 md:py-10 md:pt-8">{children}</main>
+        </div>
       </div>
     </SellerPortalContext.Provider>
     </ToastProvider>

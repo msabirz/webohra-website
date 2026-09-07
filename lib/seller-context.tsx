@@ -47,6 +47,15 @@ export const SellerPortalContext = createContext<{
   refresh: () => void;
   unreadEnquiries: number;
   refreshUnread: () => void;
+  // Item 30 (2026-09-07) — her wallet balance, shown in the new portal
+  // header. null while loading or if she has no wallet row yet (never
+  // had a commission-deducting event) — a real, honest state, not an
+  // error. Same "polled once, centrally" reasoning as unreadEnquiries:
+  // refreshWallet is exposed so a real action elsewhere (a top-up
+  // completing on /seller/wallet) can update the header immediately
+  // instead of waiting for the next poll tick.
+  walletBalance: string | null;
+  refreshWallet: () => void;
 } | null>(null);
 
 export function useSellerPortal() {
