@@ -23,6 +23,14 @@ export type SellerMe = {
     city: string | null;
     state: string | null;
     pincode: string | null;
+    // Her saved, reusable Pickup & Pay address (item 26, 2026-09-07) —
+    // read by the product form to know whether she already has a
+    // default before deciding whether a listing needs its own override.
+    pickupOtherAddressLine1: string | null;
+    pickupOtherAddressLine2: string | null;
+    pickupOtherAddressCity: string | null;
+    pickupOtherAddressState: string | null;
+    pickupOtherAddressPincode: string | null;
   };
   sellerShipCity: string | null;
 };

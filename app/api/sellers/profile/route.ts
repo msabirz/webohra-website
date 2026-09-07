@@ -33,8 +33,21 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const { businessName, plansDelhiveryShipping, jamaatId, addressLine1, addressLine2, city, state, pincode } =
-    parsed.data;
+  const {
+    businessName,
+    plansDelhiveryShipping,
+    jamaatId,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    pincode,
+    pickupOtherAddressLine1,
+    pickupOtherAddressLine2,
+    pickupOtherAddressCity,
+    pickupOtherAddressState,
+    pickupOtherAddressPincode,
+  } = parsed.data;
 
   if (plansDelhiveryShipping && jamaatId) {
     const [jamaat] = await db.select().from(jamaats).where(eq(jamaats.id, jamaatId));
@@ -59,6 +72,15 @@ export async function PATCH(request: Request) {
       ...(city !== undefined && { city }),
       ...(state !== undefined && { state }),
       ...(pincode !== undefined && { pincode }),
+      // Her saved, reusable Pickup & Pay address (item 26, 2026-09-07) —
+      // same only-touched-when-sent pattern as the business address above.
+      ...(pickupOtherAddressLine1 !== undefined && { pickupOtherAddressLine1 }),
+      ...(pickupOtherAddressLine2 !== undefined && {
+        pickupOtherAddressLine2: pickupOtherAddressLine2 || null,
+      }),
+      ...(pickupOtherAddressCity !== undefined && { pickupOtherAddressCity }),
+      ...(pickupOtherAddressState !== undefined && { pickupOtherAddressState }),
+      ...(pickupOtherAddressPincode !== undefined && { pickupOtherAddressPincode }),
     })
     .where(eq(sellerProfiles.userId, userId))
     .returning();

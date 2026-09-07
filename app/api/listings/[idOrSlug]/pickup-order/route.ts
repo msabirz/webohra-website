@@ -55,7 +55,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ idO
     return NextResponse.json({ error: 'Pickup & Pay isn’t available for this listing' }, { status: 403 });
   }
 
-  const location = await resolvePickupLocation(listing.sellerId, listing.pickupAddressSource);
+  const location = await resolvePickupLocation(listing.sellerId, listing.pickupAddressSource, {
+    line1: listing.pickupOtherAddressLine1,
+    line2: listing.pickupOtherAddressLine2,
+    city: listing.pickupOtherAddressCity,
+    state: listing.pickupOtherAddressState,
+    pincode: listing.pickupOtherAddressPincode,
+  });
   if (!location.city || !location.address) {
     return NextResponse.json(
       { error: 'Pickup & Pay isn’t ready for this listing yet — the seller hasn’t finished setting up her pickup location' },

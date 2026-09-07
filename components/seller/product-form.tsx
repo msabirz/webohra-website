@@ -12,6 +12,7 @@ import { VariantManager } from '@/components/seller/variant-manager';
 import { DynamicFieldInput, type SubcategoryFieldDef } from '@/components/seller/dynamic-field-input';
 import { useToast } from '@/components/toast-context';
 import { scrollToFirstError } from '@/lib/form-error-focus';
+import { useSellerPortal } from '@/lib/seller-context';
 
 type ListingType = 'physical_product' | 'local_service' | 'remote_service';
 
@@ -50,7 +51,14 @@ export type ProductFormValues = {
   // listing that never touches this section keeps working unchanged.
   selfShipCharge: string;
   pickupEnabled: boolean;
-  pickupAddressSource: 'seller' | 'office' | '';
+  pickupAddressSource: 'seller' | 'office' | 'other' | '';
+  // Item 26 (2026-09-07) — her per-listing override for the 'other'
+  // source. Blank means "use my saved default from Settings."
+  pickupOtherAddressLine1: string;
+  pickupOtherAddressLine2: string;
+  pickupOtherAddressCity: string;
+  pickupOtherAddressState: string;
+  pickupOtherAddressPincode: string;
   pickupLeadTimeHours: string;
   showAddressOnPdp: boolean;
   weight: string;
@@ -70,6 +78,11 @@ const emptyForm: ProductFormValues = {
   // Default to her own address, not a forced blank choice — Office stays
   // opt-in (2026-09-06). She can still switch it once the dropdown shows.
   pickupAddressSource: 'seller',
+  pickupOtherAddressLine1: '',
+  pickupOtherAddressLine2: '',
+  pickupOtherAddressCity: '',
+  pickupOtherAddressState: '',
+  pickupOtherAddressPincode: '',
   pickupLeadTimeHours: '',
   showAddressOnPdp: false,
   weight: '',
@@ -78,6 +91,11 @@ const emptyForm: ProductFormValues = {
 export function ProductForm({ initial }: { initial?: ProductFormValues }) {
   const router = useRouter();
   const { showToast } = useToast();
+  // Whether she's already saved a reusable "other" pickup address in
+  // Settings (item 26, 2026-09-07) — decides the hint text shown when
+  // she picks "A different address" below.
+  const { me } = useSellerPortal();
+  const hasSavedOtherAddress = Boolean(me.sellerProfile.pickupOtherAddressLine1);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
@@ -208,6 +226,11 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
     'selfShipCharge',
     'pickupEnabled',
     'pickupAddressSource',
+    'pickupOtherAddressLine1',
+    'pickupOtherAddressLine2',
+    'pickupOtherAddressCity',
+    'pickupOtherAddressState',
+    'pickupOtherAddressPincode',
     'pickupLeadTimeHours',
     'showAddressOnPdp',
     'weight',
@@ -256,6 +279,29 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
       selfShipCharge: needsShipping && current.selfShipCharge !== '' ? Number(current.selfShipCharge) : undefined,
       pickupEnabled: needsShipping ? current.pickupEnabled : undefined,
       pickupAddressSource: needsShipping && current.pickupEnabled && current.pickupAddressSource ? current.pickupAddressSource : undefined,
+      // Item 26 (2026-09-07) — only sent when she's actually chosen
+      // "other"; blank fields are fine, they just mean "use my saved
+      // default" (see resolvePickupLocation's fallback).
+      pickupOtherAddressLine1:
+        needsShipping && current.pickupEnabled && current.pickupAddressSource === 'other' && current.pickupOtherAddressLine1 !== ''
+          ? current.pickupOtherAddressLine1
+          : undefined,
+      pickupOtherAddressLine2:
+        needsShipping && current.pickupEnabled && current.pickupAddressSource === 'other'
+          ? current.pickupOtherAddressLine2
+          : undefined,
+      pickupOtherAddressCity:
+        needsShipping && current.pickupEnabled && current.pickupAddressSource === 'other' && current.pickupOtherAddressCity !== ''
+          ? current.pickupOtherAddressCity
+          : undefined,
+      pickupOtherAddressState:
+        needsShipping && current.pickupEnabled && current.pickupAddressSource === 'other' && current.pickupOtherAddressState !== ''
+          ? current.pickupOtherAddressState
+          : undefined,
+      pickupOtherAddressPincode:
+        needsShipping && current.pickupEnabled && current.pickupAddressSource === 'other' && current.pickupOtherAddressPincode !== ''
+          ? current.pickupOtherAddressPincode
+          : undefined,
       pickupLeadTimeHours:
         needsShipping && current.pickupEnabled && current.pickupLeadTimeHours !== ''
           ? Number(current.pickupLeadTimeHours)
@@ -652,14 +698,14 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
                   Allow Pickup &amp; Pay for this listing
                 </label>
 
-                {form.pickupEnabled && !officeAvailable && (
-                  <p className="font-body text-sm text-ink-soft">
-                    Buyers collect from your own address. Office pickup isn&apos;t available yet for your jamaat/plan.
-                  </p>
-                )}
-
-                {form.pickupEnabled && officeAvailable && (
+                {form.pickupEnabled && (
                   <>
+                    {/* Item 26 (2026-09-07) — shown whenever Pickup & Pay is
+                        on, not just when office pickup happens to be
+                        available. Before this, most sellers (no office
+                        mapped yet) never saw this selector at all, and had
+                        no way to set lead time or the "show address" toggle
+                        below either. */}
                     <Field label="Pickup from" htmlFor="pickupAddressSource" error={errors.pickupAddressSource}>
                       <Select
                         id="pickupAddressSource"
@@ -673,9 +719,87 @@ export function ProductForm({ initial }: { initial?: ProductFormValues }) {
                           Choose where buyers collect from
                         </option>
                         <option value="seller">My own address</option>
-                        <option value="office">A WeBohra office</option>
+                        {officeAvailable && <option value="office">A WeBohra office</option>}
+                        <option value="other">A different address</option>
                       </Select>
                     </Field>
+
+                    {!officeAvailable && (
+                      <p className="-mt-2 font-body text-xs text-ink-soft">
+                        Office pickup isn&apos;t available yet for your jamaat/plan — you can still
+                        collect from your own address or specify a different one below.
+                      </p>
+                    )}
+
+                    {form.pickupAddressSource === 'other' && (
+                      <div className="flex flex-col gap-3 rounded-lg border border-ink-soft/10 bg-ivory p-3">
+                        <p className="font-body text-xs text-ink-soft">
+                          {hasSavedOtherAddress
+                            ? 'Leave these blank to use your saved pickup address from Settings, or fill them in to use a different one just for this listing.'
+                            : "You haven't saved a default pickup address yet — fill this in here, or save one in Settings first to reuse it across listings."}
+                        </p>
+                        <Field
+                          label="Address line 1"
+                          htmlFor="pickupOtherAddressLine1"
+                          error={errors.pickupOtherAddressLine1}
+                        >
+                          <TextInput
+                            id="pickupOtherAddressLine1"
+                            name="pickupOtherAddressLine1"
+                            value={form.pickupOtherAddressLine1}
+                            onChange={(e) => update('pickupOtherAddressLine1', e.target.value)}
+                            placeholder="e.g. 12 Marol Naka Road"
+                          />
+                        </Field>
+                        <Field
+                          label="Address line 2 (optional)"
+                          htmlFor="pickupOtherAddressLine2"
+                          error={errors.pickupOtherAddressLine2}
+                        >
+                          <TextInput
+                            id="pickupOtherAddressLine2"
+                            name="pickupOtherAddressLine2"
+                            value={form.pickupOtherAddressLine2}
+                            onChange={(e) => update('pickupOtherAddressLine2', e.target.value)}
+                          />
+                        </Field>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="City" htmlFor="pickupOtherAddressCity" error={errors.pickupOtherAddressCity}>
+                            <TextInput
+                              id="pickupOtherAddressCity"
+                              name="pickupOtherAddressCity"
+                              value={form.pickupOtherAddressCity}
+                              onChange={(e) => update('pickupOtherAddressCity', e.target.value)}
+                            />
+                          </Field>
+                          <Field
+                            label="State"
+                            htmlFor="pickupOtherAddressState"
+                            error={errors.pickupOtherAddressState}
+                          >
+                            <TextInput
+                              id="pickupOtherAddressState"
+                              name="pickupOtherAddressState"
+                              value={form.pickupOtherAddressState}
+                              onChange={(e) => update('pickupOtherAddressState', e.target.value)}
+                            />
+                          </Field>
+                        </div>
+                        <Field
+                          label="Pincode"
+                          htmlFor="pickupOtherAddressPincode"
+                          error={errors.pickupOtherAddressPincode}
+                        >
+                          <TextInput
+                            id="pickupOtherAddressPincode"
+                            name="pickupOtherAddressPincode"
+                            value={form.pickupOtherAddressPincode}
+                            onChange={(e) => update('pickupOtherAddressPincode', e.target.value)}
+                            placeholder="e.g. 400059"
+                          />
+                        </Field>
+                      </div>
+                    )}
 
                     <Field
                       label="Minimum notice (hours)"

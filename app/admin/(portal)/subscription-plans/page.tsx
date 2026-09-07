@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { Layers, Plus, Archive, ArchiveRestore, X, ShieldAlert, Lock, Tag } from 'lucide-react';
+import { Layers, Plus, Archive, ArchiveRestore, X, ShieldAlert, Lock, Tag, MapPin } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton } from '@/components/skeleton';
@@ -48,6 +48,8 @@ type Settings = {
   settlementBufferDays: number;
   // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06).
   pickupAndPayCheckoutFeePercent: string;
+  // Global office-pickup kill switch (item 26, 2026-09-07).
+  pickupOfficeFeatureEnabled: boolean;
 };
 
 const CONTACT_MODE_LABEL: Record<ContactMode, string> = {
@@ -269,6 +271,10 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   );
   const [razorpayxPayoutsEnabled, setRazorpayxPayoutsEnabled] = useState(settings.razorpayxPayoutsEnabled);
   const [couponsEnabled, setCouponsEnabled] = useState(settings.couponsEnabled);
+  const [pickupOfficeFeatureEnabled, setPickupOfficeFeatureEnabled] = useState(
+    settings.pickupOfficeFeatureEnabled,
+  );
+  const [pickupOfficeSaving, setPickupOfficeSaving] = useState(false);
   const [couponsSaving, setCouponsSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -348,6 +354,28 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
       }
     } finally {
       setCouponsSaving(false);
+    }
+  }
+
+  // Global office-pickup kill switch (item 26, 2026-09-07) — sits above
+  // the existing per-plan (pickupOfficeOption) and per-office (active)
+  // toggles, not a replacement for either. Same "its own instant action"
+  // reasoning as toggleCoupons/toggleApproval above.
+  async function togglePickupOfficeFeature() {
+    setPickupOfficeSaving(true);
+    try {
+      const next = !pickupOfficeFeatureEnabled;
+      const res = await authFetch('/api/admin/subscription-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pickupOfficeFeatureEnabled: next }),
+      });
+      if (res.ok) {
+        setPickupOfficeFeatureEnabled(next);
+        onSaved();
+      }
+    } finally {
+      setPickupOfficeSaving(false);
     }
   }
 
@@ -558,6 +586,38 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
         </p>
         <button onClick={toggleCoupons} disabled={couponsSaving} className={buttonStyles('secondary', 'sm', 'w-fit')}>
           {couponsSaving ? 'Saving…' : couponsEnabled ? 'Disable coupons' : 'Enable coupons'}
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 rounded-xl border border-gold/30 bg-gold/5 p-4">
+        <div className="flex items-center gap-2">
+          <MapPin className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+          <p className="font-heading text-sm font-semibold text-ink">WeBohra office pickup</p>
+          <span
+            className={`rounded-full px-2.5 py-0.5 font-body text-xs font-semibold ${
+              pickupOfficeFeatureEnabled ? 'bg-teal/15 text-teal-deep' : 'bg-ink-soft/10 text-ink-soft'
+            }`}
+          >
+            {pickupOfficeFeatureEnabled ? 'ENABLED' : 'OFF EVERYWHERE'}
+          </span>
+        </div>
+        <p className="font-body text-xs text-ink-soft">
+          The one-move kill switch for the entire &quot;A WeBohra office&quot; Pickup &amp; Pay
+          option — turning this off makes it unavailable to every seller immediately, regardless
+          of what any individual plan or office setting says. Use this instead of deactivating
+          offices one at a time on the Offices page. Sellers can still use their own address or a
+          different one they specify either way.
+        </p>
+        <button
+          onClick={togglePickupOfficeFeature}
+          disabled={pickupOfficeSaving}
+          className={buttonStyles('secondary', 'sm', 'w-fit')}
+        >
+          {pickupOfficeSaving
+            ? 'Saving…'
+            : pickupOfficeFeatureEnabled
+              ? 'Disable office pickup everywhere'
+              : 'Re-enable office pickup'}
         </button>
       </div>
     </div>
