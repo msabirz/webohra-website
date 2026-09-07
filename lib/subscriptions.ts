@@ -4,6 +4,7 @@ import {
   sellerSubscriptions,
   subscriptionPlans,
   subscriptionSettings,
+  subscriptionPayments,
   listings,
   subcategories,
 } from '@/db/schema';
@@ -40,6 +41,19 @@ export async function getActivePlan(sellerId: number, sellerType: SellerType) {
 
   if (subscription.billingMode === 'plan') {
     if (!subscription.planId) return null;
+    // Subscription-plan billing (item 27, 2026-09-07) — a PAID plan's
+    // access lapses once its billing period ends. Checked lazily here
+    // rather than via a cron, since every real caller (checkPublishGate
+    // included) already goes through getActivePlan before trusting her
+    // feature set — no separate sweep needed. `renewsAt` stays null for
+    // every free plan (never expires) and for every seller grandfathered
+    // onto a plan before this billing feature existed (see
+    // scripts/grandfather-subscriptions.ts) — this check only ever fires
+    // for a subscription that's actually been through real billing.
+    if (subscription.renewsAt && subscription.renewsAt < new Date()) {
+      await db.update(sellerSubscriptions).set({ status: 'lapsed' }).where(eq(sellerSubscriptions.id, subscription.id));
+      return null;
+    }
     const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, subscription.planId));
     return plan ?? null;
   }
@@ -62,6 +76,93 @@ export async function getActivePlan(sellerId: number, sellerType: SellerType) {
     .where(eq(subscriptionPlans.id, settings.rechargeDefaultPlanId));
   if (!plan || plan.sellerType !== sellerType) return null;
   return plan;
+}
+
+export type ActivateSubscriptionResult =
+  | { ok: true; alreadyProcessed: boolean; renewsAt: Date }
+  | { ok: false; error: string };
+
+/**
+ * Subscription-plan billing (item 27, 2026-09-07) — activates or renews a
+ * PAID plan the moment a real, signature-verified Razorpay payment comes
+ * back, called from both /api/sellers/subscriptions/verify (the fast,
+ * browser-driven happy path) and the Razorpay webhook (the authoritative
+ * fallback) — same "either path alone is enough" shape as
+ * creditWalletTopup. Idempotent on `gatewayPaymentId`: a redelivered
+ * webhook after the client-side verify already ran is a safe no-op, never
+ * a double-activation or a double-counted payment row.
+ *
+ * Manual pay-again model (user's own explicit call, 2026-09-07, over a
+ * real auto-renewing subscription): always exactly 30 days from THIS
+ * payment, never extended from any remaining time on the old period —
+ * switching plans or renewing early both simply reset the clock. Simpler
+ * and safer to ship first; flagged here, not silently assumed.
+ */
+export async function activateSubscriptionPurchase(params: {
+  sellerId: number;
+  sellerType: SellerType;
+  planId: number;
+  amountRupees: number;
+  gatewayPaymentId: string;
+}): Promise<ActivateSubscriptionResult> {
+  const [existingPayment] = await db
+    .select()
+    .from(subscriptionPayments)
+    .where(eq(subscriptionPayments.gatewayPaymentId, params.gatewayPaymentId));
+  if (existingPayment) {
+    return { ok: true, alreadyProcessed: true, renewsAt: existingPayment.periodEnd };
+  }
+
+  const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, params.planId));
+  if (!plan || !plan.active || plan.sellerType !== params.sellerType) {
+    return { ok: false, error: 'This plan is no longer available — contact WeBohra support before this payment is lost.' };
+  }
+
+  const periodStart = new Date();
+  const periodEnd = new Date(periodStart.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  const [existingSubscription] = await db
+    .select()
+    .from(sellerSubscriptions)
+    .where(and(eq(sellerSubscriptions.sellerId, params.sellerId), eq(sellerSubscriptions.sellerType, params.sellerType)));
+
+  const subscriptionValues = {
+    billingMode: 'plan' as const,
+    planId: params.planId,
+    status: 'active' as const,
+    renewsAt: periodEnd,
+  };
+
+  const paymentInsert = db.insert(subscriptionPayments).values({
+    sellerId: params.sellerId,
+    sellerType: params.sellerType,
+    planId: params.planId,
+    amount: params.amountRupees.toFixed(2),
+    gatewayPaymentId: params.gatewayPaymentId,
+    periodStart,
+    periodEnd,
+  });
+
+  // Same atomic-batch reasoning as creditWalletTopup — the payment record
+  // and the subscription-state update land together or not at all.
+  if (existingSubscription) {
+    await db.batch([
+      paymentInsert,
+      db.update(sellerSubscriptions).set(subscriptionValues).where(eq(sellerSubscriptions.id, existingSubscription.id)),
+    ]);
+  } else {
+    await db.batch([
+      paymentInsert,
+      db.insert(sellerSubscriptions).values({
+        sellerId: params.sellerId,
+        sellerType: params.sellerType,
+        startedAt: periodStart,
+        ...subscriptionValues,
+      }),
+    ]);
+  }
+
+  return { ok: true, alreadyProcessed: false, renewsAt: periodEnd };
 }
 
 /**

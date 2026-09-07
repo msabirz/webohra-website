@@ -37,10 +37,14 @@ export async function GET(request: Request) {
 }
 
 /**
- * PUT /api/sellers/subscriptions — choose a plan, switch to a different
- * one, or switch to pay-as-you-go (recharge), for one seller_type. Shell
- * for the 'plan' branch still (no live billing — this just records her
- * choice); the 'recharge' branch is real as of Phase 5: it's only ever
+ * PUT /api/sellers/subscriptions — choose a FREE plan directly, or switch
+ * to pay-as-you-go (recharge), for one seller_type. A PAID plan
+ * (monthlyPrice > 0) is refused here as of item 27 (2026-09-07) — that
+ * now goes through POST /api/sellers/subscriptions/checkout-order +
+ * /verify instead, a real Razorpay payment before anything activates.
+ * This route stays the direct-activation path for a free plan (no
+ * payment needed, same instant behavior as before this feature existed)
+ * and for recharge mode, which is real as of Phase 5: it's only ever
  * meaningful because /seller/wallet now has a genuine Razorpay top-up
  * behind it, not just an empty balance she'd be stuck at. Upserts: one row
  * per (seller, seller_type), matching the unique constraint on that table.
@@ -72,6 +76,17 @@ export async function PUT(request: Request) {
     if (!selectedPlan || !selectedPlan.active || selectedPlan.sellerType !== sellerType) {
       return NextResponse.json(
         { error: 'Invalid input', issues: { planId: ['Select a valid, currently available plan'] } },
+        { status: 400 },
+      );
+    }
+    // Item 27 (2026-09-07) — a paid plan must go through real billing
+    // (checkout-order + verify), never activated for free here. `code`
+    // lets the seller form distinguish this from a genuine validation
+    // error and redirect into the payment flow instead of just showing
+    // red text.
+    if (Number(selectedPlan.monthlyPrice) > 0) {
+      return NextResponse.json(
+        { error: 'This plan requires payment — use the checkout flow.', code: 'payment_required' },
         { status: 400 },
       );
     }
@@ -112,6 +127,12 @@ export async function PUT(request: Request) {
     billingMode,
     planId: billingMode === 'plan' ? parsed.data.planId : null,
     status: 'active' as const,
+    // Always cleared here — this path only ever activates a free plan or
+    // recharge mode, neither of which expires. If she's switching DOWN
+    // from a previously-paid, still-billing plan, this correctly drops
+    // that expiry rather than leaving a stale renewsAt behind that
+    // getActivePlan's lapse check would otherwise misread later.
+    renewsAt: null,
   };
 
   const [subscription] = existing

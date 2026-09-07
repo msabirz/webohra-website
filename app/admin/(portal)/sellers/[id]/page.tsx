@@ -60,7 +60,19 @@ type Subscription = {
   sellerType: 'product' | 'service';
   billingMode: 'plan' | 'recharge';
   status: string;
+  renewsAt: string | null;
   plan: { name: string; sellerType: string } | null;
+};
+
+// Item 27 (2026-09-07) — her real subscription-plan billing history.
+type SubscriptionPaymentRow = {
+  id: number;
+  sellerType: 'product' | 'service';
+  planName: string;
+  amount: string;
+  periodStart: string;
+  periodEnd: string;
+  createdAt: string;
 };
 
 type TopProduct = {
@@ -100,6 +112,7 @@ type PayoutRow = {
 type Overview = {
   wallet: { balance: string } | null;
   subscriptions: Subscription[];
+  subscriptionPayments: SubscriptionPaymentRow[];
   orderStats: { orderCount: number; gmv: string };
   payoutStats: { pendingAmount: string; processedAmount: string };
   topProducts: TopProduct[];
@@ -175,6 +188,7 @@ export default function AdminSellerDetailPage() {
     setOverview({
       wallet: data.wallet,
       subscriptions: data.subscriptions ?? [],
+      subscriptionPayments: data.subscriptionPayments ?? [],
       orderStats: data.orderStats,
       payoutStats: data.payoutStats,
       topProducts: data.topProducts ?? [],
@@ -396,10 +410,40 @@ export default function AdminSellerDetailPage() {
                     {s.billingMode === 'recharge' && ' (pay as you go)'}
                   </p>
                   <p className="font-body text-xs text-ink-soft">{s.status}</p>
+                  {s.renewsAt && (
+                    <p className="font-body text-xs text-ink-soft">
+                      Renews {new Date(s.renewsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
           )}
+
+          {/* Item 27 (2026-09-07) — her real subscription-plan billing
+              history, same traceability standard as payouts/wallet. */}
+          <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5">
+            <p className="mb-2 font-body text-xs font-semibold uppercase tracking-wide text-ink-soft">
+              Billing history
+            </p>
+            {overview.subscriptionPayments.length === 0 ? (
+              <p className="font-body text-sm text-ink-soft">No real subscription payments yet.</p>
+            ) : (
+              <div className="flex flex-col divide-y divide-ink-soft/5">
+                {overview.subscriptionPayments.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between py-2 font-body text-sm">
+                    <div>
+                      <p className="text-ink">{p.planName} <span className="text-ink-soft">({p.sellerType})</span></p>
+                      <p className="text-xs text-ink-soft">
+                        {new Date(p.periodStart).toLocaleDateString('en-IN')} – {new Date(p.periodEnd).toLocaleDateString('en-IN')}
+                      </p>
+                    </div>
+                    <p className="font-semibold text-ink">₹{Number(p.amount).toLocaleString('en-IN')}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

@@ -3,6 +3,7 @@ import { verifyRazorpayWebhookSignature } from '@/lib/razorpay';
 import { creditWalletTopup } from '@/lib/wallet';
 import { confirmOrderPayment, markOrderPaymentFailed } from '@/lib/order-payment';
 import { markRefundProcessed, markRefundFailed } from '@/lib/refunds';
+import { activateSubscriptionPurchase, type SellerType } from '@/lib/subscriptions';
 
 /**
  * POST /api/webhooks/razorpay — Razorpay's own server calling us directly,
@@ -14,6 +15,8 @@ import { markRefundProcessed, markRefundFailed } from '@/lib/refunds';
  *     browser-driven happy path; this is the fallback.
  *   - order_payment (Phase 5b) — /api/orders/[orderNumber]/verify-payment
  *     is that same fast path for a buyer's checkout order.
+ *   - subscription_purchase (item 27, 2026-09-07) — /api/sellers/
+ *     subscriptions/verify is that same fast path for a plan purchase.
  * Every Razorpay order this platform creates stamps `notes.purpose` at
  * creation time specifically so this one handler can tell which of the two
  * a given event is about — see createRazorpayOrder's callers.
@@ -61,6 +64,19 @@ export async function POST(request: Request) {
       const orderNumber = orderEntity?.notes?.orderNumber;
       if (orderNumber && paymentEntity?.id) {
         await confirmOrderPayment({ orderNumber, gatewayPaymentId: paymentEntity.id });
+      }
+    } else if (purpose === 'subscription_purchase') {
+      const sellerId = orderEntity?.notes?.sellerId ? Number(orderEntity.notes.sellerId) : null;
+      const sellerType = orderEntity?.notes?.sellerType as SellerType | undefined;
+      const planId = orderEntity?.notes?.planId ? Number(orderEntity.notes.planId) : null;
+      if (sellerId && sellerType && planId && paymentEntity?.id) {
+        await activateSubscriptionPurchase({
+          sellerId,
+          sellerType,
+          planId,
+          amountRupees: (paymentEntity.amount ?? orderEntity.amount) / 100,
+          gatewayPaymentId: paymentEntity.id,
+        });
       }
     }
   } else if (event.event === 'payment.failed') {

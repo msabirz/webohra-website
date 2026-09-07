@@ -1359,6 +1359,41 @@ export const sellerSubscriptions = pgTable(
   (table) => [unique('seller_subscriptions_seller_type_unique').on(table.sellerId, table.sellerType)],
 );
 
+/**
+ * Real audit trail for subscription-plan billing (item 27, 2026-09-07) —
+ * one row per successful Razorpay payment for a plan. Mirrors
+ * wallet_transactions' role: sellerSubscriptions.renewsAt is the LIVE
+ * state a seller's current access is checked against, this table is the
+ * permanent record of every real payment that state was built from —
+ * "each and every information should be easily traceable via admin and
+ * seller," same hard requirement that shaped payout categories and wallet
+ * traceability earlier. `gatewayPaymentId` unique — the same idempotency
+ * guarantee walletTransactions' own gatewayPaymentId column provides,
+ * needed because both the fast client-side verify call AND the webhook
+ * fallback can each try to activate the same successful payment.
+ */
+export const subscriptionPayments = pgTable('subscription_payments', {
+  id: serial('id').primaryKey(),
+  sellerId: integer('seller_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  sellerType: sellerTypeEnum('seller_type').notNull(),
+  planId: integer('plan_id')
+    .notNull()
+    .references(() => subscriptionPlans.id, { onDelete: 'restrict' }),
+  amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
+  gatewayPaymentId: varchar('gateway_payment_id', { length: 100 }).notNull().unique(),
+  // The billing period this one payment covers — always exactly 30 days
+  // from the moment of payment (manual pay-again model, no proration, no
+  // auto-renewal mandate — user's own explicit call, 2026-09-07: simpler
+  // and safer to ship first). Switching plans mid-cycle forfeits any
+  // remaining days on the old plan rather than prorating — same
+  // simplicity trade-off, flagged here rather than silently assumed.
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Recharge-mode balance — one row per seller. Real money in, via a real
  *  payment gateway (sandbox/test mode for now); see wallet_transactions for
  *  every movement in or out. */
