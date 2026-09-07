@@ -60,6 +60,11 @@ export async function GET(
       method: shipments.method,
       charge: shipments.charge,
       businessName: sellerProfiles.businessName,
+      // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — only
+      // ever populated for method: 'pickup_and_pay'.
+      pickupScheduledDate: shipments.pickupScheduledDate,
+      pickupScheduledTime: shipments.pickupScheduledTime,
+      pickupCompletedAt: shipments.pickupCompletedAt,
     })
     .from(shipments)
     .leftJoin(sellerProfiles, eq(sellerProfiles.userId, shipments.sellerId))

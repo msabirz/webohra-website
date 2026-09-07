@@ -15,7 +15,7 @@ type Order = {
   orderNumber: string;
   buyerName: string;
   city: string;
-  paymentMethod: 'cod' | 'online';
+  paymentMethod: 'cod' | 'online' | 'pickup_and_pay';
   status: 'placed' | 'cancelled';
   createdAt: string;
   itemCount: number;
@@ -169,6 +169,12 @@ function OrderDetailModal({
   const total = detail.items.reduce((sum, item) => sum + Number(item.unitPrice) * item.quantity, 0);
   const cancelled = detail.order.status === 'cancelled';
   const isCod = detail.order.paymentMethod === 'cod';
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — no
+  // packed/shipped stages mean anything here (nothing is ever shipped);
+  // her one action is confirming the buyer actually collected it, which
+  // is also the moment the second commission stage fires (see
+  // app/api/sellers/orders/[orderNumber]'s own comment).
+  const isPickupAndPay = detail.order.paymentMethod === 'pickup_and_pay';
   const [returnFormOpenFor, setReturnFormOpenFor] = useState<number | null>(null);
   const [returnReason, setReturnReason] = useState('');
   const [returnError, setReturnError] = useState<string | null>(null);
@@ -245,7 +251,15 @@ function OrderDetailModal({
                   <span className={`rounded-full px-2.5 py-1 font-body text-xs font-semibold ${ITEM_STATUS_CLASS[item.status]}`}>
                     {ORDER_ITEM_STATUS_LABEL[item.status]}
                   </span>
-                  {!cancelled && next && (
+                  {!cancelled && isPickupAndPay && item.status !== 'delivered' && item.status !== 'cancelled' && item.status !== 'returned' && (
+                    <button
+                      onClick={() => onAdvance(item.id, 'delivered')}
+                      className="rounded-full bg-navy px-3 py-1.5 font-body text-xs font-semibold text-ivory transition hover:bg-navy-deep"
+                    >
+                      Mark as picked up
+                    </button>
+                  )}
+                  {!cancelled && !isPickupAndPay && next && (
                     <button
                       onClick={() => onAdvance(item.id, next)}
                       className="rounded-full bg-navy px-3 py-1.5 font-body text-xs font-semibold text-ivory transition hover:bg-navy-deep"

@@ -12,7 +12,7 @@ import { StarRating, StarRatingInput } from '@/components/star-rating';
 type OrderSummary = {
   orderNumber: string;
   status: 'placed' | 'cancelled';
-  paymentMethod: 'cod' | 'online';
+  paymentMethod: 'cod' | 'online' | 'pickup_and_pay';
   paymentStatus: 'pending' | 'paid' | 'failed' | null;
   createdAt: string;
   itemCount: number;

@@ -10,23 +10,29 @@ import { PhoneInput } from '@/components/phone-input';
 type PickupAddress = { line1: string; line2: string | null; city: string; state: string; pincode: string };
 
 /**
- * Pickup & Pay: she picks a date + time, no payment happens here at all —
- * the seller follows up off-platform within 24h and collects payment in
- * person then. Fulfillment & Subscriptions redesign, Phase 3: "place" is no
- * longer buyer-entered free text — it's resolved server-side from the
- * listing's own pickup location (shown here only when the seller has
- * opted this listing into showing it up front; otherwise just the city,
- * same reveal rule the PDP itself applies) — and the slot picker respects
- * her minimum-notice window rather than accepting any future date blindly.
+ * Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — she picks a
+ * date + time and this is now a real "buy now" (POST
+ * /api/listings/[idOrSlug]/pickup-order), not a disconnected booking
+ * request: a real order/orderItem/shipment row gets created, the first
+ * of the two commission stages fires immediately, and she lands on the
+ * exact same /order/[orderNumber] page every other order type uses —
+ * the old /pickup/[trackingNumber] tracking page is retired for new
+ * bookings (see pickupRequests' own schema comment). Still no payment
+ * happens here at all — she pays the seller in person when she collects
+ * it, exactly as before.
  */
 export function PickupRequestModal({
   listingId,
+  variantId,
   pickupCity,
   pickupAddress,
   pickupLeadTimeHours,
   onClose,
 }: {
   listingId: number;
+  /** Set only when this came from ProductVariantPicker's "Order Now" —
+   *  see that component's own comment on why it has to carry this. */
+  variantId?: number;
   pickupCity: string | null;
   pickupAddress: PickupAddress | null;
   pickupLeadTimeHours: number | null;
@@ -35,6 +41,7 @@ export function PickupRequestModal({
   const router = useRouter();
   const [buyerName, setBuyerName] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
+  const [buyerEmail, setBuyerEmail] = useState('');
   const [requestedDate, setRequestedDate] = useState('');
   const [requestedTime, setRequestedTime] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -52,13 +59,15 @@ export function PickupRequestModal({
     setError(null);
     setSubmitting(true);
     try {
-      const res = await fetch('/api/pickup-requests', {
+      const res = await fetch(`/api/listings/${listingId}/pickup-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           listingId,
+          ...(variantId && { variantId }),
           buyerName,
           buyerPhone,
+          buyerEmail: buyerEmail || undefined,
           buyerCity: getStoredLocation()?.city ?? '',
           requestedDate,
           requestedTime,
@@ -69,7 +78,7 @@ export function PickupRequestModal({
         setError(data.error ?? 'Could not submit your request. Please try again.');
         return;
       }
-      router.push(`/pickup/${data.pickupRequest.trackingNumber}`);
+      router.push(`/order/${data.orderNumber}`);
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
     } finally {
@@ -101,7 +110,7 @@ export function PickupRequestModal({
           </button>
         </div>
         <p className="-mt-2 font-body text-sm text-ink-soft">
-          Pick a date and time — the seller will confirm and you pay her in person, no shipping
+          Pick a date and time — you pay the seller in person when you collect it, no shipping
           involved.
         </p>
 
@@ -139,6 +148,19 @@ export function PickupRequestModal({
             Phone number
           </label>
           <PhoneInput id="pu-phone" value={buyerPhone} onChange={setBuyerPhone} required />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="pu-email" className="font-body text-sm font-medium text-ink">
+            Email <span className="font-normal text-ink-soft">(optional)</span>
+          </label>
+          <input
+            id="pu-email"
+            type="email"
+            value={buyerEmail}
+            onChange={(e) => setBuyerEmail(e.target.value)}
+            className={inputStyles}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">
@@ -180,7 +202,7 @@ export function PickupRequestModal({
 
         {error && <p className="font-body text-sm text-red-700">{error}</p>}
         <button type="submit" disabled={submitting} className={buttonStyles('primary', 'md')}>
-          {submitting ? 'Submitting…' : 'Confirm request'}
+          {submitting ? 'Submitting…' : 'Confirm booking'}
         </button>
       </form>
     </div>

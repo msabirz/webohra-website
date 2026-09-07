@@ -31,7 +31,7 @@ type OrderDetail = {
   city: string;
   state: string;
   pincode: string;
-  paymentMethod: 'cod' | 'online';
+  paymentMethod: 'cod' | 'online' | 'pickup_and_pay';
   // Fulfillment & Subscriptions redesign, Phase 5b — null for COD (see
   // orders.paymentStatus' own comment in db/schema.ts). razorpayOrderId/
   // razorpayKeyId/retryAmountRupees are only ever non-null together, and
@@ -48,9 +48,14 @@ type OrderDetail = {
 // method); charge is null for a method with no real cost yet (Delhivery).
 type OrderShipment = {
   sellerId: number;
-  method: 'self_managed' | 'delhivery';
+  method: 'self_managed' | 'delhivery' | 'pickup_and_pay';
   charge: string | null;
   businessName: string | null;
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — only ever
+  // set for method: 'pickup_and_pay'.
+  pickupScheduledDate: string | null;
+  pickupScheduledTime: string | null;
+  pickupCompletedAt: string | null;
 };
 
 const STEPS = [
@@ -208,6 +213,11 @@ export default function OrderConfirmationPage() {
   // both charged and given back.
   const isUnpaidOnline =
     order.paymentMethod === 'online' && (order.paymentStatus === 'pending' || order.paymentStatus === 'failed');
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — single-
+  // item/single-seller by design, so there's ever at most one shipment
+  // row to look at here.
+  const isPickupAndPay = order.paymentMethod === 'pickup_and_pay';
+  const pickupShipment = isPickupAndPay ? shipmentList[0] : undefined;
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -289,9 +299,14 @@ export default function OrderConfirmationPage() {
         <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
           <h2 className="mb-2 flex items-center gap-2 font-heading text-sm font-semibold text-ink">
             <MapPinned className="h-4 w-4 text-ink-soft" strokeWidth={2} />
-            Shipping address
+            {isPickupAndPay ? 'Pickup location' : 'Shipping address'}
           </h2>
-          <p className="font-body text-sm text-ink">{order.buyerName}</p>
+          {/* Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) —
+           *  these columns hold the SELLER's own resolved pickup address
+           *  for this payment method, not a delivery destination (see
+           *  orders.addressLine1's own schema comment) — buyerName is
+           *  deliberately omitted here, it isn't her address. */}
+          {!isPickupAndPay && <p className="font-body text-sm text-ink">{order.buyerName}</p>}
           <p className="font-body text-sm text-ink-soft">
             {order.addressLine1}
             {order.addressLine2 ? `, ${order.addressLine2}` : ''}
@@ -299,6 +314,11 @@ export default function OrderConfirmationPage() {
           <p className="font-body text-sm text-ink-soft">
             {order.city}, {order.state} {order.pincode}
           </p>
+          {pickupShipment?.pickupScheduledDate && (
+            <p className="mt-2 font-body text-xs font-medium text-ink">
+              Booked for {new Date(`${pickupShipment.pickupScheduledDate}T${pickupShipment.pickupScheduledTime ?? '00:00'}`).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+            </p>
+          )}
         </div>
         <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
           <h2 className="mb-2 flex items-center gap-2 font-heading text-sm font-semibold text-ink">
@@ -308,13 +328,17 @@ export default function OrderConfirmationPage() {
           <p className="font-body text-sm text-ink">
             {order.paymentMethod === 'cod'
               ? 'Cash on Delivery'
-              : order.paymentStatus === 'paid'
-                ? 'Paid online'
-                : order.paymentStatus === 'refunded'
-                  ? 'Refunded'
-                  : order.paymentStatus === 'failed'
-                    ? 'Payment failed'
-                    : 'Payment pending'}
+              : order.paymentMethod === 'pickup_and_pay'
+                ? pickupShipment?.pickupCompletedAt
+                  ? 'Paid the seller in person'
+                  : 'Pay the seller in person at pickup'
+                : order.paymentStatus === 'paid'
+                  ? 'Paid online'
+                  : order.paymentStatus === 'refunded'
+                    ? 'Refunded'
+                    : order.paymentStatus === 'failed'
+                      ? 'Payment failed'
+                      : 'Payment pending'}
           </p>
           <p className="mt-2 font-body text-xs text-ink-soft">
             Track this order anytime using order #{order.orderNumber} from the site footer.
@@ -356,15 +380,17 @@ export default function OrderConfirmationPage() {
             <span>Subtotal</span>
             <span>₹{subtotal.toLocaleString('en-IN')}</span>
           </div>
-          {shipmentList.map((s) => (
-            <div key={`${s.sellerId}-${s.method}`} className="flex items-center justify-between text-ink-soft">
-              <span>
-                Shipping{shipmentList.length > 1 && s.businessName ? ` — ${s.businessName}` : ''}
-                {s.method === 'delhivery' ? ' (Delhivery)' : ''}
-              </span>
-              <span>{s.charge && Number(s.charge) > 0 ? `₹${Number(s.charge).toLocaleString('en-IN')}` : 'Free'}</span>
-            </div>
-          ))}
+          {shipmentList
+            .filter((s) => s.method !== 'pickup_and_pay')
+            .map((s) => (
+              <div key={`${s.sellerId}-${s.method}`} className="flex items-center justify-between text-ink-soft">
+                <span>
+                  Shipping{shipmentList.length > 1 && s.businessName ? ` — ${s.businessName}` : ''}
+                  {s.method === 'delhivery' ? ' (Delhivery)' : ''}
+                </span>
+                <span>{s.charge && Number(s.charge) > 0 ? `₹${Number(s.charge).toLocaleString('en-IN')}` : 'Free'}</span>
+              </div>
+            ))}
           <div className="flex items-center justify-between font-semibold text-ink">
             <span>Total</span>
             <span>₹{total.toLocaleString('en-IN')}</span>

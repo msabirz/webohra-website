@@ -371,6 +371,32 @@ export const pickupRequestSchema = z.object({
 });
 export type PickupRequestInput = z.infer<typeof pickupRequestSchema>;
 
+// Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — retires
+// pickupRequestSchema's booking role above (kept for any pre-existing
+// bookings' own routes, never used for a new one past this point). A
+// real, order-linked "buy now" instead of a disconnected request: adds
+// buyerEmail (same optional shape as orderCreateSchema) and variantId
+// (a variant-based pickup listing needs one picked, same either/or as
+// checkout's own items[].variantId) on top of the same date/time/
+// location fields pickupRequestSchema already had.
+export const pickupOrderSchema = z.object({
+  listingId: z.number().int().positive(),
+  variantId: z.number().int().positive().optional(),
+  buyerName: nameField('Full name'),
+  buyerPhone: phoneField(),
+  buyerEmail: z.string().trim().email('Enter a valid email address').max(200).optional().or(z.literal('')),
+  buyerCity: z.string().trim().min(2, 'Set your location first').max(100),
+  requestedDate: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Pick a valid date'),
+  requestedTime: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Pick a valid time'),
+});
+export type PickupOrderInput = z.infer<typeof pickupOrderSchema>;
+
 // WhatsApp Connect & Lead — Meta Direct (Tier 3, item 19, 2026-09-06):
 // buyerName is gone — the route now requires a real signed-in session
 // and reads her account name itself, never trusts a client-supplied one.
@@ -869,6 +895,8 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
   razorpayFeePercent: z.number().min(0, 'Can’t be negative').max(100, 'Can’t exceed 100%').optional(),
   delhiveryCostPerShipment: z.number().nonnegative('Can’t be negative').optional(),
   settlementBufferDays: z.number().int().nonnegative('Can’t be negative').optional(),
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06).
+  pickupAndPayCheckoutFeePercent: z.number().min(0, 'Can’t be negative').max(100, 'Can’t exceed 100%').optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 

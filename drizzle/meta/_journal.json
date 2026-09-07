@@ -309,6 +309,13 @@
       "when": 1788719128505,
       "tag": "0043_woozy_vengeance",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1788730537178,
+      "tag": "0044_glorious_deathstrike",
+      "breakpoints": true
     }
   ]
 }

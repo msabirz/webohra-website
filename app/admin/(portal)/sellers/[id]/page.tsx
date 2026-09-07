@@ -74,7 +74,7 @@ type TopProduct = {
 
 type RecentOrder = {
   orderNumber: string;
-  paymentMethod: 'cod' | 'online';
+  paymentMethod: 'cod' | 'online' | 'pickup_and_pay';
   paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded' | null;
   status: 'placed' | 'cancelled';
   createdAt: string;
@@ -457,6 +457,8 @@ export default function AdminSellerDetailPage() {
                       <td className="px-2 py-3">
                         {o.paymentMethod === 'cod' ? (
                           <span className="font-body text-xs text-ink-soft">COD</span>
+                        ) : o.paymentMethod === 'pickup_and_pay' ? (
+                          <span className="font-body text-xs text-ink-soft">Pickup &amp; Pay</span>
                         ) : (
                           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${ORDER_PAYMENT_CLASS[o.paymentStatus ?? 'pending']}`}>
                             {ORDER_PAYMENT_LABEL[o.paymentStatus ?? 'pending']}

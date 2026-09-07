@@ -5,6 +5,7 @@ import { orders, orderItems, listings, subcategories, shipments } from '@/db/sch
 import { getSessionFromRequest } from '@/lib/auth';
 import { isForwardMove, isOrderItemStage } from '@/lib/order-item-status';
 import { notifyShipmentStatusChanged } from '@/lib/notifications/triggers';
+import { completePickupAndPay } from '@/lib/settlement';
 
 /**
  * GET /api/sellers/orders/[orderNumber] — order detail, scoped to only the
@@ -149,6 +150,24 @@ export async function PATCH(
     .set({ status, statusUpdatedAt: new Date() })
     .where(eq(orderItems.id, itemId))
     .returning();
+
+  // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) — reaching
+  // 'delivered' on a pickup_and_pay item IS her confirming the buyer
+  // collected it; that's what fires the second commission stage,
+  // real-time, never through the weekly settlement batch (which
+  // explicitly excludes this payment method — see lib/settlement.ts's
+  // own comment on why). Checked by payment method, not by item status
+  // alone — a courier/COD item reaching 'delivered' here must never
+  // trigger this.
+  if (updated.status === 'delivered' && order.paymentMethod === 'pickup_and_pay') {
+    await completePickupAndPay({
+      sellerId,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      orderItemId: updated.id,
+      itemPriceRupees: Number(updated.unitPrice) * updated.quantity,
+    });
+  }
 
   // Notifications infrastructure (Tier 3, item 20, 2026-09-06).
   await notifyShipmentStatusChanged(updated.id, updated.status);
