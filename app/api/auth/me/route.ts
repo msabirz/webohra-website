@@ -29,6 +29,15 @@ export async function GET(request: Request) {
       city: sellerProfiles.city,
       state: sellerProfiles.state,
       pincode: sellerProfiles.pincode,
+      // Her saved, reusable Pickup & Pay address (item 26, 2026-09-07) —
+      // read by both Settings (to edit it) and the product form (to show
+      // whether she already has one, before deciding whether a listing
+      // needs its own override).
+      pickupOtherAddressLine1: sellerProfiles.pickupOtherAddressLine1,
+      pickupOtherAddressLine2: sellerProfiles.pickupOtherAddressLine2,
+      pickupOtherAddressCity: sellerProfiles.pickupOtherAddressCity,
+      pickupOtherAddressState: sellerProfiles.pickupOtherAddressState,
+      pickupOtherAddressPincode: sellerProfiles.pickupOtherAddressPincode,
     })
     .from(sellerProfiles)
     .leftJoin(jamaats, eq(sellerProfiles.jamaatId, jamaats.id))

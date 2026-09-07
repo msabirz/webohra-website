@@ -236,6 +236,11 @@ export async function POST(request: Request) {
     selfShipCharge,
     pickupEnabled,
     pickupAddressSource,
+    pickupOtherAddressLine1,
+    pickupOtherAddressLine2,
+    pickupOtherAddressCity,
+    pickupOtherAddressState,
+    pickupOtherAddressPincode,
     pickupLeadTimeHours,
     showAddressOnPdp,
     weight,
@@ -275,6 +280,15 @@ export async function POST(request: Request) {
       selfShipCharge: selfShipCharge !== undefined ? selfShipCharge.toFixed(2) : null,
       pickupEnabled: pickupEnabled ?? false,
       pickupAddressSource: pickupEnabled ? (pickupAddressSource ?? null) : null,
+      // Item 26 (2026-09-07) — only meaningful (and only ever written)
+      // when she's actually chosen 'other'; blank on every other source
+      // rather than carrying a stale value from a source she's since
+      // switched away from.
+      pickupOtherAddressLine1: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressLine1 ?? null) : null,
+      pickupOtherAddressLine2: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressLine2 || null) : null,
+      pickupOtherAddressCity: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressCity ?? null) : null,
+      pickupOtherAddressState: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressState ?? null) : null,
+      pickupOtherAddressPincode: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressPincode ?? null) : null,
       pickupLeadTimeHours: pickupLeadTimeHours ?? null,
       showAddressOnPdp: showAddressOnPdp ?? false,
       weight: weight !== undefined ? weight.toFixed(3) : null,

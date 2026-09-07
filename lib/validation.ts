@@ -114,6 +114,16 @@ export const sellerProfileUpdateSchema = z
     city: nameField('City').optional(),
     state: nameField('State').optional(),
     pincode: pincodeField().optional(),
+    // Her saved, reusable Pickup & Pay pickup address (item 26,
+    // 2026-09-07) — a spot that's neither the business address above nor
+    // a WeBohra office. All optional, same reasoning as the address
+    // fields above: she can update other settings without being forced
+    // to fill this in.
+    pickupOtherAddressLine1: z.string().trim().min(3, 'Address must be at least 3 characters').max(200).optional(),
+    pickupOtherAddressLine2: z.string().trim().max(200).optional().or(z.literal('')),
+    pickupOtherAddressCity: nameField('City').optional(),
+    pickupOtherAddressState: nameField('State').optional(),
+    pickupOtherAddressPincode: pincodeField().optional(),
   })
   .refine((data) => !data.plansDelhiveryShipping || !!data.jamaatId, {
     message: 'Select your nearest jamaat for Delhivery pickup',
@@ -173,7 +183,20 @@ const priceField = () => z.coerce.number().positive('Enter a price greater than 
 const fulfillmentFields = {
   selfShipCharge: z.coerce.number().nonnegative('Charge can’t be negative').optional(),
   pickupEnabled: z.boolean().optional(),
-  pickupAddressSource: z.enum(['seller', 'office']).optional(),
+  // 'other' added (item 26, 2026-09-07) — a pickup spot that's neither
+  // her registered address nor a WeBohra office. See the four fields
+  // below it, and pickupOtherAddressSourceEnum's own comment in
+  // db/schema.ts.
+  pickupAddressSource: z.enum(['seller', 'office', 'other']).optional(),
+  // Per-listing override for the 'other' source — optional even when
+  // that source is picked, since leaving these blank means "use my
+  // saved default from Settings" (resolvePickupLocation's fallback),
+  // never a validation error.
+  pickupOtherAddressLine1: z.string().trim().min(3, 'Address must be at least 3 characters').max(200).optional(),
+  pickupOtherAddressLine2: z.string().trim().max(200).optional().or(z.literal('')),
+  pickupOtherAddressCity: nameField('City').optional(),
+  pickupOtherAddressState: nameField('State').optional(),
+  pickupOtherAddressPincode: pincodeField().optional(),
   pickupLeadTimeHours: z.coerce.number().int().nonnegative().max(720, 'Keep it under 30 days').optional(),
   showAddressOnPdp: z.boolean().optional(),
   weight: z.coerce.number().positive('Weight must be greater than 0').optional(),
@@ -897,6 +920,10 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
   settlementBufferDays: z.number().int().nonnegative('Can’t be negative').optional(),
   // Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06).
   pickupAndPayCheckoutFeePercent: z.number().min(0, 'Can’t be negative').max(100, 'Can’t exceed 100%').optional(),
+  // Global office-pickup kill switch (item 26, 2026-09-07) — sits above
+  // the existing per-plan/per-office toggles, see its own comment on
+  // subscription_settings in db/schema.ts.
+  pickupOfficeFeatureEnabled: z.boolean().optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 

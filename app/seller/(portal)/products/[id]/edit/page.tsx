@@ -50,6 +50,13 @@ export default function EditProductPage() {
           // Default to her own address, not a forced blank choice, if an
           // older listing somehow has pickup on with no source set yet.
           pickupAddressSource: l.pickupAddressSource ?? 'seller',
+          // Item 26 (2026-09-07) — her per-listing override, blank means
+          // "use my saved default from Settings."
+          pickupOtherAddressLine1: l.pickupOtherAddressLine1 ?? '',
+          pickupOtherAddressLine2: l.pickupOtherAddressLine2 ?? '',
+          pickupOtherAddressCity: l.pickupOtherAddressCity ?? '',
+          pickupOtherAddressState: l.pickupOtherAddressState ?? '',
+          pickupOtherAddressPincode: l.pickupOtherAddressPincode ?? '',
           pickupLeadTimeHours: l.pickupLeadTimeHours != null ? String(l.pickupLeadTimeHours) : '',
           showAddressOnPdp: l.showAddressOnPdp ?? false,
           weight: l.weight ?? '',

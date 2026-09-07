@@ -97,7 +97,7 @@ export async function checkPublishGate(
     sellerId: number;
     subcategoryId: number;
     pickupEnabled: boolean;
-    pickupAddressSource: 'seller' | 'office' | null;
+    pickupAddressSource: 'seller' | 'office' | 'other' | null;
     shippingMethod: 'self_managed' | 'delhivery';
   },
 ): Promise<{ ok: true } | { ok: false; error: string; code: PublishGateCode }> {
@@ -142,6 +142,21 @@ export async function checkPublishGate(
       error: `Your ${plan.name} plan doesn't include Pickup & Pay — upgrade to enable it, or turn it off for this listing.`,
       code: 'pickup_not_included',
     };
+  }
+  // Global kill switch (item 26, 2026-09-07) checked here too, not just
+  // in the pickup-eligibility endpoint the form reads from — this route
+  // is the real server-side authority a form-level check alone can never
+  // fully replace (same "never trust the client" reasoning as every
+  // other publish-gate check in this function).
+  if (listing.pickupEnabled && listing.pickupAddressSource === 'office') {
+    const [settings] = await db.select().from(subscriptionSettings).limit(1);
+    if (settings && !settings.pickupOfficeFeatureEnabled) {
+      return {
+        ok: false,
+        error: 'WeBohra office pickup is temporarily unavailable — switch this listing to pickup from your own address or a different one.',
+        code: 'pickup_office_not_included',
+      };
+    }
   }
   if (listing.pickupEnabled && listing.pickupAddressSource === 'office' && !plan.pickupOfficeOption) {
     return {

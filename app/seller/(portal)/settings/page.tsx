@@ -36,6 +36,17 @@ export default function SellerSettingsPage() {
   const [addrState, setAddrState] = useState(me.sellerProfile.state ?? '');
   const [addrPincode, setAddrPincode] = useState(me.sellerProfile.pincode ?? '');
 
+  // Her saved, reusable Pickup & Pay address (item 26, 2026-09-07) — a
+  // spot that's neither the business address above nor a WeBohra office.
+  // Falls back to nothing set (blank) means a listing's own "different
+  // address" choice needs a per-listing address instead, or eligibility
+  // just isn't ready yet — see resolvePickupLocation in lib/pickup.ts.
+  const [pickupOtherLine1, setPickupOtherLine1] = useState(me.sellerProfile.pickupOtherAddressLine1 ?? '');
+  const [pickupOtherLine2, setPickupOtherLine2] = useState(me.sellerProfile.pickupOtherAddressLine2 ?? '');
+  const [pickupOtherCity, setPickupOtherCity] = useState(me.sellerProfile.pickupOtherAddressCity ?? '');
+  const [pickupOtherState, setPickupOtherState] = useState(me.sellerProfile.pickupOtherAddressState ?? '');
+  const [pickupOtherPincode, setPickupOtherPincode] = useState(me.sellerProfile.pickupOtherAddressPincode ?? '');
+
   // Self-ship city (planning doc Decision 2) — one for now.
   const [shipCity, setShipCity] = useState(me.sellerShipCity ?? '');
   const [shipCitySaving, setShipCitySaving] = useState(false);
@@ -98,6 +109,11 @@ export default function SellerSettingsPage() {
           city: addrCity || undefined,
           state: addrState || undefined,
           pincode: addrPincode || undefined,
+          pickupOtherAddressLine1: pickupOtherLine1 || undefined,
+          pickupOtherAddressLine2: pickupOtherLine2,
+          pickupOtherAddressCity: pickupOtherCity || undefined,
+          pickupOtherAddressState: pickupOtherState || undefined,
+          pickupOtherAddressPincode: pickupOtherPincode || undefined,
         }),
       });
       if (!res.ok) {
@@ -247,6 +263,50 @@ export default function SellerSettingsPage() {
           <input
             value={addrPincode}
             onChange={(e) => setAddrPincode(e.target.value)}
+            placeholder="Pincode"
+            className={`${inputStyles} max-w-[160px]`}
+          />
+        </div>
+        <div className="mt-1 flex flex-col gap-3 border-t border-ink-soft/10 pt-4">
+          <p className="flex items-center gap-2 font-body text-xs font-semibold uppercase tracking-wide text-ink-soft">
+            <MapPin className="h-3.5 w-3.5" strokeWidth={2} />
+            Alternate pickup address
+          </p>
+          <p className="-mt-2 font-body text-xs text-ink-soft">
+            Optional. A pickup spot that&apos;s neither your address above nor a WeBohra office —
+            useful if you&apos;d rather buyers not collect from your registered address. Choose
+            &quot;A different address&quot; on any Pickup &amp; Pay listing to use this. Leave blank
+            and a listing can still set its own one-off address instead.
+          </p>
+          <input
+            value={pickupOtherLine1}
+            onChange={(e) => setPickupOtherLine1(e.target.value)}
+            placeholder="Address line 1"
+            className={inputStyles}
+          />
+          <input
+            value={pickupOtherLine2}
+            onChange={(e) => setPickupOtherLine2(e.target.value)}
+            placeholder="Address line 2 (optional)"
+            className={inputStyles}
+          />
+          <div className="grid grid-cols-2 gap-2.5">
+            <input
+              value={pickupOtherCity}
+              onChange={(e) => setPickupOtherCity(e.target.value)}
+              placeholder="City"
+              className={inputStyles}
+            />
+            <input
+              value={pickupOtherState}
+              onChange={(e) => setPickupOtherState(e.target.value)}
+              placeholder="State"
+              className={inputStyles}
+            />
+          </div>
+          <input
+            value={pickupOtherPincode}
+            onChange={(e) => setPickupOtherPincode(e.target.value)}
             placeholder="Pincode"
             className={`${inputStyles} max-w-[160px]`}
           />

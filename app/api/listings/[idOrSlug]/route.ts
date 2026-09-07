@@ -67,6 +67,14 @@ export async function GET(
       selfShipCharge: listings.selfShipCharge,
       pickupEnabled: listings.pickupEnabled,
       pickupAddressSource: listings.pickupAddressSource,
+      // Item 26 (2026-09-07) — her per-listing override for the 'other'
+      // source, threaded through to resolvePickupLocation below exactly
+      // like the pickup-order route does.
+      pickupOtherAddressLine1: listings.pickupOtherAddressLine1,
+      pickupOtherAddressLine2: listings.pickupOtherAddressLine2,
+      pickupOtherAddressCity: listings.pickupOtherAddressCity,
+      pickupOtherAddressState: listings.pickupOtherAddressState,
+      pickupOtherAddressPincode: listings.pickupOtherAddressPincode,
       pickupLeadTimeHours: listings.pickupLeadTimeHours,
       showAddressOnPdp: listings.showAddressOnPdp,
       weight: listings.weight,
@@ -168,7 +176,13 @@ export async function GET(
   let pickupAddress: { line1: string; line2: string | null; city: string; state: string; pincode: string } | null =
     null;
   if (row.pickupEnabled) {
-    const location = await resolvePickupLocation(row.sellerId, row.pickupAddressSource);
+    const location = await resolvePickupLocation(row.sellerId, row.pickupAddressSource, {
+      line1: row.pickupOtherAddressLine1,
+      line2: row.pickupOtherAddressLine2,
+      city: row.pickupOtherAddressCity,
+      state: row.pickupOtherAddressState,
+      pincode: row.pickupOtherAddressPincode,
+    });
     pickupCity = location.city;
     if (row.showAddressOnPdp) pickupAddress = location.address;
   }
@@ -372,6 +386,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
     selfShipCharge,
     pickupEnabled,
     pickupAddressSource,
+    pickupOtherAddressLine1,
+    pickupOtherAddressLine2,
+    pickupOtherAddressCity,
+    pickupOtherAddressState,
+    pickupOtherAddressPincode,
     pickupLeadTimeHours,
     showAddressOnPdp,
     weight,
@@ -428,6 +447,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ idOr
       selfShipCharge: selfShipCharge !== undefined ? selfShipCharge.toFixed(2) : null,
       pickupEnabled: pickupEnabled ?? false,
       pickupAddressSource: pickupEnabled ? (pickupAddressSource ?? null) : null,
+      // Item 26 (2026-09-07) — same "only when 'other' is actually
+      // chosen" reasoning as the create route.
+      pickupOtherAddressLine1: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressLine1 ?? null) : null,
+      pickupOtherAddressLine2: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressLine2 || null) : null,
+      pickupOtherAddressCity: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressCity ?? null) : null,
+      pickupOtherAddressState: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressState ?? null) : null,
+      pickupOtherAddressPincode: pickupEnabled && pickupAddressSource === 'other' ? (pickupOtherAddressPincode ?? null) : null,
       pickupLeadTimeHours: pickupLeadTimeHours ?? null,
       showAddressOnPdp: showAddressOnPdp ?? false,
       weight: weight !== undefined ? weight.toFixed(3) : null,

@@ -89,9 +89,16 @@ export const pickupRequestStatusEnum = pgEnum('pickup_request_status', [
  *  the seller's own address, or a WeBohra office. Shared by both
  *  listings.pickupAddressSource and listings.delhiveryPickupSource since
  *  it's the same choice either way. */
+// 'other' added (item 26, 2026-09-07) — a pickup spot that's neither her
+// registered business address nor a WeBohra office (real use case: a
+// home-based seller who doesn't want buyers at her home/registered
+// address). Resolved via a listing-level override if she's set one,
+// else her saved default (sellerProfiles.pickupOtherAddress*) — see
+// resolvePickupLocation in lib/pickup.ts.
 export const pickupAddressSourceEnum = pgEnum('pickup_address_source', [
   'seller',
   'office',
+  'other',
 ]);
 
 /** One row per (order, seller, method) in the new `shipments` table — see
@@ -357,6 +364,17 @@ export const listings = pgTable('listings', {
   // forced blank choice — Office pickup stays opt-in (2026-09-06).
   pickupAddressSource: pickupAddressSourceEnum('pickup_address_source').default('seller'),
   delhiveryPickupSource: pickupAddressSourceEnum('delhivery_pickup_source'),
+  // Per-listing override of her saved 'other' pickup address (item 26,
+  // 2026-09-07) — only meaningful when pickupAddressSource is 'other'.
+  // All nullable: leaving these blank means "use my saved default from
+  // Settings" (see resolvePickupLocation in lib/pickup.ts), not an
+  // error — this is genuinely optional, not a required per-listing
+  // field.
+  pickupOtherAddressLine1: varchar('pickup_other_address_line1', { length: 200 }),
+  pickupOtherAddressLine2: varchar('pickup_other_address_line2', { length: 200 }),
+  pickupOtherAddressCity: varchar('pickup_other_address_city', { length: 100 }),
+  pickupOtherAddressState: varchar('pickup_other_address_state', { length: 100 }),
+  pickupOtherAddressPincode: varchar('pickup_other_address_pincode', { length: 10 }),
   // Minimum hours' notice before a buyer's Pickup & Pay slot picker allows
   // a date/time to be selected.
   pickupLeadTimeHours: integer('pickup_lead_time_hours'),
@@ -543,6 +561,17 @@ export const sellerProfiles = pgTable('seller_profiles', {
   city: varchar('city', { length: 100 }),
   state: varchar('state', { length: 100 }),
   pincode: varchar('pincode', { length: 10 }),
+  // Her saved, reusable Pickup & Pay address when she picks 'other' as
+  // pickupAddressSource on a listing (item 26, 2026-09-07) — a pickup
+  // spot that's neither this address (above) nor a WeBohra office. All
+  // nullable: she may never set one, and a per-listing override (see
+  // listings.pickupOtherAddress*) takes priority over this when both
+  // exist — this is only the fallback. Editable from Seller Settings.
+  pickupOtherAddressLine1: varchar('pickup_other_address_line1', { length: 200 }),
+  pickupOtherAddressLine2: varchar('pickup_other_address_line2', { length: 200 }),
+  pickupOtherAddressCity: varchar('pickup_other_address_city', { length: 100 }),
+  pickupOtherAddressState: varchar('pickup_other_address_state', { length: 100 }),
+  pickupOtherAddressPincode: varchar('pickup_other_address_pincode', { length: 10 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -1473,6 +1502,17 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   pickupAndPayCheckoutFeePercent: numeric('pickup_and_pay_checkout_fee_percent', { precision: 5, scale: 2 })
     .notNull()
     .default('6.00'),
+  // Global kill switch for the "WeBohra office" Pickup & Pay option
+  // (item 26, 2026-09-07) — sits ABOVE the existing per-plan
+  // (subscriptionPlans.pickupOfficeOption) and per-office
+  // (webohraOffices.active) toggles, not a replacement for either.
+  // Turning this off makes office pickup unavailable everywhere in one
+  // move, without touching every individual plan or office — the gap
+  // the user flagged: deactivating N offices one at a time doesn't
+  // scale as a way to pause the whole feature. On: falls through to the
+  // existing per-plan + per-office checks exactly as before. See
+  // app/api/sellers/pickup-eligibility/route.ts.
+  pickupOfficeFeatureEnabled: boolean('pickup_office_feature_enabled').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
