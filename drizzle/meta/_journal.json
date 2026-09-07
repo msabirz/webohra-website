@@ -337,6 +337,13 @@
       "when": 1788776041593,
       "tag": "0047_slimy_hydra",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1788783585298,
+      "tag": "0048_swift_jane_foster",
+      "breakpoints": true
     }
   ]
 }

@@ -43,6 +43,8 @@ type OrderDetail = {
     city: string;
     state: string;
     pincode: string;
+    // Item 28 (2026-09-07) — whose address this actually is.
+    addressType: 'buyer' | 'seller';
     paymentMethod: string;
     status: string;
     createdAt: string;
@@ -218,7 +220,14 @@ function OrderDetailModal({
         </div>
 
         <div className="rounded-xl bg-ivory-deep/60 p-4 font-body text-sm text-ink-soft">
-          <p className="font-medium text-ink">{detail.order.buyerName}</p>
+          {/* Item 28 (2026-09-07) — before this, a pickup order showed her
+           *  buyer's name paired right above HER OWN address with no
+           *  distinction at all. addressType now drives which is which. */}
+          {detail.order.addressType === 'seller' ? (
+            <p className="font-medium text-ink">Pickup location (your own address)</p>
+          ) : (
+            <p className="font-medium text-ink">{detail.order.buyerName}</p>
+          )}
           <p>
             {detail.order.addressLine1}
             {detail.order.addressLine2 ? `, ${detail.order.addressLine2}` : ''}
@@ -226,6 +235,9 @@ function OrderDetailModal({
           <p>
             {detail.order.city}, {detail.order.state} {detail.order.pincode}
           </p>
+          {detail.order.addressType === 'seller' && (
+            <p className="mt-1">Buyer: {detail.order.buyerName}</p>
+          )}
           <p className="mt-1">
             Payment: {detail.order.paymentMethod.toUpperCase()} · Status: {detail.order.status}
           </p>

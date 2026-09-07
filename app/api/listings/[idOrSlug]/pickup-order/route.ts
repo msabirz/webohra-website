@@ -135,6 +135,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ idO
           state: location.address.state,
           pincode: location.address.pincode,
           paymentMethod: 'pickup_and_pay',
+          // Item 28 (2026-09-07) — explicit, matching what's actually
+          // being stored above (her own address, not the buyer's).
+          addressType: 'seller',
         })
         .returning();
     } catch (err) {

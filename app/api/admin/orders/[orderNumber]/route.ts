@@ -134,6 +134,8 @@ export async function GET(
       city: order.city,
       state: order.state,
       pincode: order.pincode,
+      // Item 28 (2026-09-07) — whose address this actually is.
+      addressType: order.addressType,
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus,
       razorpayOrderId: order.razorpayOrderId,

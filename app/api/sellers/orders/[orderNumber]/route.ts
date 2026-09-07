@@ -81,6 +81,9 @@ export async function GET(
       city: order.city,
       state: order.state,
       pincode: order.pincode,
+      // Item 28 (2026-09-07) — lets the modal label this correctly: her
+      // own pickup location vs. the buyer's real delivery address.
+      addressType: order.addressType,
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus,
       status: order.status,

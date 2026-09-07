@@ -597,6 +597,15 @@ export const otpCodes = pgTable('otp_codes', {
 // fulfillment tracking this method needs that 'cod' doesn't.
 export const paymentMethodEnum = pgEnum('payment_method', ['cod', 'online', 'pickup_and_pay']);
 
+/** Item 28 (2026-09-07) — makes orders.addressLine1/city/state/pincode's
+ *  dual meaning explicit and queryable, instead of only ever inferable
+ *  by cross-referencing paymentMethod === 'pickup_and_pay' (which is
+ *  what those columns' own comment used to require). 'buyer' for every
+ *  cod/online order (a real delivery destination); 'seller' only for
+ *  pickup_and_pay (the seller's own resolved pickup location — there is
+ *  no delivery for this method, see resolvePickupLocation). */
+export const orderAddressTypeEnum = pgEnum('order_address_type', ['buyer', 'seller']);
+
 /** Only ever meaningful for paymentMethod: 'online' — null for every COD
  *  order (see orders.paymentStatus' own comment for why null, not
  *  'pending', is the honest value there). 'refunded' (added 2026-09-03,
@@ -790,11 +799,21 @@ export const orders = pgTable('orders', {
   // address non-null (a much wider, riskier change touching every other
   // order type) was the deliberate trade-off. Same "snapshot at
   // creation time" reasoning shipments.addressLine1 already carries.
+  // Which one they hold is `addressType`, immediately below — read that,
+  // never re-derive it from paymentMethod.
   addressLine1: varchar('address_line1', { length: 200 }).notNull(),
   addressLine2: varchar('address_line2', { length: 200 }),
   city: varchar('city', { length: 100 }).notNull(),
   state: varchar('state', { length: 100 }).notNull(),
   pincode: varchar('pincode', { length: 10 }).notNull(),
+  // Item 28 (2026-09-07) — explicit, queryable label for what the address
+  // fields above actually hold on THIS order, added after the user asked
+  // for a real distinguishing field rather than implicitly inferring it
+  // from paymentMethod every time. Always set at order-creation time by
+  // both callers (app/api/orders/route.ts, .../pickup-order/route.ts) —
+  // never left to the schema default in real code, which exists only as
+  // a safety net for a hand-written insert that forgets it.
+  addressType: orderAddressTypeEnum('address_type').notNull().default('buyer'),
   paymentMethod: paymentMethodEnum('payment_method').notNull().default('cod'),
   // Fulfillment & Subscriptions redesign, Phase 5b — null for COD (never in
   // a payment pipeline to begin with, so null is the honest value, not
