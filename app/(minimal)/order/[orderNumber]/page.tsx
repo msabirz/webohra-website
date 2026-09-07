@@ -31,6 +31,10 @@ type OrderDetail = {
   city: string;
   state: string;
   pincode: string;
+  // Item 28 (2026-09-07) — the real source of truth for whose address the
+  // fields above actually hold; drives the label below instead of
+  // re-deriving it from paymentMethod.
+  addressType: 'buyer' | 'seller';
   paymentMethod: 'cod' | 'online' | 'pickup_and_pay';
   // Fulfillment & Subscriptions redesign, Phase 5b — null for COD (see
   // orders.paymentStatus' own comment in db/schema.ts). razorpayOrderId/
@@ -218,6 +222,10 @@ export default function OrderConfirmationPage() {
   // row to look at here.
   const isPickupAndPay = order.paymentMethod === 'pickup_and_pay';
   const pickupShipment = isPickupAndPay ? shipmentList[0] : undefined;
+  // Item 28 (2026-09-07) — the address-label decision below now reads
+  // this instead of re-deriving it from paymentMethod, since that's
+  // literally what this field exists to say.
+  const isSellerAddress = order.addressType === 'seller';
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -299,14 +307,16 @@ export default function OrderConfirmationPage() {
         <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
           <h2 className="mb-2 flex items-center gap-2 font-heading text-sm font-semibold text-ink">
             <MapPinned className="h-4 w-4 text-ink-soft" strokeWidth={2} />
-            {isPickupAndPay ? 'Pickup location' : 'Shipping address'}
+            {isSellerAddress ? 'Pickup location' : 'Shipping address'}
           </h2>
           {/* Pickup & Pay full redesign (Tier 4, item 22, 2026-09-06) —
            *  these columns hold the SELLER's own resolved pickup address
            *  for this payment method, not a delivery destination (see
            *  orders.addressLine1's own schema comment) — buyerName is
-           *  deliberately omitted here, it isn't her address. */}
-          {!isPickupAndPay && <p className="font-body text-sm text-ink">{order.buyerName}</p>}
+           *  deliberately omitted here, it isn't her address. Driven by
+           *  addressType (item 28, 2026-09-07), not paymentMethod — this
+           *  is what that field exists for. */}
+          {!isSellerAddress && <p className="font-body text-sm text-ink">{order.buyerName}</p>}
           <p className="font-body text-sm text-ink-soft">
             {order.addressLine1}
             {order.addressLine2 ? `, ${order.addressLine2}` : ''}

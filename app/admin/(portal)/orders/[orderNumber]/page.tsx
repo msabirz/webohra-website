@@ -102,6 +102,8 @@ type OrderDetail = {
     city: string;
     state: string;
     pincode: string;
+    // Item 28 (2026-09-07) — whose address this actually is.
+    addressType: 'buyer' | 'seller';
     paymentMethod: 'cod' | 'online' | 'pickup_and_pay';
     paymentStatus: PaymentStatus;
     razorpayOrderId: string | null;
@@ -429,6 +431,14 @@ export default function AdminOrderDetailPage() {
           <p><span className="text-ink">{order.buyerName}</span></p>
           <p>{order.buyerPhone}{order.buyerEmail ? ` · ${order.buyerEmail}` : ''}</p>
           <p className="sm:col-span-2">
+            {/* Item 28 (2026-09-07) — this address is the SELLER's own
+             *  pickup location for a pickup_and_pay order, not the
+             *  buyer's, even though it renders in the "Buyer" card above
+             *  the buyer's own contact details. Labeled explicitly rather
+             *  than left to look like a delivery address. */}
+            {order.addressType === 'seller' && (
+              <span className="mb-0.5 block font-medium text-ink">Pickup location (seller&apos;s address):</span>
+            )}
             {order.addressLine1}{order.addressLine2 ? `, ${order.addressLine2}` : ''}, {order.city}, {order.state} {order.pincode}
           </p>
         </div>

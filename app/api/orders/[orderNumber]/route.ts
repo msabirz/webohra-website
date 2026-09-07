@@ -94,6 +94,10 @@ export async function GET(
       city: order.city,
       state: order.state,
       pincode: order.pincode,
+      // Item 28 (2026-09-07) — what the address fields above actually
+      // are, so the frontend can label them correctly without re-deriving
+      // it from paymentMethod itself.
+      addressType: order.addressType,
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus,
       razorpayOrderId: retryable ? order.razorpayOrderId : null,
