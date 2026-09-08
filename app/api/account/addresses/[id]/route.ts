@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { db } from '@/db/index';
 import { buyerAddresses } from '@/db/schema';
 import { buyerAddressUpdateSchema } from '@/lib/validation';
@@ -63,7 +63,17 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   await db.delete(buyerAddresses).where(eq(buyerAddresses.id, existing.id));
 
   if (existing.isDefault) {
-    const [nextDefault] = await db.select().from(buyerAddresses).where(eq(buyerAddresses.userId, userId)).limit(1);
+    // Item 31 (2026-09-08) — real bug, found in the 2026-09-07 QA sweep:
+    // this had no ORDER BY, so which address got promoted was undefined
+    // per SQL semantics (empirically promoted the 2nd-created address
+    // instead of the 1st). Explicit oldest-first, matching what this
+    // code always claimed to do.
+    const [nextDefault] = await db
+      .select()
+      .from(buyerAddresses)
+      .where(eq(buyerAddresses.userId, userId))
+      .orderBy(asc(buyerAddresses.createdAt))
+      .limit(1);
     if (nextDefault) {
       await db.update(buyerAddresses).set({ isDefault: true }).where(eq(buyerAddresses.id, nextDefault.id));
     }
