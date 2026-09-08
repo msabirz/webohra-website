@@ -351,6 +351,13 @@
       "when": 1788859471902,
       "tag": "0049_cool_harry_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788864532533,
+      "tag": "0050_true_otto_octavius",
+      "breakpoints": true
     }
   ]
 }
