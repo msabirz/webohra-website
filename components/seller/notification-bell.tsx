@@ -26,7 +26,7 @@ const MENU_WIDTH = 320; // matches the dropdown's w-80
  *  opens a preview dropdown of the most recent requests (any status) with a
  *  link into the full Enquiries page. Uses a portal for the dropdown, same
  *  stacking-context-escape pattern as components/account-menu.tsx. */
-export function NotificationBell() {
+export function NotificationBell({ dark = false }: { dark?: boolean }) {
   const { unreadEnquiries, refreshUnread } = useSellerPortal();
   const [open, setOpen] = useState(false);
   const [recent, setRecent] = useState<RecentEnquiry[] | null>(null);
@@ -61,7 +61,11 @@ export function NotificationBell() {
         ref={buttonRef}
         onClick={toggleOpen}
         aria-label="Notifications"
-        className="relative flex h-9 w-9 items-center justify-center rounded-full text-ivory/80 transition hover:bg-white/10 hover:text-ivory"
+        className={`relative flex h-9 w-9 items-center justify-center rounded-full transition ${
+          dark
+            ? 'text-ivory/80 hover:bg-white/10 hover:text-ivory'
+            : 'text-ink-soft hover:bg-ivory-deep hover:text-ink'
+        }`}
       >
         <Bell className="h-4.5 w-4.5" strokeWidth={2} />
         {unreadEnquiries > 0 && (
