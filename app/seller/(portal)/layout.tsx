@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   AlertTriangle,
+  FileCheck2,
 } from 'lucide-react';
 import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { SellerPortalContext, type SellerMe } from '@/lib/seller-context';
@@ -57,6 +58,10 @@ const NAV_ITEMS: NavEntry[] = [
       { href: '/seller/disputes', label: 'Disputes', icon: AlertTriangle },
     ],
   },
+  // Item 33 (2026-09-08) — deliberately top-level, not nested under
+  // Settings or Money: this gates whether she can sell at all, so it
+  // needs to stay visible/findable on its own, same weight as Products.
+  { href: '/seller/tax-compliance', label: 'Tax / GST Verification', icon: FileCheck2 },
   { href: '/seller/settings', label: 'Settings', icon: Settings },
 ];
 

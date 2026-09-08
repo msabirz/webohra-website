@@ -38,6 +38,13 @@ export async function GET(request: Request) {
       pickupOtherAddressCity: sellerProfiles.pickupOtherAddressCity,
       pickupOtherAddressState: sellerProfiles.pickupOtherAddressState,
       pickupOtherAddressPincode: sellerProfiles.pickupOtherAddressPincode,
+      // GST/KYC compliance (item 33, 2026-09-08) — read by
+      // /seller/tax-compliance to show her current submission/status.
+      taxIdType: sellerProfiles.taxIdType,
+      taxIdNumber: sellerProfiles.taxIdNumber,
+      taxIdSubmittedAt: sellerProfiles.taxIdSubmittedAt,
+      taxIdVerified: sellerProfiles.taxIdVerified,
+      taxIdRejectedReason: sellerProfiles.taxIdRejectedReason,
     })
     .from(sellerProfiles)
     .leftJoin(jamaats, eq(sellerProfiles.jamaatId, jamaats.id))

@@ -57,6 +57,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
       jamaatId: sellerProfiles.jamaatId,
       jamaatCity: jamaats.city,
       jamaatName: jamaats.name,
+      // GST/KYC compliance (item 33, 2026-09-08) — the Profile tab's
+      // approve/reject card reads these.
+      taxIdType: sellerProfiles.taxIdType,
+      taxIdNumber: sellerProfiles.taxIdNumber,
+      taxIdSubmittedAt: sellerProfiles.taxIdSubmittedAt,
+      taxIdVerified: sellerProfiles.taxIdVerified,
+      taxIdVerifiedAt: sellerProfiles.taxIdVerifiedAt,
+      taxIdRejectedReason: sellerProfiles.taxIdRejectedReason,
     })
     .from(sellerProfiles)
     .innerJoin(users, eq(sellerProfiles.userId, users.id))

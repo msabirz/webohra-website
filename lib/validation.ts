@@ -507,6 +507,55 @@ export const adminSellerVerifySchema = z.object({
 });
 export type AdminSellerVerifyInput = z.infer<typeof adminSellerVerifySchema>;
 
+// GST/KYC compliance (item 33, 2026-09-08) — real format checks, not just
+// "non-empty", so an obviously-malformed number never even reaches an
+// admin's review queue. Real GSTIN structure (15 chars: 2-digit state code,
+// 10-char PAN, entity code, default 'Z', checksum) and Udyam's own
+// certificate-number format (UDYAM-<2-letter state>-<2-digit>-<7-digit>).
+const GST_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+const UDYAM_REGEX = /^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$/;
+
+export const sellerTaxComplianceSubmitSchema = z
+  .object({
+    taxIdType: z.enum(['gst', 'udyam']),
+    taxIdNumber: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .max(20),
+  })
+  .superRefine((data, ctx) => {
+    const matches = data.taxIdType === 'gst' ? GST_REGEX.test(data.taxIdNumber) : UDYAM_REGEX.test(data.taxIdNumber);
+    if (!matches) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['taxIdNumber'],
+        message:
+          data.taxIdType === 'gst'
+            ? 'Enter a valid 15-character GSTIN, e.g. 27AAAAA0000A1Z5'
+            : 'Enter a valid Udyam Registration Number, e.g. UDYAM-MH-01-1234567',
+      });
+    }
+  });
+export type SellerTaxComplianceSubmitInput = z.infer<typeof sellerTaxComplianceSubmitSchema>;
+
+/** Admin's decision on a submitted GST/Udyam number. `reason` is required
+ *  (and shown back to her) on reject — never a silent no — same "she's
+ *  never left guessing why" rule as adminListingModerationSchema below. */
+export const adminTaxComplianceReviewSchema = z.object({
+  action: z.enum(['approve', 'reject']),
+  reason: z.string().trim().min(5).max(300).optional(),
+}).superRefine((data, ctx) => {
+  if (data.action === 'reject' && !data.reason) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['reason'],
+      message: 'Explain what needs fixing so she can resubmit correctly.',
+    });
+  }
+});
+export type AdminTaxComplianceReviewInput = z.infer<typeof adminTaxComplianceReviewSchema>;
+
 /** FR-14: moderate any listing, not just the owner's own draft<->active<->
  *  archived toggle (see listingStatusUpdateSchema) — Admin can also flag or
  *  remove, and restore either back to draft. A note is required for

@@ -309,6 +309,26 @@ export async function PATCH(
       );
     }
 
+    // GST/KYC compliance (item 33, 2026-09-08) — a second, independent
+    // publish gate alongside ITS verification (stakeholder requirement:
+    // no seller goes live without a verified GST number or Udyam/MSME
+    // enrollment ID). She can still register, edit, and save drafts with
+    // zero restriction — this only blocks the specific transition to
+    // 'active', mirroring the ITS check just above exactly.
+    const [sellerProfile] = await db
+      .select({ taxIdVerified: sellerProfiles.taxIdVerified })
+      .from(sellerProfiles)
+      .where(eq(sellerProfiles.userId, listing.sellerId));
+    if (!sellerProfile?.taxIdVerified) {
+      return NextResponse.json(
+        {
+          error:
+            'Submit your GST number or Udyam/MSME enrollment ID for verification before you can publish listings — see Tax & Business Verification in your seller portal.',
+        },
+        { status: 403 },
+      );
+    }
+
     // Different-types listings publish once they have at least one type —
     // an empty menu would show a real buyer a page with nothing to pick
     // from or buy, which is worse than just staying a draft a little longer.
