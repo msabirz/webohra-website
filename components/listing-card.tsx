@@ -52,6 +52,13 @@ export type ListingCardData = {
    *  an older caller, always false for a service. The buyer never sees
    *  why — no "seller's wallet is low" language, just "unavailable." */
   unavailableLowBalance?: boolean;
+  /** Real stock enforcement (item 32, 2026-09-08) — only ever true for a
+   *  simple (non-variant) listing with a genuinely declared stockQuantity
+   *  of 0 (never for null, which means "not tracked"). A variant-based
+   *  listing's card always shows "View options" regardless — its real
+   *  stock is per-variant, only resolved once she's picked one on the
+   *  PDP (see ProductVariantPicker, which already handled this). */
+  outOfStock?: boolean;
 };
 
 const AUTO_CYCLE_MS = 2800;
@@ -121,10 +128,16 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
         <div className="absolute right-2 top-2 z-10">
           <WishlistButton listingId={listing.id} />
         </div>
-        {listing.unavailableLowBalance && (
+        {listing.outOfStock ? (
           <span className="absolute left-2 top-2 z-10 rounded-full bg-ink/80 px-2.5 py-1 font-body text-[11px] font-semibold text-white">
-            Unavailable
+            Out of stock
           </span>
+        ) : (
+          listing.unavailableLowBalance && (
+            <span className="absolute left-2 top-2 z-10 rounded-full bg-ink/80 px-2.5 py-1 font-body text-[11px] font-semibold text-white">
+              Unavailable
+            </span>
+          )
         )}
         {images.length > 0 ? (
           // eslint-disable-next-line @next/next/no-img-element -- seller-uploaded R2 URL, host not known at build time
@@ -184,7 +197,11 @@ export function ListingCard({ listing }: { listing: ListingCardData }) {
           ₹{Number(listing.displayPrice).toLocaleString('en-IN')}
         </p>
         <div className="mt-auto flex flex-row gap-2 pt-2.5">
-          {listing.unavailableLowBalance ? (
+          {listing.outOfStock ? (
+            <span className="flex w-full items-center justify-center rounded-xl bg-ivory-deep px-2 py-2 font-body text-xs font-semibold text-ink-soft">
+              Out of stock
+            </span>
+          ) : listing.unavailableLowBalance ? (
             <span className="flex w-full items-center justify-center rounded-xl bg-ivory-deep px-2 py-2 font-body text-xs font-semibold text-ink-soft">
               Currently unavailable
             </span>

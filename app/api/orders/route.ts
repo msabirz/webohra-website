@@ -8,6 +8,7 @@ import { generateOrderNumber } from '@/lib/ids';
 import { createRazorpayOrder, getRazorpayKeyId } from '@/lib/razorpay';
 import { notifyOrderConfirmed } from '@/lib/notifications/triggers';
 import { isBlockedByLowWalletBalance } from '@/lib/subscriptions';
+import { reserveStockForItems, releaseStockForItems } from '@/lib/stock';
 
 /**
  * POST /api/orders
@@ -132,6 +133,22 @@ export async function POST(request: Request) {
     }
   }
 
+  // Item 32 (2026-09-08) — real stock enforcement, reserved here (before
+  // any order row exists) so two simultaneous buyers can never both
+  // succeed against the last unit. Atomic per item; a failure anywhere
+  // releases everything already reserved earlier in this same checkout —
+  // see lib/stock.ts's own comment for why this happens at order
+  // creation, not payment confirmation, and what that trade-off costs.
+  const stockResult = await reserveStockForItems(
+    resolved.map((r) => ({ listingId: r.listingId, variantId: r.variantId, quantity: r.quantity })),
+  );
+  if (!stockResult.ok) {
+    return NextResponse.json(
+      { error: `Listing #${stockResult.failedListingId} doesn't have enough stock left for this order` },
+      { status: 409 },
+    );
+  }
+
   // One shipment per (seller, method) — mirrors lib/cart-line.ts's
   // computeShipmentGroups exactly (see its own comment for why per-method,
   // not just per-seller, and why the charge applies once per shipment).
@@ -181,6 +198,11 @@ export async function POST(request: Request) {
     }
   }
   if (!order) {
+    // Item 32 (2026-09-08) — the order itself never got created (an
+    // exhausted order-number retry, astronomically unlikely but a real
+    // code path), so the stock already reserved above must not stay
+    // stranded — release it before telling her to try again.
+    await releaseStockForItems(resolved.map((r) => ({ listingId: r.listingId, variantId: r.variantId, quantity: r.quantity })));
     return NextResponse.json({ error: 'Could not place order — please try again' }, { status: 500 });
   }
 

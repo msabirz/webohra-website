@@ -90,6 +90,11 @@ export async function GET(request: Request) {
       title: listings.title,
       price: listings.price,
       displayPrice,
+      // Item 32 (2026-09-08) — real stock enforcement. Only meaningful for
+      // a simple (non-variant) listing here; a variant-based one's real
+      // stock lives per-variant and only matters once she's picked one on
+      // the PDP (see ProductVariantPicker, which already reads this).
+      stockQuantity: listings.stockQuantity,
       shippingMethod: listings.shippingMethod,
       createdAt: listings.createdAt,
       sellerId: listings.sellerId,
@@ -206,6 +211,12 @@ export async function GET(request: Request) {
         unavailableLowBalance:
           row.listingType === 'physical_product' &&
           lowBalanceSellerKeys.has(`${row.sellerId}:${sellerTypeForListingType(row.listingType)}`),
+        // Item 32 (2026-09-08) — real stock enforcement. Only a genuine
+        // zero counts (never null, which means "not tracked" — see
+        // listings.stockQuantity's own schema comment); only meaningful
+        // for a simple listing, a variant-based one's card always says
+        // "View options" regardless, same as before this existed.
+        outOfStock: row.price !== null && row.stockQuantity === 0,
       };
     }),
   });
