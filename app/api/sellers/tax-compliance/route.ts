@@ -41,6 +41,10 @@ export async function POST(request: Request) {
     .set({
       taxIdType: parsed.data.taxIdType,
       taxIdNumber: parsed.data.taxIdNumber,
+      // Item 37 (2026-09-08) — optional, cleared on every fresh
+      // submission just like taxIdRejectedReason below, so a stale photo
+      // never sits attached to a corrected number.
+      taxIdDocumentUrl: parsed.data.taxIdDocumentUrl ?? null,
       taxIdSubmittedAt: new Date(),
       taxIdVerified: false,
       taxIdVerifiedAt: null,
@@ -53,6 +57,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     taxIdType: updated.taxIdType,
     taxIdNumber: updated.taxIdNumber,
+    taxIdDocumentUrl: updated.taxIdDocumentUrl,
     taxIdSubmittedAt: updated.taxIdSubmittedAt,
     taxIdVerified: updated.taxIdVerified,
   });

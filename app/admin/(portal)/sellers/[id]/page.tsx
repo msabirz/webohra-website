@@ -41,6 +41,8 @@ type SellerDetail = {
   phone: string;
   itsId: string | null;
   itsVerified: boolean;
+  // Item 37 (2026-09-08) — her optional ITS card photo, if she added one.
+  itsCardImageUrl: string | null;
   phoneVerified: boolean;
   createdAt: string;
   businessName: string;
@@ -49,6 +51,8 @@ type SellerDetail = {
   // GST/KYC compliance (item 33, 2026-09-08).
   taxIdType: 'gst' | 'udyam' | null;
   taxIdNumber: string | null;
+  // Item 37 (2026-09-08) — her optional certificate photo, if any.
+  taxIdDocumentUrl: string | null;
   taxIdSubmittedAt: string | null;
   taxIdVerified: boolean;
   taxIdVerifiedAt: string | null;
@@ -392,6 +396,22 @@ export default function AdminSellerDetailPage() {
             <Field label="Registered" value={new Date(seller.createdAt).toLocaleDateString('en-IN')} />
             <Field label="Products" value={String(listings.length)} />
           </div>
+
+          {/* Item 37 (2026-09-08) — her optional ITS card photo, shown
+           *  only when she's added one. */}
+          {seller.itsCardImageUrl && (
+            <div className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink-soft/5">
+              <a href={seller.itsCardImageUrl} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={seller.itsCardImageUrl}
+                  alt="ITS card"
+                  className="h-20 w-32 rounded-lg object-cover ring-1 ring-ink-soft/10 transition hover:opacity-90"
+                />
+              </a>
+              <p className="font-body text-xs text-ink-soft">ITS card photo, as submitted by her. Click to view full size.</p>
+            </div>
+          )}
 
           {canVerify && (
             <button onClick={toggleVerify} disabled={busy} className={buttonStyles('primary', 'md', 'w-fit')}>
@@ -780,6 +800,22 @@ function TaxComplianceCard({
               value={seller.taxIdSubmittedAt ? new Date(seller.taxIdSubmittedAt).toLocaleDateString('en-IN') : '—'}
             />
           </div>
+
+          {/* Item 37 (2026-09-08) — her optional certificate photo, shown
+           *  only when she's added one. */}
+          {seller.taxIdDocumentUrl && (
+            <div className="flex items-center gap-3">
+              <a href={seller.taxIdDocumentUrl} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={seller.taxIdDocumentUrl}
+                  alt="Tax certificate"
+                  className="h-20 w-32 rounded-lg object-cover ring-1 ring-ink-soft/10 transition hover:opacity-90"
+                />
+              </a>
+              <p className="font-body text-xs text-ink-soft">Certificate photo, as submitted. Click to view full size.</p>
+            </div>
+          )}
 
           {seller.taxIdVerified ? (
             <span className="inline-flex w-fit items-center gap-1 rounded-full bg-teal/10 px-3 py-1.5 font-body text-xs font-semibold text-teal-deep">

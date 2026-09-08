@@ -10,6 +10,10 @@ export type SellerMe = {
     phone: string;
     itsId?: string | null;
     itsVerified: boolean;
+    // Item 37 (2026-09-08) — optional supporting photo, see
+    // /api/sellers/its-card's own comment for why this never touches
+    // itsVerified itself.
+    itsCardImageUrl?: string | null;
     hasPassword: boolean;
   };
   sellerProfile: {
@@ -35,6 +39,9 @@ export type SellerMe = {
     // /seller/tax-compliance and its own submit route for the full story.
     taxIdType: 'gst' | 'udyam' | null;
     taxIdNumber: string | null;
+    // Item 37 (2026-09-08) — optional, see /api/sellers/tax-compliance's
+    // own comment.
+    taxIdDocumentUrl: string | null;
     taxIdSubmittedAt: string | null;
     taxIdVerified: boolean;
     taxIdRejectedReason: string | null;
