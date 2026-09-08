@@ -22,6 +22,7 @@ import {
 } from '@/lib/listing-fields';
 import { resolvePickupLocation } from '@/lib/pickup';
 import { checkPublishGate, getActivePlan, isBlockedByLowWalletBalance, sellerTypeForListingType } from '@/lib/subscriptions';
+import { checkSellerMandatoryVerification, checkListingMandatoryInfo } from '@/lib/seller-readiness';
 import { getListingRatingSummaries } from '@/lib/reviews';
 
 /**
@@ -301,32 +302,38 @@ export async function PATCH(
   }
 
   if (parsed.data.status === 'active') {
-    const [seller] = await db.select().from(users).where(eq(users.id, listing.sellerId));
-    if (!seller?.itsVerified) {
-      return NextResponse.json(
-        { error: 'Your ITS ID needs to be verified by Admin before you can publish listings' },
-        { status: 403 },
-      );
+    // Item 38 (2026-09-09) — the full mandatory-info gate: ITS + GST/Udyam
+    // verification (item 33) plus ITS card photo, GST/Udyam certificate
+    // photo, a payout method on file, wallet balance, and shipping/pickup
+    // address completeness. She can still register, edit, and save drafts
+    // with zero restriction — this only blocks the specific transition to
+    // 'active'. See lib/seller-readiness.ts for the full checklist.
+    const sellerGate = await checkSellerMandatoryVerification(listing.sellerId);
+    if (!sellerGate.ok) {
+      return NextResponse.json({ error: sellerGate.error, code: sellerGate.code }, { status: 403 });
     }
 
-    // GST/KYC compliance (item 33, 2026-09-08) — a second, independent
-    // publish gate alongside ITS verification (stakeholder requirement:
-    // no seller goes live without a verified GST number or Udyam/MSME
-    // enrollment ID). She can still register, edit, and save drafts with
-    // zero restriction — this only blocks the specific transition to
-    // 'active', mirroring the ITS check just above exactly.
-    const [sellerProfile] = await db
-      .select({ taxIdVerified: sellerProfiles.taxIdVerified })
-      .from(sellerProfiles)
-      .where(eq(sellerProfiles.userId, listing.sellerId));
-    if (!sellerProfile?.taxIdVerified) {
-      return NextResponse.json(
-        {
-          error:
-            'Submit your GST number or Udyam/MSME enrollment ID for verification before you can publish listings — see Tax & Business Verification in your seller portal.',
-        },
-        { status: 403 },
-      );
+    const [subcategory] = await db
+      .select({ listingType: subcategories.listingType })
+      .from(subcategories)
+      .where(eq(subcategories.id, listing.subcategoryId));
+    if (!subcategory) {
+      return NextResponse.json({ error: 'Category not found' }, { status: 400 });
+    }
+    const listingGate = await checkListingMandatoryInfo(listing.sellerId, {
+      subcategoryId: listing.subcategoryId,
+      listingType: subcategory.listingType,
+      shippingMethod: listing.shippingMethod,
+      pickupEnabled: listing.pickupEnabled,
+      pickupAddressSource: listing.pickupAddressSource,
+      pickupOtherAddressLine1: listing.pickupOtherAddressLine1,
+      pickupOtherAddressLine2: listing.pickupOtherAddressLine2,
+      pickupOtherAddressCity: listing.pickupOtherAddressCity,
+      pickupOtherAddressState: listing.pickupOtherAddressState,
+      pickupOtherAddressPincode: listing.pickupOtherAddressPincode,
+    });
+    if (!listingGate.ok) {
+      return NextResponse.json({ error: listingGate.error, code: listingGate.code }, { status: 403 });
     }
 
     // Different-types listings publish once they have at least one type —

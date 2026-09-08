@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext } from 'react';
+import type { SellerReadiness } from '@/lib/seller-readiness';
 
 export type SellerMe = {
   user: {
@@ -10,9 +11,10 @@ export type SellerMe = {
     phone: string;
     itsId?: string | null;
     itsVerified: boolean;
-    // Item 37 (2026-09-08) — optional supporting photo, see
-    // /api/sellers/its-card's own comment for why this never touches
-    // itsVerified itself.
+    // Item 37 (2026-09-08) added this photo; item 38 (2026-09-09) made it
+    // required before she can publish (see /api/sellers/its-card's own
+    // comment for why it still never touches itsVerified itself — that
+    // stays Admin's call, based on the number).
     itsCardImageUrl?: string | null;
     hasPassword: boolean;
   };
@@ -39,8 +41,8 @@ export type SellerMe = {
     // /seller/tax-compliance and its own submit route for the full story.
     taxIdType: 'gst' | 'udyam' | null;
     taxIdNumber: string | null;
-    // Item 37 (2026-09-08) — optional, see /api/sellers/tax-compliance's
-    // own comment.
+    // Item 37 (2026-09-08) added this; item 38 (2026-09-09) made it
+    // required — see /api/sellers/tax-compliance's own comment.
     taxIdDocumentUrl: string | null;
     taxIdSubmittedAt: string | null;
     taxIdVerified: boolean;
@@ -70,6 +72,12 @@ export const SellerPortalContext = createContext<{
   // instead of waiting for the next poll tick.
   walletBalance: string | null;
   refreshWallet: () => void;
+  // Item 38 (2026-09-09) — her seller-level mandatory-publish checklist
+  // (see lib/seller-readiness.ts), fetched once here and reused by the
+  // portal-wide banner (components/seller/verification-banner.tsx) so
+  // every page shows the same, live answer instead of each page guessing
+  // from partial fields on `me`. null while loading.
+  readiness: SellerReadiness | null;
 } | null>(null);
 
 export function useSellerPortal() {

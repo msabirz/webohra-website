@@ -24,9 +24,11 @@ export default function SellerSettingsPage() {
   const [accountSaved, setAccountSaved] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
 
-  // ITS card photo — item 37 (2026-09-08), optional supporting evidence
-  // alongside the ITS ID number itself (see /api/sellers/its-card's own
-  // comment for why this never touches itsVerified).
+  // ITS card photo — item 37 (2026-09-08) added this as optional supporting
+  // evidence alongside the ITS ID number itself (see /api/sellers/its-card's
+  // own comment for why this never touches itsVerified on its own). Item 38
+  // (2026-09-09) made it a required step before she can publish — see
+  // lib/seller-readiness.ts.
   const [itsCardImageUrl, setItsCardImageUrl] = useState(me.user.itsCardImageUrl ?? null);
   const [itsCardUploading, setItsCardUploading] = useState(false);
   const [itsCardError, setItsCardError] = useState<string | null>(null);
@@ -244,7 +246,7 @@ export default function SellerSettingsPage() {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
+    <div className="flex max-w-6xl flex-col gap-6">
       <div>
         <h1 className="font-heading text-2xl font-semibold text-ink">Settings</h1>
         <p className="mt-1 font-body text-sm text-ink-soft">
@@ -252,6 +254,8 @@ export default function SellerSettingsPage() {
         </p>
       </div>
 
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-start">
+      <div className="flex flex-col gap-6 lg:col-span-3">
       <div className="flex items-center gap-3 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
         {me.user.itsVerified ? (
           <ShieldCheck className="h-8 w-8 shrink-0 text-teal" strokeWidth={1.75} />
@@ -271,14 +275,15 @@ export default function SellerSettingsPage() {
         </div>
       </div>
 
-      {/* Item 37 (2026-09-08) — an optional photo of her ITS card,
-       *  purely supporting evidence. Never required, never changes
-       *  itsVerified on its own. */}
+      {/* Item 37 (2026-09-08) added this photo as supporting evidence for
+       *  her ITS ID; item 38 (2026-09-09) made it required before she can
+       *  publish (still never flips itsVerified on its own — that stays
+       *  Admin's call, based on the number). */}
       <div className="flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
-        <p className="font-body text-sm font-semibold text-ink">ITS card photo (optional)</p>
+        <p className="font-body text-sm font-semibold text-ink">ITS card photo</p>
         <p className="font-body text-xs text-ink-soft">
-          Not required — your ITS ID number above is still what gets verified. Adding a photo just gives the Idara
-          team something to check it against.
+          Required before you can publish — a clear photo of your ITS card gives the Idara team something
+          real to check your ID number against.
         </p>
         <div className="flex items-center gap-3">
           {itsCardImageUrl ? (
@@ -443,7 +448,9 @@ export default function SellerSettingsPage() {
           {shipCitySaving ? 'Saving…' : shipCitySaved ? 'Saved ✓' : 'Save self-ship city'}
         </button>
       </form>
+      </div>
 
+      <div className="flex flex-col gap-6 lg:col-span-2">
       <form onSubmit={saveAccount} className="flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
         <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-ink">
           <UserIcon className="h-4 w-4 text-ink-soft" strokeWidth={2} />
@@ -496,6 +503,8 @@ export default function SellerSettingsPage() {
           {passwordSaving ? 'Saving…' : passwordSaved ? 'Saved ✓' : 'Change password'}
         </button>
       </form>
+      </div>
+      </div>
     </div>
   );
 }
