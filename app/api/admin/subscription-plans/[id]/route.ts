@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { subscriptionPlans } from '@/db/schema';
 import { adminSubscriptionPlanUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest, isAdmin } from '@/lib/auth';
+import { emptyUpdateGuard } from '@/lib/api-guards';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionFromRequest(request);
@@ -30,6 +31,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       { status: 400 },
     );
   }
+
+  const emptyGuard = emptyUpdateGuard(parsed.data);
+  if (emptyGuard) return emptyGuard;
 
   const { monthlyPrice, ...rest } = parsed.data;
   const [updated] = await db

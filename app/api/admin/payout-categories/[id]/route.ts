@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { payoutCategories } from '@/db/schema';
 import { adminPayoutCategoryUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest, isAdmin } from '@/lib/auth';
+import { emptyUpdateGuard } from '@/lib/api-guards';
 
 /**
  * `key` is deliberately not editable here — it's the stable value any
@@ -28,6 +29,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       { status: 400 },
     );
   }
+
+  const emptyGuard = emptyUpdateGuard(parsed.data);
+  if (emptyGuard) return emptyGuard;
 
   const [updated] = await db
     .update(payoutCategories)

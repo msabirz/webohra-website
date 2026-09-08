@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { categories } from '@/db/schema';
 import { adminCategoryUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest, isAdmin } from '@/lib/auth';
+import { emptyUpdateGuard } from '@/lib/api-guards';
 
 /**
  * PATCH /api/admin/categories/[id] — rename or deactivate (FR-12 says
@@ -30,6 +31,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       { status: 400 },
     );
   }
+
+  const emptyGuard = emptyUpdateGuard(parsed.data);
+  if (emptyGuard) return emptyGuard;
 
   const [updated] = await db
     .update(categories)
