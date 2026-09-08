@@ -12,12 +12,13 @@ import { slugifyTitle } from '@/lib/ids';
  *
  * Seller-only. Hands back a short-lived presigned R2 PUT URL so the
  * browser uploads the image bytes directly to storage — our server only
- * ever sees the resulting public URL, never the file itself. Two
- * purposes: 'listing' (the original — a product/variant/field photo,
- * scoped to a listing she actually owns, attached via
- * /api/listings/[id]/images) and 'portfolio' (Phase 6 — a past-work
- * showcase photo, scoped to her seller account rather than any one
- * listing, attached via /api/sellers/portfolio). A third purpose,
+ * ever sees the resulting public URL, never the file itself. Purposes:
+ * 'listing' (a product/variant/field photo, scoped to a listing she
+ * actually owns, attached via /api/listings/[id]/images), 'portfolio'
+ * (Phase 6 — a past-work showcase photo, scoped to her seller account),
+ * and 'its_card'/'tax_document' (item 37, 2026-09-08 — optional KYC
+ * supporting-evidence photos, attached via /api/sellers/its-card and
+ * /api/sellers/tax-compliance respectively). A dropped purpose,
  * 'payout_qr', existed briefly for Phase 5c's payout redesign — dropped
  * 2026-09-03 alongside the 'qr_image' payout method itself, nothing to
  * reconcile from it here.
@@ -45,9 +46,18 @@ export async function POST(request: Request) {
 
   const sellerSlug = slugifyTitle(profile.businessName);
 
-  if (parsed.data.purpose === 'portfolio') {
+  if (
+    parsed.data.purpose === 'portfolio' ||
+    parsed.data.purpose === 'its_card' ||
+    parsed.data.purpose === 'tax_document'
+  ) {
     try {
-      const { uploadUrl, publicUrl } = await createUploadUrl(sellerId, sellerSlug, 'portfolio', parsed.data.contentType);
+      const { uploadUrl, publicUrl } = await createUploadUrl(
+        sellerId,
+        sellerSlug,
+        parsed.data.purpose,
+        parsed.data.contentType,
+      );
       return NextResponse.json({ uploadUrl, publicUrl });
     } catch (err) {
       console.error('R2 presign failed:', err);

@@ -51,6 +51,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
       phone: users.phone,
       itsId: users.itsId,
       itsVerified: users.itsVerified,
+      // Item 37 (2026-09-08) — her optional ITS card photo, if she added one.
+      itsCardImageUrl: users.itsCardImageUrl,
       phoneVerified: users.phoneVerified,
       createdAt: users.createdAt,
       businessName: sellerProfiles.businessName,
@@ -61,6 +63,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ user
       // approve/reject card reads these.
       taxIdType: sellerProfiles.taxIdType,
       taxIdNumber: sellerProfiles.taxIdNumber,
+      // Item 37 (2026-09-08) — her optional certificate photo, if any.
+      taxIdDocumentUrl: sellerProfiles.taxIdDocumentUrl,
       taxIdSubmittedAt: sellerProfiles.taxIdSubmittedAt,
       taxIdVerified: sellerProfiles.taxIdVerified,
       taxIdVerifiedAt: sellerProfiles.taxIdVerifiedAt,

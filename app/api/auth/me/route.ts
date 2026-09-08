@@ -42,6 +42,7 @@ export async function GET(request: Request) {
       // /seller/tax-compliance to show her current submission/status.
       taxIdType: sellerProfiles.taxIdType,
       taxIdNumber: sellerProfiles.taxIdNumber,
+      taxIdDocumentUrl: sellerProfiles.taxIdDocumentUrl,
       taxIdSubmittedAt: sellerProfiles.taxIdSubmittedAt,
       taxIdVerified: sellerProfiles.taxIdVerified,
       taxIdRejectedReason: sellerProfiles.taxIdRejectedReason,
@@ -69,6 +70,7 @@ export async function GET(request: Request) {
       hasPassword: !!user.passwordHash,
       itsId: user.itsId,
       itsVerified: user.itsVerified,
+      itsCardImageUrl: user.itsCardImageUrl,
       staffRole: user.staffRole,
     },
     sellerProfile: profile ?? null,

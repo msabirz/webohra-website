@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -10,12 +10,18 @@ import {
   PlayCircle,
   Landmark,
   Info,
+  ImagePlus,
 } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { useSellerPortal } from '@/lib/seller-context';
 
 type TaxIdType = 'gst' | 'udyam';
+
+// Item 37 (2026-09-08) — same allow-list/size cap as every other seller
+// photo uploader in this app.
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /**
  * /seller/tax-compliance — item 33 (2026-09-08), the stakeholder's GST/KYC
@@ -27,6 +33,10 @@ type TaxIdType = 'gst' | 'udyam';
  * exactly. This page is display + submission only; it never flips
  * taxIdVerified itself — only Admin can (POST .../tax-compliance PATCH by
  * an isAdmin staff member).
+ *
+ * Item 37 (2026-09-08) — an optional certificate photo can be attached
+ * alongside the number. Never required: the number itself is still what
+ * gets verified (same reasoning as the ITS card photo on Settings).
  *
  * Walkthrough video: intentionally reserved as its own card below, not
  * built yet — the user's own stated plan is to add one later so a seller
@@ -44,6 +54,12 @@ export default function SellerTaxCompliancePage() {
   const [error, setError] = useState<string | null>(null);
   const [justSubmitted, setJustSubmitted] = useState(false);
 
+  // Item 37 (2026-09-08) — optional certificate photo.
+  const [taxIdDocumentUrl, setTaxIdDocumentUrl] = useState<string | null>(p.taxIdDocumentUrl ?? null);
+  const [docUploading, setDocUploading] = useState(false);
+  const [docError, setDocError] = useState<string | null>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+
   const status: 'verified' | 'pending' | 'rejected' | 'none' = p.taxIdVerified
     ? 'verified'
     : p.taxIdRejectedReason
@@ -51,6 +67,48 @@ export default function SellerTaxCompliancePage() {
       : p.taxIdType
         ? 'pending'
         : 'none';
+
+  async function handleDocChange(file: File | undefined) {
+    if (!file) return;
+    setDocError(null);
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setDocError('Only JPEG, PNG, or WEBP images are allowed.');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setDocError('Photo must be under 8MB.');
+      return;
+    }
+    setDocUploading(true);
+    try {
+      const presignRes = await authFetch('/api/uploads/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType: file.type, purpose: 'tax_document' }),
+      });
+      const presignData = await presignRes.json();
+      if (!presignRes.ok) {
+        setDocError(presignData.error ?? 'Could not start the upload.');
+        return;
+      }
+      const putRes = await fetch(presignData.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      if (!putRes.ok) {
+        setDocError('Upload to storage failed. Try again.');
+        return;
+      }
+      setTaxIdDocumentUrl(presignData.publicUrl);
+    } catch (err) {
+      console.error('Tax document upload failed:', err);
+      setDocError('Could not reach storage to upload this photo.');
+    } finally {
+      setDocUploading(false);
+      if (docInputRef.current) docInputRef.current.value = '';
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -60,7 +118,7 @@ export default function SellerTaxCompliancePage() {
       const res = await authFetch('/api/sellers/tax-compliance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taxIdType, taxIdNumber }),
+        body: JSON.stringify({ taxIdType, taxIdNumber, taxIdDocumentUrl: taxIdDocumentUrl ?? undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -180,6 +238,47 @@ export default function SellerTaxCompliancePage() {
           {justSubmitted && (
             <p className="font-body text-xs text-teal-deep">Submitted — an admin will review it shortly.</p>
           )}
+        </div>
+
+        {/* Item 37 (2026-09-08) — optional certificate photo. */}
+        <div className="flex flex-col gap-1.5">
+          <label className="font-body text-sm font-medium text-ink">Certificate photo (optional)</label>
+          <p className="font-body text-xs text-ink-soft">
+            Not required — the number above is still what gets verified. Attaching a photo just gives the
+            admin something to check it against.
+          </p>
+          <div className="flex items-center gap-3">
+            {taxIdDocumentUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={taxIdDocumentUrl}
+                alt="Tax certificate"
+                className="h-16 w-24 rounded-lg object-cover ring-1 ring-ink-soft/10"
+              />
+            ) : (
+              <span className="flex h-16 w-24 items-center justify-center rounded-lg bg-ivory-deep">
+                <ImagePlus className="h-5 w-5 text-ink-soft" strokeWidth={1.75} />
+              </span>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <input
+                ref={docInputRef}
+                type="file"
+                accept={ALLOWED_IMAGE_TYPES.join(',')}
+                className="hidden"
+                onChange={(e) => handleDocChange(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => docInputRef.current?.click()}
+                disabled={docUploading}
+                className={buttonStyles('secondary', 'sm', 'w-fit')}
+              >
+                {docUploading ? 'Uploading…' : taxIdDocumentUrl ? 'Replace photo' : 'Upload photo'}
+              </button>
+              {docError && <p className="font-body text-xs text-red-600">{docError}</p>}
+            </div>
+          </div>
         </div>
 
         <button type="submit" disabled={saving || !taxIdNumber.trim()} className={buttonStyles('primary', 'md', 'w-fit')}>

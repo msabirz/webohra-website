@@ -218,6 +218,14 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 250 }),
   itsId: varchar('its_id', { length: 20 }),
   itsVerified: boolean('its_verified').notNull().default(false),
+  // Item 37 (2026-09-08) — an optional supporting photo of her ITS card,
+  // R2-hosted like every other seller-uploaded image (see
+  // lib/storage/r2.ts). Deliberately optional: the itsId number itself is
+  // still the thing an admin verifies (same as before this existed) —
+  // this just gives her a way to attach visual proof if she wants to,
+  // and gives admin something to glance at during review. Never required
+  // to submit, never blocks anything on its own.
+  itsCardImageUrl: varchar('its_card_image_url', { length: 500 }),
   staffRole: staffRoleEnum('staff_role'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -597,6 +605,14 @@ export const sellerProfiles = pgTable('seller_profiles', {
   // approved, so it only ever reflects the CURRENT submission's outcome.
   taxIdType: taxIdTypeEnum('tax_id_type'),
   taxIdNumber: varchar('tax_id_number', { length: 20 }),
+  // Item 37 (2026-09-08) — an optional photo of the actual GST/Udyam
+  // certificate, R2-hosted. Same "optional supporting evidence, never a
+  // hard requirement" reasoning as users.itsCardImageUrl — the number
+  // itself is still what gets verified; this just lets her attach proof
+  // and gives admin something to check it against. Cleared on resubmit,
+  // same as taxIdRejectedReason below, so a stale document photo never
+  // sits attached to a corrected number.
+  taxIdDocumentUrl: varchar('tax_id_document_url', { length: 500 }),
   taxIdSubmittedAt: timestamp('tax_id_submitted_at', { withTimezone: true }),
   taxIdVerified: boolean('tax_id_verified').notNull().default(false),
   taxIdVerifiedAt: timestamp('tax_id_verified_at', { withTimezone: true }),

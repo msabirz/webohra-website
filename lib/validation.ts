@@ -297,7 +297,9 @@ export const uploadPresignSchema = z
     contentType: z.enum(['image/jpeg', 'image/png', 'image/webp'], {
       message: 'Only JPEG, PNG, or WEBP images are allowed',
     }),
-    purpose: z.enum(['listing', 'portfolio']).default('listing'),
+    // 'its_card'/'tax_document' — item 37 (2026-09-08), optional KYC
+    // supporting-evidence photos (ITS card, GST/Udyam certificate).
+    purpose: z.enum(['listing', 'portfolio', 'its_card', 'tax_document']).default('listing'),
     // Which product this photo is for — the R2 key is organized by seller
     // and product slug (see lib/storage/r2.ts), and the route verifies she
     // actually owns this listing before ever generating a presigned URL.
@@ -523,6 +525,10 @@ export const sellerTaxComplianceSubmitSchema = z
       .trim()
       .toUpperCase()
       .max(20),
+    // Item 37 (2026-09-08) — optional supporting photo of the actual
+    // certificate. Never required: the number itself is still what gets
+    // verified, this just gives admin something to check it against.
+    taxIdDocumentUrl: z.string().trim().url().max(500).optional(),
   })
   .superRefine((data, ctx) => {
     const matches = data.taxIdType === 'gst' ? GST_REGEX.test(data.taxIdNumber) : UDYAM_REGEX.test(data.taxIdNumber);
@@ -538,6 +544,15 @@ export const sellerTaxComplianceSubmitSchema = z
     }
   });
 export type SellerTaxComplianceSubmitInput = z.infer<typeof sellerTaxComplianceSubmitSchema>;
+
+/** Item 37 (2026-09-08) — an optional supporting photo of her ITS card.
+ *  Uploading one never changes itsId/itsVerified themselves; it's purely
+ *  visual evidence attached alongside the number she already gave at
+ *  registration. */
+export const sellerItsCardSubmitSchema = z.object({
+  itsCardImageUrl: z.string().trim().url().max(500),
+});
+export type SellerItsCardSubmitInput = z.infer<typeof sellerItsCardSubmitSchema>;
 
 /** Admin's decision on a submitted GST/Udyam number. `reason` is required
  *  (and shown back to her) on reject — never a silent no — same "she's

@@ -1,12 +1,18 @@
 'use client';
 
-import { useEffect, useState, FormEvent } from 'react';
-import { ShieldCheck, ShieldAlert, KeyRound, Store, User as UserIcon, MapPin, Truck } from 'lucide-react';
+import { useEffect, useRef, useState, FormEvent } from 'react';
+import { ShieldCheck, ShieldAlert, KeyRound, Store, User as UserIcon, MapPin, Truck, ImagePlus } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { useSellerPortal } from '@/lib/seller-context';
 
 type Jamaat = { id: number; city: string; name: string };
+
+// Item 37 (2026-09-08) — same allow-list/size cap as the portfolio photo
+// uploader (app/seller/(portal)/portfolio/page.tsx), reused here for the
+// optional ITS card photo.
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 export default function SellerSettingsPage() {
   const { me, refresh } = useSellerPortal();
@@ -17,6 +23,67 @@ export default function SellerSettingsPage() {
   const [accountSaving, setAccountSaving] = useState(false);
   const [accountSaved, setAccountSaved] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
+
+  // ITS card photo — item 37 (2026-09-08), optional supporting evidence
+  // alongside the ITS ID number itself (see /api/sellers/its-card's own
+  // comment for why this never touches itsVerified).
+  const [itsCardImageUrl, setItsCardImageUrl] = useState(me.user.itsCardImageUrl ?? null);
+  const [itsCardUploading, setItsCardUploading] = useState(false);
+  const [itsCardError, setItsCardError] = useState<string | null>(null);
+  const itsCardInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleItsCardChange(file: File | undefined) {
+    if (!file) return;
+    setItsCardError(null);
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setItsCardError('Only JPEG, PNG, or WEBP images are allowed.');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setItsCardError('Photo must be under 8MB.');
+      return;
+    }
+    setItsCardUploading(true);
+    try {
+      const presignRes = await authFetch('/api/uploads/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType: file.type, purpose: 'its_card' }),
+      });
+      const presignData = await presignRes.json();
+      if (!presignRes.ok) {
+        setItsCardError(presignData.error ?? 'Could not start the upload.');
+        return;
+      }
+      const putRes = await fetch(presignData.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      if (!putRes.ok) {
+        setItsCardError('Upload to storage failed. Try again.');
+        return;
+      }
+      const saveRes = await authFetch('/api/sellers/its-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itsCardImageUrl: presignData.publicUrl }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) {
+        setItsCardError(saveData.error ?? 'Could not save this photo.');
+        return;
+      }
+      setItsCardImageUrl(saveData.itsCardImageUrl);
+      refresh();
+    } catch (err) {
+      console.error('ITS card upload failed:', err);
+      setItsCardError('Could not reach storage to upload this photo.');
+    } finally {
+      setItsCardUploading(false);
+      if (itsCardInputRef.current) itsCardInputRef.current.value = '';
+    }
+  }
 
   // Business fields
   const [businessName, setBusinessName] = useState(me.sellerProfile.businessName);
@@ -201,6 +268,45 @@ export default function SellerSettingsPage() {
               ? 'Verified by the Idara team.'
               : 'Reviewed by the Idara team before your products can go live.'}
           </p>
+        </div>
+      </div>
+
+      {/* Item 37 (2026-09-08) — an optional photo of her ITS card,
+       *  purely supporting evidence. Never required, never changes
+       *  itsVerified on its own. */}
+      <div className="flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink-soft/5">
+        <p className="font-body text-sm font-semibold text-ink">ITS card photo (optional)</p>
+        <p className="font-body text-xs text-ink-soft">
+          Not required — your ITS ID number above is still what gets verified. Adding a photo just gives the Idara
+          team something to check it against.
+        </p>
+        <div className="flex items-center gap-3">
+          {itsCardImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={itsCardImageUrl} alt="ITS card" className="h-16 w-24 rounded-lg object-cover ring-1 ring-ink-soft/10" />
+          ) : (
+            <span className="flex h-16 w-24 items-center justify-center rounded-lg bg-ivory-deep">
+              <ImagePlus className="h-5 w-5 text-ink-soft" strokeWidth={1.75} />
+            </span>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <input
+              ref={itsCardInputRef}
+              type="file"
+              accept={ALLOWED_IMAGE_TYPES.join(',')}
+              className="hidden"
+              onChange={(e) => handleItsCardChange(e.target.files?.[0])}
+            />
+            <button
+              type="button"
+              onClick={() => itsCardInputRef.current?.click()}
+              disabled={itsCardUploading}
+              className={buttonStyles('secondary', 'sm', 'w-fit')}
+            >
+              {itsCardUploading ? 'Uploading…' : itsCardImageUrl ? 'Replace photo' : 'Upload photo'}
+            </button>
+            {itsCardError && <p className="font-body text-xs text-red-600">{itsCardError}</p>}
+          </div>
         </div>
       </div>
 
