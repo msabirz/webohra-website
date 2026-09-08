@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { listings, users } from '@/db/schema';
+import { listings, users, sellerProfiles } from '@/db/schema';
 import { bulkListingStatusUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
 
@@ -37,6 +37,22 @@ export async function PATCH(request: Request) {
     if (!seller?.itsVerified) {
       return NextResponse.json(
         { error: 'Your ITS ID needs to be verified by Admin before you can publish products' },
+        { status: 403 },
+      );
+    }
+
+    // GST/KYC compliance (item 33, 2026-09-08) — same second gate as the
+    // single-listing publish route.
+    const [sellerProfile] = await db
+      .select({ taxIdVerified: sellerProfiles.taxIdVerified })
+      .from(sellerProfiles)
+      .where(eq(sellerProfiles.userId, sellerId));
+    if (!sellerProfile?.taxIdVerified) {
+      return NextResponse.json(
+        {
+          error:
+            'Submit your GST number or Udyam/MSME enrollment ID for verification before you can publish products — see Tax & Business Verification in your seller portal.',
+        },
         { status: 403 },
       );
     }

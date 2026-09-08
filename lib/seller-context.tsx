@@ -31,6 +31,13 @@ export type SellerMe = {
     pickupOtherAddressCity: string | null;
     pickupOtherAddressState: string | null;
     pickupOtherAddressPincode: string | null;
+    // GST/KYC compliance (item 33, 2026-09-08) — see
+    // /seller/tax-compliance and its own submit route for the full story.
+    taxIdType: 'gst' | 'udyam' | null;
+    taxIdNumber: string | null;
+    taxIdSubmittedAt: string | null;
+    taxIdVerified: boolean;
+    taxIdRejectedReason: string | null;
   };
   sellerShipCity: string | null;
 };

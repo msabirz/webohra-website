@@ -6,6 +6,9 @@ import Link from 'next/link';
 import {
   ShieldCheck,
   ShieldAlert,
+  FileCheck2,
+  FileWarning,
+  Clock,
   Store,
   Package,
   Wallet,
@@ -43,6 +46,13 @@ type SellerDetail = {
   businessName: string;
   jamaatCity: string | null;
   jamaatName: string | null;
+  // GST/KYC compliance (item 33, 2026-09-08).
+  taxIdType: 'gst' | 'udyam' | null;
+  taxIdNumber: string | null;
+  taxIdSubmittedAt: string | null;
+  taxIdVerified: boolean;
+  taxIdVerifiedAt: string | null;
+  taxIdRejectedReason: string | null;
 };
 
 type SellerListing = {
@@ -175,6 +185,11 @@ export default function AdminSellerDetailPage() {
   const [markingManual, setMarkingManual] = useState(false);
   const [manualNote, setManualNote] = useState('');
   const [notFound, setNotFound] = useState(false);
+  // GST/KYC compliance (item 33, 2026-09-08).
+  const [taxBusy, setTaxBusy] = useState(false);
+  const [rejectingTax, setRejectingTax] = useState(false);
+  const [taxRejectReason, setTaxRejectReason] = useState('');
+  const [taxError, setTaxError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await authFetch(`/api/admin/sellers/${params.id}`);
@@ -213,6 +228,33 @@ export default function AdminSellerDetailPage() {
       await load();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function reviewTaxCompliance(action: 'approve' | 'reject') {
+    if (!seller) return;
+    if (action === 'reject' && taxRejectReason.trim().length < 5) {
+      setTaxError('Explain what needs fixing (at least 5 characters).');
+      return;
+    }
+    setTaxBusy(true);
+    setTaxError(null);
+    try {
+      const res = await authFetch(`/api/admin/sellers/${seller.userId}/tax-compliance`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(action === 'approve' ? { action } : { action, reason: taxRejectReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTaxError(data.error ?? 'Could not save.');
+        return;
+      }
+      setRejectingTax(false);
+      setTaxRejectReason('');
+      await load();
+    } finally {
+      setTaxBusy(false);
     }
   }
 
@@ -356,6 +398,27 @@ export default function AdminSellerDetailPage() {
               {busy ? 'Saving…' : seller.itsVerified ? 'Revoke ITS verification' : 'Approve ITS verification'}
             </button>
           )}
+
+          <TaxComplianceCard
+            seller={seller}
+            canVerify={canVerify}
+            busy={taxBusy}
+            error={taxError}
+            rejecting={rejectingTax}
+            reason={taxRejectReason}
+            onReasonChange={setTaxRejectReason}
+            onStartReject={() => {
+              setRejectingTax(true);
+              setTaxError(null);
+            }}
+            onCancelReject={() => {
+              setRejectingTax(false);
+              setTaxRejectReason('');
+              setTaxError(null);
+            }}
+            onApprove={() => reviewTaxCompliance('approve')}
+            onReject={() => reviewTaxCompliance('reject')}
+          />
 
           <div className="flex flex-col gap-3">
             <h2 className="font-heading text-sm font-semibold text-ink">Products</h2>
@@ -663,6 +726,138 @@ export default function AdminSellerDetailPage() {
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** GST/KYC compliance (item 33, 2026-09-08) — the Profile tab's second
+ *  verification card, alongside ITS above. Deliberately its own component
+ *  (not inlined) since it carries real conditional state (approve vs.
+ *  reject-with-reason) the rest of this page's inline JSX doesn't need. */
+function TaxComplianceCard({
+  seller,
+  canVerify,
+  busy,
+  error,
+  rejecting,
+  reason,
+  onReasonChange,
+  onStartReject,
+  onCancelReject,
+  onApprove,
+  onReject,
+}: {
+  seller: SellerDetail;
+  canVerify: boolean;
+  busy: boolean;
+  error: string | null;
+  rejecting: boolean;
+  reason: string;
+  onReasonChange: (v: string) => void;
+  onStartReject: () => void;
+  onCancelReject: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const label = seller.taxIdType === 'gst' ? 'GSTIN' : seller.taxIdType === 'udyam' ? 'Udyam ID' : null;
+
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink-soft/5">
+      <h2 className="flex items-center gap-2 font-heading text-sm font-semibold text-ink">
+        <FileCheck2 className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+        Tax / GST compliance
+      </h2>
+
+      {!seller.taxIdType ? (
+        <p className="font-body text-sm text-ink-soft">Not submitted yet — she hasn&apos;t added a GST or Udyam number.</p>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={label ?? 'Number'} value={seller.taxIdNumber ?? '—'} />
+            <Field
+              label="Submitted"
+              value={seller.taxIdSubmittedAt ? new Date(seller.taxIdSubmittedAt).toLocaleDateString('en-IN') : '—'}
+            />
+          </div>
+
+          {seller.taxIdVerified ? (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-teal/10 px-3 py-1.5 font-body text-xs font-semibold text-teal-deep">
+              <ShieldCheck className="h-3.5 w-3.5" strokeWidth={2} />
+              Verified {seller.taxIdVerifiedAt ? `on ${new Date(seller.taxIdVerifiedAt).toLocaleDateString('en-IN')}` : ''}
+            </span>
+          ) : seller.taxIdRejectedReason ? (
+            <div className="flex items-start gap-2 rounded-xl bg-red-50 p-3 ring-1 ring-red-200">
+              <FileWarning className="mt-0.5 h-4 w-4 shrink-0 text-red-600" strokeWidth={2} />
+              <p className="font-body text-xs text-ink">Rejected: {seller.taxIdRejectedReason}</p>
+            </div>
+          ) : (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-gold/20 px-3 py-1.5 font-body text-xs font-semibold text-ink">
+              <Clock className="h-3.5 w-3.5" strokeWidth={2} />
+              Pending review
+            </span>
+          )}
+
+          {canVerify && !seller.taxIdVerified && (
+            <div className="flex flex-col gap-2">
+              {rejecting ? (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    value={reason}
+                    onChange={(e) => onReasonChange(e.target.value)}
+                    placeholder="What needs fixing? e.g. this GSTIN doesn't resolve on the GST portal"
+                    rows={2}
+                    className="rounded-xl border border-ink-soft/20 px-3.5 py-2.5 font-body text-sm text-ink transition focus:border-navy focus:outline-none focus:ring-2 focus:ring-navy/15"
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={onReject} disabled={busy} className={buttonStyles('primary', 'sm', 'w-fit')}>
+                      {busy ? 'Saving…' : 'Confirm reject'}
+                    </button>
+                    <button onClick={onCancelReject} disabled={busy} className={buttonStyles('ghost', 'sm', 'w-fit')}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button onClick={onApprove} disabled={busy} className={buttonStyles('primary', 'sm', 'w-fit')}>
+                    {busy ? 'Saving…' : 'Approve'}
+                  </button>
+                  <button onClick={onStartReject} disabled={busy} className={buttonStyles('secondary', 'sm', 'w-fit')}>
+                    Reject
+                  </button>
+                </div>
+              )}
+              {error && <p className="font-body text-xs text-red-600">{error}</p>}
+            </div>
+          )}
+
+          {canVerify && seller.taxIdVerified && (
+            <button onClick={onStartReject} disabled={busy} className={buttonStyles('ghost', 'sm', 'w-fit')}>
+              Revoke verification
+            </button>
+          )}
+          {canVerify && seller.taxIdVerified && rejecting && (
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={reason}
+                onChange={(e) => onReasonChange(e.target.value)}
+                placeholder="Why is this being revoked?"
+                rows={2}
+                className="rounded-xl border border-ink-soft/20 px-3.5 py-2.5 font-body text-sm text-ink transition focus:border-navy focus:outline-none focus:ring-2 focus:ring-navy/15"
+              />
+              <div className="flex gap-2">
+                <button onClick={onReject} disabled={busy} className={buttonStyles('primary', 'sm', 'w-fit')}>
+                  {busy ? 'Saving…' : 'Confirm revoke'}
+                </button>
+                <button onClick={onCancelReject} disabled={busy} className={buttonStyles('ghost', 'sm', 'w-fit')}>
+                  Cancel
+                </button>
+              </div>
+              {error && <p className="font-body text-xs text-red-600">{error}</p>}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

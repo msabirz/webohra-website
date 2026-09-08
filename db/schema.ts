@@ -533,6 +533,16 @@ export const jamaats = pgTable(
  * Seller-specific profile data, separate from `users` per SRS §4
  * ("seller_profiles — linked to verified user"). One row per seller.
  */
+/** GST/KYC compliance (item 33, 2026-09-08) — a stakeholder requirement:
+ *  every seller must submit a real government tax-identity reference
+ *  before she can go 'active', same shape every standard marketplace
+ *  (Amazon/Flipkart/Meesho) uses. 'gst' for a seller who already has GST
+ *  registration; 'udyam' for one who doesn't (India's MSME/Udyam
+ *  enrollment scheme is a genuinely separate government scheme from GST,
+ *  not a lesser substitute) — either is accepted, see
+ *  /seller/tax-compliance's own copy for why. */
+export const taxIdTypeEnum = pgEnum('tax_id_type', ['gst', 'udyam']);
+
 export const sellerProfiles = pgTable('seller_profiles', {
   id: serial('id').primaryKey(),
   userId: integer('user_id')
@@ -572,6 +582,26 @@ export const sellerProfiles = pgTable('seller_profiles', {
   pickupOtherAddressCity: varchar('pickup_other_address_city', { length: 100 }),
   pickupOtherAddressState: varchar('pickup_other_address_state', { length: 100 }),
   pickupOtherAddressPincode: varchar('pickup_other_address_pincode', { length: 10 }),
+  // GST/KYC compliance (item 33, 2026-09-08) — see taxIdTypeEnum's own
+  // comment for the gst/udyam distinction. All nullable: a seller can
+  // register and build draft listings with none of this filled in — only
+  // publishing (going 'active') is gated on it, at
+  // PATCH /api/listings/[idOrSlug] and /api/listings/bulk-status (mirrors
+  // the existing users.itsVerified publish gate exactly, just a second,
+  // independent check). taxIdVerified starts false on every fresh
+  // submission/resubmission, never carried over from a previous
+  // (possibly-wrong) number — an admin must re-approve every time the
+  // number itself changes. taxIdRejectedReason is admin's plain-language
+  // reason when she rejects a submission (e.g. "this GSTIN doesn't
+  // resolve on the GST portal") — cleared the moment she resubmits or is
+  // approved, so it only ever reflects the CURRENT submission's outcome.
+  taxIdType: taxIdTypeEnum('tax_id_type'),
+  taxIdNumber: varchar('tax_id_number', { length: 20 }),
+  taxIdSubmittedAt: timestamp('tax_id_submitted_at', { withTimezone: true }),
+  taxIdVerified: boolean('tax_id_verified').notNull().default(false),
+  taxIdVerifiedAt: timestamp('tax_id_verified_at', { withTimezone: true }),
+  taxIdVerifiedBy: integer('tax_id_verified_by').references(() => users.id, { onDelete: 'set null' }),
+  taxIdRejectedReason: varchar('tax_id_rejected_reason', { length: 300 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
