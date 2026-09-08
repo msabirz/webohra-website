@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { webohraOffices } from '@/db/schema';
 import { adminWebohraOfficeUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest, isAdmin } from '@/lib/auth';
+import { emptyUpdateGuard } from '@/lib/api-guards';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionFromRequest(request);
@@ -26,6 +27,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   // '' from the update schema's optional-or-empty-string fields means
   // "clear it" — translate to null rather than storing a literal blank.
+  const emptyGuard = emptyUpdateGuard(parsed.data);
+  if (emptyGuard) return emptyGuard;
+
   const { addressLine2, contactPhone, ...rest } = parsed.data;
   const [updated] = await db
     .update(webohraOffices)

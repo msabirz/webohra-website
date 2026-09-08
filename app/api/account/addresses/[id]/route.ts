@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { buyerAddresses } from '@/db/schema';
 import { buyerAddressUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest } from '@/lib/auth';
+import { emptyUpdateGuard } from '@/lib/api-guards';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionFromRequest(request);
@@ -27,6 +28,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       { status: 400 },
     );
   }
+
+  const emptyGuard = emptyUpdateGuard(parsed.data);
+  if (emptyGuard) return emptyGuard;
 
   if (parsed.data.isDefault === true) {
     await db

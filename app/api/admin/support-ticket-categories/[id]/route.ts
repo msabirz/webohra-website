@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { supportTicketCategories } from '@/db/schema';
 import { adminSupportTicketCategoryUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest, isAdmin } from '@/lib/auth';
+import { emptyUpdateGuard } from '@/lib/api-guards';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionFromRequest(request);
@@ -23,6 +24,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       { status: 400 },
     );
   }
+
+  const emptyGuard = emptyUpdateGuard(parsed.data);
+  if (emptyGuard) return emptyGuard;
 
   const [updated] = await db
     .update(supportTicketCategories)

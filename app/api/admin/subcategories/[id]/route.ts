@@ -4,6 +4,7 @@ import { db } from '@/db/index';
 import { subcategories } from '@/db/schema';
 import { adminSubcategoryUpdateSchema } from '@/lib/validation';
 import { getSessionFromRequest, isAdmin } from '@/lib/auth';
+import { emptyUpdateGuard } from '@/lib/api-guards';
 
 /** PATCH /api/admin/subcategories/[id] — rename, change listing type, or
  *  deactivate. Changing listingType only affects new listings going
@@ -29,6 +30,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       { status: 400 },
     );
   }
+
+  const emptyGuard = emptyUpdateGuard(parsed.data);
+  if (emptyGuard) return emptyGuard;
 
   const [updated] = await db
     .update(subcategories)
