@@ -8,6 +8,7 @@ import { resolvePickupLocation } from '@/lib/pickup';
 import { generateOrderNumber } from '@/lib/ids';
 import { chargePickupAndPayCheckoutFee } from '@/lib/settlement';
 import { isBlockedByLowWalletBalance } from '@/lib/subscriptions';
+import { reserveStockForOne, releaseStockForItems } from '@/lib/stock';
 
 function resolveListingCondition(idOrSlug: string) {
   const asNumber = Number(idOrSlug);
@@ -127,6 +128,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ idO
     unitPrice = listing.price;
   }
 
+  // Item 32 (2026-09-08) — real stock enforcement, same reasoning as
+  // POST /api/orders (see lib/stock.ts): reserved at booking time, not
+  // pickup-confirmation time, so two buyers can never both book the last
+  // unit.
+  const stockReserved = await reserveStockForOne({ listingId: listing.id, variantId, quantity: 1 });
+  if (!stockReserved) {
+    return NextResponse.json({ error: 'This listing doesn’t have enough stock left' }, { status: 409 });
+  }
+
   const session = await getSessionFromRequest(request);
 
   let order;
@@ -158,6 +168,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ idO
     }
   }
   if (!order) {
+    // Item 32 (2026-09-08) — release the stock already reserved above,
+    // same reasoning as POST /api/orders' own equivalent guard.
+    await releaseStockForItems([{ listingId: listing.id, variantId, quantity: 1 }]);
     return NextResponse.json({ error: 'Could not place this booking — please try again' }, { status: 500 });
   }
 

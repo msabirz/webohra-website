@@ -3,6 +3,7 @@ import { db } from '@/db/index';
 import { orders, orderItems, shipments } from '@/db/schema';
 import { canCancelItem } from '@/lib/order-item-status';
 import { refundOrder, type RefundOrderResult } from '@/lib/refunds';
+import { releaseStockForItems } from '@/lib/stock';
 
 export type CancelItemsResult =
   | { ok: true; cancelledItemIds: number[]; refundAmount: number; refund: RefundOrderResult | null }
@@ -68,6 +69,14 @@ export async function cancelOrderItems(
     .update(orderItems)
     .set({ status: 'cancelled', statusUpdatedAt: new Date(), cancelledReason: reason })
     .where(inArray(orderItems.id, itemIds));
+
+  // Item 32 (2026-09-08) — only the items actually being cancelled here,
+  // never the whole order (this function is genuinely item-level — an
+  // order-wide cancel is just every item id passed in at once, handled
+  // the same way).
+  await releaseStockForItems(
+    selected.map((i) => ({ listingId: i.listingId, variantId: i.variantId, quantity: i.quantity })),
+  );
 
   // Fold in a seller's shipment charge only when this cancellation empties
   // out her whole share of the order.

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/index';
-import { orders } from '@/db/schema';
+import { orders, orderItems } from '@/db/schema';
+import { releaseStockForItems } from '@/lib/stock';
 
 /**
  * POST /api/orders/[orderNumber]/cancel
@@ -48,6 +49,17 @@ export async function POST(
     .set({ status: 'cancelled' })
     .where(eq(orders.id, order.id))
     .returning();
+
+  // Item 32 (2026-09-08) — real cancellation is the actual give-up point
+  // that frees reserved stock back up (see lib/stock.ts's own comment for
+  // why a merely-failed, still-retryable payment deliberately does NOT
+  // release it). Every item on the order, not just the ones that were
+  // actually going to be delivered — this route cancels the whole order.
+  const items = await db
+    .select({ listingId: orderItems.listingId, variantId: orderItems.variantId, quantity: orderItems.quantity })
+    .from(orderItems)
+    .where(eq(orderItems.orderId, order.id));
+  await releaseStockForItems(items);
 
   return NextResponse.json({ order: { orderNumber: updated.orderNumber, status: updated.status } });
 }

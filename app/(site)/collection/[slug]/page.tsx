@@ -58,6 +58,11 @@ type ListingDetail = {
   // Low-wallet-balance availability (item 29, 2026-09-07) — see this
   // field's own comment in components/listing-card.tsx.
   unavailableLowBalance?: boolean;
+  // Item 32 (2026-09-08) — real stock enforcement, simple-listing case
+  // (a variant-based listing's stock lives per-variant instead, already
+  // handled by ProductVariantPicker). null means "not tracked," never
+  // treated as zero — see listings.stockQuantity's own schema comment.
+  stockQuantity?: number | null;
   // Fulfillment & Subscriptions redesign, Phase 6 — only ever populated for
   // a service listing (see ServiceDetailView, the only consumer).
   portfolio: PortfolioItem[];
@@ -136,6 +141,10 @@ export default function ListingDetailPage() {
   const isService = listing.listingType !== 'physical_product';
   const isPreview = listing.status !== 'active';
   const hasVariants = listing.price === null;
+  // Item 32 (2026-09-08) — only ever true for a simple listing with a
+  // genuinely declared zero; a variant-based listing's real stock is
+  // resolved per-variant by ProductVariantPicker instead.
+  const isOutOfStock = !hasVariants && listing.stockQuantity === 0;
 
   if (isService) {
     return (
@@ -234,7 +243,14 @@ export default function ListingDetailPage() {
             </div>
           )}
 
-          {listing.unavailableLowBalance ? (
+          {isOutOfStock ? (
+            // Item 32 (2026-09-08) — real stock enforcement. The gate is
+            // server-side too (POST /api/orders refuses a stock-0 item
+            // regardless of what renders here).
+            <p className="rounded-xl bg-ivory-deep/60 px-4 py-3 font-body text-sm font-medium text-ink-soft">
+              Out of stock — check back soon.
+            </p>
+          ) : listing.unavailableLowBalance ? (
             // Low-wallet-balance availability (item 29, 2026-09-07) — no
             // "seller's wallet is low" language shown to a buyer, just
             // that it's not purchasable right now. The real gate is
