@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, FormEvent } from 'react';
-import { Layers, Plus, Archive, ArchiveRestore, X, ShieldAlert, Lock, Tag, MapPin } from 'lucide-react';
+import { Layers, Plus, Archive, ArchiveRestore, X, ShieldAlert, Lock, Tag, MapPin, Clock } from 'lucide-react';
 import { authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { Skeleton } from '@/components/skeleton';
@@ -50,6 +50,10 @@ type Settings = {
   pickupAndPayCheckoutFeePercent: string;
   // Global office-pickup kill switch (item 26, 2026-09-07).
   pickupOfficeFeatureEnabled: boolean;
+  // Real on/off switch for AUTOMATIC weekly settlement (item 34,
+  // 2026-09-08) — see its own comment on subscription_settings in
+  // db/schema.ts.
+  autoSettlementEnabled: boolean;
 };
 
 const CONTACT_MODE_LABEL: Record<ContactMode, string> = {
@@ -274,6 +278,8 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
   const [pickupOfficeFeatureEnabled, setPickupOfficeFeatureEnabled] = useState(
     settings.pickupOfficeFeatureEnabled,
   );
+  const [autoSettlementEnabled, setAutoSettlementEnabled] = useState(settings.autoSettlementEnabled);
+  const [autoSettlementSaving, setAutoSettlementSaving] = useState(false);
   const [pickupOfficeSaving, setPickupOfficeSaving] = useState(false);
   const [couponsSaving, setCouponsSaving] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -376,6 +382,29 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
       }
     } finally {
       setPickupOfficeSaving(false);
+    }
+  }
+
+  // Real on/off switch for AUTOMATIC weekly settlement (item 34,
+  // 2026-09-08) — same "its own instant action" reasoning as
+  // togglePickupOfficeFeature above. Never gates a real admin's own
+  // manual "Run settlement now" — only whether Vercel Cron is allowed to
+  // run the batch unattended.
+  async function toggleAutoSettlement() {
+    setAutoSettlementSaving(true);
+    try {
+      const next = !autoSettlementEnabled;
+      const res = await authFetch('/api/admin/subscription-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoSettlementEnabled: next }),
+      });
+      if (res.ok) {
+        setAutoSettlementEnabled(next);
+        onSaved();
+      }
+    } finally {
+      setAutoSettlementSaving(false);
     }
   }
 
@@ -618,6 +647,33 @@ function SettingsCard({ settings, plans, onSaved }: { settings: Settings; plans:
             : pickupOfficeFeatureEnabled
               ? 'Disable office pickup everywhere'
               : 'Re-enable office pickup'}
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-2 rounded-xl border border-navy/20 bg-navy/5 p-4">
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-ink-soft" strokeWidth={2} />
+          <p className="font-heading text-sm font-semibold text-ink">Automatic weekly settlement</p>
+          <span
+            className={`rounded-full px-2.5 py-0.5 font-body text-xs font-semibold ${
+              autoSettlementEnabled ? 'bg-teal/15 text-teal-deep' : 'bg-ink-soft/10 text-ink-soft'
+            }`}
+          >
+            {autoSettlementEnabled ? 'RUNS EVERY SATURDAY' : 'MANUAL ONLY'}
+          </span>
+        </div>
+        <p className="font-body text-xs text-ink-soft">
+          Off by default — settlement only runs when you click &quot;Run settlement now&quot; on the Payouts page.
+          Turning this on lets Vercel&apos;s scheduled Saturday cron run the same batch automatically, unattended.
+          Either way, it&apos;s always safe to run — a run only ever touches delivered, unsettled items past the
+          buffer above, so running it twice in a row finds nothing new the second time.
+        </p>
+        <button onClick={toggleAutoSettlement} disabled={autoSettlementSaving} className={buttonStyles('secondary', 'sm', 'w-fit')}>
+          {autoSettlementSaving
+            ? 'Saving…'
+            : autoSettlementEnabled
+              ? 'Turn off automatic settlement'
+              : 'Turn on automatic settlement'}
         </button>
       </div>
     </div>

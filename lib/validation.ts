@@ -973,6 +973,12 @@ export const adminSubscriptionSettingsUpdateSchema = z.object({
   // the existing per-plan/per-office toggles, see its own comment on
   // subscription_settings in db/schema.ts.
   pickupOfficeFeatureEnabled: z.boolean().optional(),
+  // Item 34 (2026-09-08) — the real on/off switch for AUTOMATIC weekly
+  // settlement, see its own comment on subscription_settings in
+  // db/schema.ts. Plain isAdmin, not super_admin — this doesn't move
+  // money by itself, it only decides whether the ALREADY-admin-gated
+  // weekly batch is allowed to run unattended on a schedule.
+  autoSettlementEnabled: z.boolean().optional(),
 });
 export type AdminSubscriptionSettingsUpdateInput = z.infer<typeof adminSubscriptionSettingsUpdateSchema>;
 

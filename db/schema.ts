@@ -1597,6 +1597,20 @@ export const subscriptionSettings = pgTable('subscription_settings', {
   // existing per-plan + per-office checks exactly as before. See
   // app/api/sellers/pickup-eligibility/route.ts.
   pickupOfficeFeatureEnabled: boolean('pickup_office_feature_enabled').notNull().default(true),
+  // Item 34 (2026-09-08) — the real on/off switch for AUTOMATIC weekly
+  // settlement, separate from the GET/POST cron-routing fix itself.
+  // Fixing that bug alone would make Vercel Cron start actually firing
+  // every Saturday the moment CRON_SECRET exists as an env var — an
+  // infra-level flip the user has no visibility into from the admin
+  // panel. This is the real, admin-visible gate: defaults to `false`
+  // (settlement stays manual, the user's own explicit call, 2026-09-08)
+  // so shipping the cron-routing fix never silently changes behavior.
+  // Checked in GET/POST /api/admin/payouts/settle ONLY for a
+  // cron-authenticated call (CRON_SECRET bearer) — a real admin's own
+  // "Run settlement now" click is never gated by this, same as
+  // pickupOfficeFeatureEnabled above never blocks a seller's own
+  // explicit choice, only the automatic path.
+  autoSettlementEnabled: boolean('auto_settlement_enabled').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
