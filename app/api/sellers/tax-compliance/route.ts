@@ -41,10 +41,9 @@ export async function POST(request: Request) {
     .set({
       taxIdType: parsed.data.taxIdType,
       taxIdNumber: parsed.data.taxIdNumber,
-      // Item 37 (2026-09-08) — optional, cleared on every fresh
-      // submission just like taxIdRejectedReason below, so a stale photo
-      // never sits attached to a corrected number.
-      taxIdDocumentUrl: parsed.data.taxIdDocumentUrl ?? null,
+      // Item 38 (2026-09-09) made this compulsory (see the schema's own
+      // comment) — always a real URL by the time it reaches here.
+      taxIdDocumentUrl: parsed.data.taxIdDocumentUrl,
       taxIdSubmittedAt: new Date(),
       taxIdVerified: false,
       taxIdVerifiedAt: null,

@@ -525,10 +525,12 @@ export const sellerTaxComplianceSubmitSchema = z
       .trim()
       .toUpperCase()
       .max(20),
-    // Item 37 (2026-09-08) — optional supporting photo of the actual
-    // certificate. Never required: the number itself is still what gets
-    // verified, this just gives admin something to check it against.
-    taxIdDocumentUrl: z.string().trim().url().max(500).optional(),
+    // Item 37 (2026-09-08) added this as optional supporting evidence;
+    // item 38 (2026-09-09) made it compulsory — a seller can no longer
+    // submit a GST/Udyam number for review without a photo of the actual
+    // certificate attached, and can't publish without one either (see
+    // lib/seller-readiness.ts).
+    taxIdDocumentUrl: z.string().trim().url().max(500),
   })
   .superRefine((data, ctx) => {
     const matches = data.taxIdType === 'gst' ? GST_REGEX.test(data.taxIdNumber) : UDYAM_REGEX.test(data.taxIdNumber);

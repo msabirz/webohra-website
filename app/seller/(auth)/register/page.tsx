@@ -1,14 +1,19 @@
 'use client';
 
-import { Suspense, useEffect, useState, FormEvent } from 'react';
+import { Suspense, useEffect, useRef, useState, FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Store, Mail, Lock, User as UserIcon, Hash } from 'lucide-react';
-import { setAuthToken } from '@/lib/session-client';
+import { Store, Mail, Lock, User as UserIcon, Hash, ImagePlus, ShieldCheck } from 'lucide-react';
+import { setAuthToken, authFetch } from '@/lib/session-client';
 import { buttonStyles, inputStyles } from '@/lib/button-styles';
 import { PhoneInput } from '@/components/phone-input';
 
-type Step = 'form' | 'verify';
+// Item 38 (2026-09-09) — same allow-list/size cap as every other seller
+// photo uploader in this app.
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+type Step = 'form' | 'verify' | 'documents';
 type Jamaat = { id: number; city: string; name: string };
 
 export default function SellerRegisterPage() {
@@ -42,6 +47,16 @@ function SellerRegisterForm() {
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  // Item 38 (2026-09-09) — the ITS card photo, asked for right here as the
+  // final registration step (rather than only in Settings, easy to miss)
+  // since publishing now requires it. "Skip for now" stays available —
+  // she can still register, sign in, and build draft listings with it
+  // undone; only publishing is blocked, exactly like the GST/Udyam step.
+  const [itsCardImageUrl, setItsCardImageUrl] = useState<string | null>(null);
+  const [itsCardUploading, setItsCardUploading] = useState(false);
+  const [itsCardError, setItsCardError] = useState<string | null>(null);
+  const itsCardInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (plansDelhivery && jamaats.length === 0) {
@@ -115,11 +130,63 @@ function SellerRegisterForm() {
         return;
       }
       setAuthToken(data.token);
-      router.push(redirectTo);
+      setStep('documents');
     } catch {
       setError('Could not reach the server. Check your connection and try again.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleItsCardChange(file: File | undefined) {
+    if (!file) return;
+    setItsCardError(null);
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setItsCardError('Only JPEG, PNG, or WEBP images are allowed.');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setItsCardError('Photo must be under 8MB.');
+      return;
+    }
+    setItsCardUploading(true);
+    try {
+      const presignRes = await authFetch('/api/uploads/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType: file.type, purpose: 'its_card' }),
+      });
+      const presignData = await presignRes.json();
+      if (!presignRes.ok) {
+        setItsCardError(presignData.error ?? 'Could not start the upload.');
+        return;
+      }
+      const putRes = await fetch(presignData.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      if (!putRes.ok) {
+        setItsCardError('Upload to storage failed. Try again.');
+        return;
+      }
+      const saveRes = await authFetch('/api/sellers/its-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itsCardImageUrl: presignData.publicUrl }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) {
+        setItsCardError(saveData.error ?? 'Could not save this photo.');
+        return;
+      }
+      setItsCardImageUrl(saveData.itsCardImageUrl);
+    } catch (err) {
+      console.error('ITS card upload failed:', err);
+      setItsCardError('Could not reach storage to upload this photo.');
+    } finally {
+      setItsCardUploading(false);
+      if (itsCardInputRef.current) itsCardInputRef.current.value = '';
     }
   }
 
@@ -131,12 +198,14 @@ function SellerRegisterForm() {
         </span>
         <div>
           <h1 className="font-heading text-2xl font-semibold text-ink">
-            {step === 'form' ? 'Start selling on WE Bohra' : 'Verify your phone'}
+            {step === 'form' ? 'Start selling on WE Bohra' : step === 'verify' ? 'Verify your phone' : 'One last step'}
           </h1>
           <p className="mt-1 font-body text-sm text-ink-soft">
             {step === 'form'
               ? 'Tell us about you and your business.'
-              : `We sent a code to ${phone}.`}
+              : step === 'verify'
+                ? `We sent a code to ${phone}.`
+                : "You're registered — add your ITS card photo now, or do it later from Settings."}
           </p>
         </div>
       </div>
@@ -302,7 +371,7 @@ function SellerRegisterForm() {
               {submitting ? 'Creating account…' : 'Create seller account'}
             </button>
           </form>
-        ) : (
+        ) : step === 'verify' ? (
           <form onSubmit={handleVerify} className="flex flex-col gap-4" noValidate>
             {devCode && (
               <div className="rounded-xl border border-gold/30 bg-gold-soft/20 px-4 py-3 font-body text-sm text-ink">
@@ -334,6 +403,56 @@ function SellerRegisterForm() {
               Back
             </button>
           </form>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3 rounded-xl bg-teal/10 px-4 py-3 ring-1 ring-teal/20">
+              <ShieldCheck className="h-5 w-5 shrink-0 text-teal-deep" strokeWidth={1.75} />
+              <p className="font-body text-xs text-ink-soft">
+                Your account is ready. A clear photo of your ITS card helps the Idara team verify you
+                faster — you can also add it anytime from Settings.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {itsCardImageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={itsCardImageUrl}
+                  alt="ITS card"
+                  className="h-20 w-28 rounded-lg object-cover ring-1 ring-ink-soft/10"
+                />
+              ) : (
+                <span className="flex h-20 w-28 items-center justify-center rounded-lg bg-ivory-deep">
+                  <ImagePlus className="h-5 w-5 text-ink-soft" strokeWidth={1.75} />
+                </span>
+              )}
+              <div className="flex flex-col gap-1.5">
+                <input
+                  ref={itsCardInputRef}
+                  type="file"
+                  accept={ALLOWED_IMAGE_TYPES.join(',')}
+                  className="hidden"
+                  onChange={(e) => handleItsCardChange(e.target.files?.[0])}
+                />
+                <button
+                  type="button"
+                  onClick={() => itsCardInputRef.current?.click()}
+                  disabled={itsCardUploading}
+                  className={buttonStyles('secondary', 'sm', 'w-fit')}
+                >
+                  {itsCardUploading ? 'Uploading…' : itsCardImageUrl ? 'Replace photo' : 'Upload photo'}
+                </button>
+                {itsCardError && <p className="font-body text-xs text-red-600">{itsCardError}</p>}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push(redirectTo)}
+              disabled={itsCardUploading}
+              className={buttonStyles('primary', 'md')}
+            >
+              {itsCardImageUrl ? 'Continue to my portal' : 'Skip for now — continue to my portal'}
+            </button>
+          </div>
         )}
       </div>
 

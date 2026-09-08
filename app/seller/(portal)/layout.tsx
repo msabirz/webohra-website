@@ -23,8 +23,10 @@ import {
 } from 'lucide-react';
 import { authFetch, clearAuthToken, getAuthToken } from '@/lib/session-client';
 import { SellerPortalContext, type SellerMe } from '@/lib/seller-context';
+import type { SellerReadiness } from '@/lib/seller-readiness';
 import { NotificationBell } from '@/components/seller/notification-bell';
 import { SellerHeaderBadges } from '@/components/seller/header-badges';
+import { VerificationBanner } from '@/components/seller/verification-banner';
 import { PortalShellSkeleton } from '@/components/skeleton';
 import { PortalNav, type NavEntry } from '@/components/portal-nav';
 import { ToastProvider } from '@/components/toast-context';
@@ -73,6 +75,7 @@ export default function SellerPortalLayout({ children }: { children: React.React
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [unreadEnquiries, setUnreadEnquiries] = useState(0);
   const [walletBalance, setWalletBalance] = useState<string | null>(null);
+  const [readiness, setReadiness] = useState<SellerReadiness | null>(null);
 
   const refreshUnread = useCallback(() => {
     authFetch('/api/sellers/enquiries/unread-count')
@@ -95,6 +98,19 @@ export default function SellerPortalLayout({ children }: { children: React.React
       .catch(() => {});
   }, []);
 
+  // Item 38 (2026-09-09) — refreshed alongside `me` in load() below (same
+  // moment every action that could change it — its-card upload, tax
+  // submission, adding a payout method — already calls refresh()), so the
+  // portal-wide banner never shows a stale checklist.
+  const refreshReadiness = useCallback(() => {
+    authFetch('/api/sellers/readiness')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setReadiness(data.readiness);
+      })
+      .catch(() => {});
+  }, []);
+
   const load = useCallback(async () => {
     if (!getAuthToken()) {
       router.push(`/seller/login?redirect=${encodeURIComponent(pathname)}`);
@@ -113,8 +129,9 @@ export default function SellerPortalLayout({ children }: { children: React.React
     }
     setMe(data);
     setLoading(false);
+    refreshReadiness();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router]);
+  }, [router, refreshReadiness]);
 
   useEffect(() => {
     load();
@@ -173,7 +190,7 @@ export default function SellerPortalLayout({ children }: { children: React.React
   return (
     <ToastProvider>
     <SellerPortalContext.Provider
-      value={{ me, refresh: load, unreadEnquiries, refreshUnread, walletBalance, refreshWallet }}
+      value={{ me, refresh: load, unreadEnquiries, refreshUnread, walletBalance, refreshWallet, readiness }}
     >
       <div className="flex min-h-screen bg-ivory">
         {/* Mobile top bar */}
@@ -266,7 +283,10 @@ export default function SellerPortalLayout({ children }: { children: React.React
             <SellerHeaderBadges />
             <NotificationBell />
           </div>
-          <main className="min-w-0 flex-1 px-4 py-8 pt-20 md:px-8 md:py-10 md:pt-8">{children}</main>
+          <main className="min-w-0 flex-1 px-4 py-8 pt-20 md:px-8 md:py-10 md:pt-8">
+            <VerificationBanner readiness={readiness} />
+            {children}
+          </main>
         </div>
       </div>
     </SellerPortalContext.Provider>
